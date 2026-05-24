@@ -95,7 +95,7 @@ GraphRAG 추천 (벡터 검색 + LLM rerank + 자연어 근거 생성)
 └────────────────────────────────────────────────────┘
 ```
 
-상세 설계는 [`파이프라인.md`](파이프라인.md)를 참조한다.
+상세 설계는 [`docs/파이프라인.md`](docs/파이프라인.md)를 참조한다.
 
 ---
 
@@ -180,7 +180,7 @@ Content–Author–Tag–CurriculumNode–Source 이종 그래프에서 자기�
 | Layer 3 — Expansion | 6/23 – 6/28 | 마케터·기획자 페르소나 추가 | 3차 데모 6/28 |
 | 최종 발표 | 6/29 | — | 발표 심사 |
 
-상세 일정은 [`로드맵.md`](로드맵.md)를 참조한다.
+상세 일정은 [`docs/로드맵.md`](docs/로드맵.md)를 참조한다.
 
 ---
 
@@ -215,7 +215,7 @@ Content–Author–Tag–CurriculumNode–Source 이종 그래프에서 자기�
 - [Cold-Start Recommendation towards the Era of LLMs: A Survey (arXiv:2501.01945, 2025)](https://arxiv.org/abs/2501.01945)
 - [Cold-Start Recommendation with Knowledge-Guided RAG (arXiv:2505.20773)](https://arxiv.org/html/2505.20773v2)
 
-추가 참고 문헌은 [`파이프라인.md`](파이프라인.md)의 9절을 참조한다.
+추가 참고 문헌은 [`docs/파이프라인.md`](docs/파이프라인.md)의 9절을 참조한다.
 
 ---
 
@@ -239,10 +239,18 @@ MVP 전체 운영 비용은 미화 35달러 이내로 추정한다.
 
 ```
 .
-├── README.md                  # 본 문서
-├── 프로젝트_제안서.md           # 제안 단계 문서
-├── 로드맵.md                   # 레이어 기반 실행 로드맵
-└── 파이프라인.md                # 시스템 파이프라인 상세 설계
+├── README.md                          # 본 문서
+├── .github/
+│   └── PULL_REQUEST_TEMPLATE.md       # PR 본문 자동 채움 템플릿
+└── docs/
+    ├── 프로젝트_제안서.md              # 제안 단계 문서
+    ├── 로드맵.md                       # 레이어 기반 실행 로드맵
+    ├── 파이프라인.md                   # 시스템 파이프라인 상세 설계
+    ├── GitHub_협업가이드.md            # 브랜치·커밋·충돌 해결
+    ├── PR_가이드.md                    # PR 작성·리뷰·머지 절차
+    ├── PR_템플릿.md                    # PR 템플릿 원본
+    ├── Jira_가이드.md                  # Jira 카드 관리, 보드 사용
+    └── Jira-GitHub_연동가이드.md       # Smart Commits, Automation
 ```
 
 ---
