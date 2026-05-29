@@ -1,0 +1,70 @@
+# 환경 변수 및 비밀
+.env
+.env.local
+*.env
+!.env.example
+
+# API 키 / 자격증명
+secrets/
+credentials.json
+service-account.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 의존성
+node_modules/
+
+# 빌드 산출물
+dist/
+build/
+*.egg
+
+# 크롤링 데이터 (DB에 적재, git에 올리지 않음)
+data/raw/
+data/cache/
+data/*.json
+data/*.csv
+
+# DB
+*.db
+*.sqlite
+*.sqlite3
+
+# 모델 체크포인트 (Colab/외부 저장)
+*.pt
+*.pth
+*.ckpt
+models/checkpoints/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 로그
+*.log
+logs/
+
+# Streamlit
+.streamlit/secrets.toml
