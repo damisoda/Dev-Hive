@@ -1,0 +1,27 @@
+# 웹 프레임워크
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+
+# DB
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.9
+pgvector==0.3.3
+
+# LLM / 임베딩
+anthropic==0.39.0
+openai==1.51.0
+
+# 크롤링
+praw==7.7.1
+requests==2.32.3
+beautifulsoup4==4.12.3
+feedparser==6.0.11
+
+# 유틸
+python-dotenv==1.0.1
+pydantic==2.9.2
+pydantic-settings==2.5.2
+langdetect==1.0.9
+
+# 그래프 학습 (Layer 2 — Colab에서 주로 사용)
+# torch / torch-geometric는 Colab 환경에서 설치

@@ -235,38 +235,81 @@ MVP 전체 운영 비용은 미화 35달러 이내로 추정한다.
 
 ---
 
-## 12. 프로젝트 문서 구조
+## 12. 레포 구조
 
 ```
 .
-├── README.md                          # 본 문서
+├── README.md
+├── .gitignore
+├── .env.example                       # 환경변수 템플릿 (키 이름만)
+├── docker-compose.yml                 # 로컬 PostgreSQL + pgvector
+├── railway.json                       # Railway 배포 설정
 ├── .github/
-│   └── PULL_REQUEST_TEMPLATE.md       # PR 본문 자동 채움 템플릿
-└── docs/
-    ├── 프로젝트_제안서.md              # 제안 단계 문서
-    ├── 로드맵.md                       # 레이어 기반 실행 로드맵
-    ├── 파이프라인.md                   # 시스템 파이프라인 상세 설계
-    ├── GitHub_협업가이드.md            # 브랜치·커밋·충돌 해결
-    ├── PR_가이드.md                    # PR 작성·리뷰·머지 절차
-    ├── PR_템플릿.md                    # PR 템플릿 원본
-    ├── Jira_가이드.md                  # Jira 카드 관리, 보드 사용
-    └── Jira-GitHub_연동가이드.md       # Smart Commits, Automation
+│   └── PULL_REQUEST_TEMPLATE.md
+├── docs/                              # 기획 + 협업 문서
+│   ├── 프로젝트_제안서.md
+│   ├── 로드맵.md
+│   ├── 파이프라인.md
+│   ├── GitHub_협업가이드.md
+│   ├── PR_가이드.md / PR_템플릿.md
+│   └── Jira_가이드.md / Jira-GitHub_연동가이드.md
+├── db/                               # DB 스키마
+│   ├── schema.sql                     # 테이블 6종 + pgvector
+│   └── seed.sql                       # 대주제 7개 시드
+├── backend/                          # FastAPI 백엔드
+│   ├── app/
+│   │   ├── main.py                    # 엔트리포인트
+│   │   ├── config.py                  # 환경변수 로딩
+│   │   ├── database.py                # DB 연결
+│   │   ├── models/                    # SQLAlchemy 모델
+│   │   ├── api/                       # 엔드포인트 (파이프라인 4)
+│   │   ├── crawler/                   # 크롤링 (6개 소스)
+│   │   ├── tagging/                   # 태깅 + 임베딩 (파이프라인 1)
+│   │   ├── graph/                     # 그래프 + GraphSAGE (파이프라인 2)
+│   │   └── recommend/                 # 추천 엔진 (파이프라인 3)
+│   ├── requirements.txt
+│   └── Dockerfile
+├── frontend/                         # Streamlit
+│   ├── app.py
+│   └── requirements.txt
+└── training/                         # GraphSAGE 학습 (Colab)
+    └── README.md
 ```
 
 ---
 
 ## 13. 설치 및 실행
 
-> 구현 진행 중. Layer 1 (5/31) 완료 시점부터 실행 가능한 형태로 갱신될 예정이다.
-
-예정 구조:
-
+### 사전 준비
+```bash
+cp .env.example .env
+# .env에 API 키 입력 (Anthropic, OpenAI, Reddit 등)
 ```
-backend/        FastAPI 서비스 (크롤러, AI 파이프라인, API)
-frontend/       Next.js 애플리케이션
-training/       GraphSAGE 학습 노트북 (Google Colab 호환)
-docs/           아키텍처 다이어그램 및 의사결정 기록
+
+### 1. 데이터베이스 (Docker)
+```bash
+docker compose up -d
+# PostgreSQL + pgvector 기동, schema.sql + seed.sql 자동 적용
 ```
+
+### 2. 백엔드
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+# http://localhost:8000/health 로 확인
+```
+
+### 3. 프론트엔드
+```bash
+cd frontend
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+### 배포
+- 백엔드 + DB: Railway (`railway.json` 기반 Dockerfile 배포)
+- 프론트엔드: Streamlit Community Cloud 또는 Railway
 
 ---
 
