@@ -10,6 +10,7 @@ pgvector==0.3.3
 # LLM / 임베딩
 anthropic==0.39.0
 openai==1.51.0
+httpx<0.28  # openai==1.51.0 호환 (httpx 0.28+는 proxies 인자 제거로 클라이언트 초기화 실패)
 
 # 크롤링
 praw==7.7.1
