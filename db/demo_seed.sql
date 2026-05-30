@@ -212,7 +212,7 @@ INSERT INTO content (title, body, url, source, author_name, language, difficulty
 (
   'AI 앱 배포: Railway vs Vercel vs Fly.io 1년 운영 비교',
   '같은 AI 앱을 3개 플랫폼에 배포해서 1년 운영. Railway: 셋업 빠르고 DB 통합 편함, Vercel: 프론트엔드 압도적, Fly.io: 리전 가까워서 latency 최저. 가격은 비슷.',
-  'https://news.ycombinator.com/item?id=45645349',
+  'https://channel.io/ko/blog/articles/what-is-harness-2611ddf1',
   'github_trending', 'devops_eng', 'en', '중급', 0.86, 'discussion',
   '["Railway", "Vercel", "Fly.io", "AI 엔지니어링", "배포"]',
   445, 78, '2026-05-25 10:45:00+09'
