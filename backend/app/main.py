@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api import auth
+from app.api import auth, content, progress, recommend
 
 app = FastAPI(title="Dev-Hive API", version="0.1.0")
 
@@ -12,3 +12,6 @@ def health_check() -> dict[str, str]:
 
 # 라우터 등록
 app.include_router(auth.router)
+app.include_router(content.router)
+app.include_router(recommend.router)
+app.include_router(progress.router)
