@@ -12,7 +12,6 @@ GraphRAG 기반 추천은 Layer 2에서 구현 예정.
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-<<<<<<< HEAD
 # 난이도 순서 정의 (유저 레벨 이하 콘텐츠만 추천)
 _LEVEL_ORDER = {"입문": 0, "중급": 1, "고급": 2}
 _ALLOWED_LEVELS = {
@@ -22,6 +21,7 @@ _ALLOWED_LEVELS = {
 }
 
 
+def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
     # 유저 current_level + profile_vector 조회
     user_row = db.execute(
         text("SELECT current_level, profile_vector FROM users WHERE id = :uid"),
@@ -90,13 +90,3 @@ _ALLOWED_LEVELS = {
             }
             for row in rows
         ]
-=======
-
-def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
-    rows = db.execute(
-        text(
-            """
-            SELECT c.id, c.title, c.quality_score
-            FROM content c
-            WHERE c.id NOT IN (
-                SELECT content_id FROM user_read_events WHERE user_id = :uid
