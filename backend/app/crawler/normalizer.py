@@ -18,6 +18,7 @@ class ContentSchema(BaseModel):
         return {
             **self.model_dump(),
             "published_at": self.published_at.isoformat(),
+            "body": self.body if self.body is not None else "",
         }
 
 
