@@ -78,7 +78,7 @@ def fetch_stories(query: str, limit: int = 100) -> list[ContentSchema]:
             continue
         items.append(normalize(
             title=title,
-            source="hackernews",
+            source="hn",
             url=hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID')}",
             published_at=_parse_dt(hit.get("created_at")),
             body=body,
@@ -117,7 +117,7 @@ def fetch_comments(query: str, limit: int = 50) -> list[ContentSchema]:
             continue
         items.append(normalize(
             title=f"[HN comment] {hit.get('story_title') or 'unknown'}",
-            source="hackernews",
+            source="hn",
             url=f"https://news.ycombinator.com/item?id={hit.get('objectID')}",
             published_at=_parse_dt(hit.get("created_at")),
             body=body,
