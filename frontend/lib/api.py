@@ -15,10 +15,14 @@ def _handle(response: requests.Response):
     return response.json()
 
 
-def create_profile(display_name: str, persona: str):
+def create_profile(display_name: str, persona: str = "개발자", onboarding_answers: dict | None = None):
     return _handle(requests.post(
         f"{API_BASE_URL}/auth/profile",
-        json={"display_name": display_name, "persona": persona},
+        json={
+            "display_name": display_name,
+            "persona": persona,
+            "onboarding_answers": onboarding_answers or {},
+        },
         timeout=10,
     ))
 
