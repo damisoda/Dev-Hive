@@ -43,7 +43,7 @@ def fetch_daily_papers(date: str) -> list[ContentSchema]:
             source="huggingface",
             url=f"https://huggingface.co/papers/{paper.get('id', '')}",
             published_at=_parse_dt(paper.get("publishedAt")),
-            body=paper.get("summary") or entry.get("summary"),
+            body=paper.get("summary") or entry.get("summary") or "",
             author_name=author_name,
             likes=upvotes,
             comments=entry.get("numComments", 0),
