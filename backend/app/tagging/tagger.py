@@ -83,7 +83,7 @@ def _validate_schema(result: dict) -> None:
     }
     valid_difficulties = {"입문", "중급", "고급"}
     valid_types = {"tutorial", "experience", "news", "paper", "discussion"}
-    valid_langs = {"ko", "en", "mixed", "unknown"}
+    valid_langs = {"ko", "en"}
 
     if set(result.get("relevance", {}).keys()) != expected_topics:
         raise ValueError(f"relevance 키 불일치: {set(result.get('relevance', {}).keys())}")
