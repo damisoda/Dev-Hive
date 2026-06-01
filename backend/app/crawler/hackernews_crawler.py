@@ -71,7 +71,7 @@ def fetch_stories(query: str, limit: int = 100) -> list[ContentSchema]:
     items = []
     for hit in res.json().get("hits", []):
         title = hit.get("title") or ""
-        body = hit.get("story_text") or None
+        body = hit.get("story_text") or ""
         if not title:
             continue
         if not _pass_rule_filter(title, body):
