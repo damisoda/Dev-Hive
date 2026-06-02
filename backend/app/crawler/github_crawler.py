@@ -26,6 +26,10 @@ GITHUB_RATE_LIMIT_MAX_SLEEP_SECONDS = int(os.getenv("GITHUB_RATE_LIMIT_MAX_SLEEP
 GITHUB_MAX_SEARCHES_WITH_TOKEN = int(os.getenv("GITHUB_MAX_SEARCHES_WITH_TOKEN", "120"))
 GITHUB_MAX_SEARCHES_WITHOUT_TOKEN = int(os.getenv("GITHUB_MAX_SEARCHES_WITHOUT_TOKEN", "10"))
 HTTP_TIMEOUT_SECONDS = int(os.getenv("HTTP_TIMEOUT_SECONDS", "30"))
+# README 본문 보강(레퍼런스 깊이). repo 설명 한 줄로는 학습 콘텐츠가 부실해 README를 body로 합친다.
+# README 조회는 repo당 API 1콜이라 rate limit 보호를 위해 토큰이 있을 때만 호출한다.
+GITHUB_FETCH_README = os.getenv("GITHUB_FETCH_README", "true").lower() in {"1", "true", "yes"}
+GITHUB_README_MAX_CHARS = int(os.getenv("GITHUB_README_MAX_CHARS", "5000"))
 
 GITHUB_SEARCH_TERMS = [
     term.strip()
@@ -220,18 +224,51 @@ def _fetch_search_page(
         return []
 
 
-def _normalize_repo(repo: dict[str, Any]) -> ContentSchema | None:
+def _fetch_readme(client: httpx.Client, full_name: str) -> str:
+    """레포 README 원문을 가져온다(raw 텍스트). 없거나(404) 실패하면 ''를 반환한다."""
+    if not full_name:
+        return ""
+    try:
+        response = client.get(
+            f"https://api.github.com/repos/{full_name}/readme",
+            headers={"Accept": "application/vnd.github.raw+json"},
+        )
+
+        if response.status_code in {403, 429}:
+            _sleep_for_rate_limit(response)
+            return ""
+        if response.status_code == 404:
+            return ""
+
+        response.raise_for_status()
+        return response.text[:GITHUB_README_MAX_CHARS]
+
+    except (httpx.HTTPStatusError, httpx.RequestError):
+        logger.warning("GitHub README fetch failed. repo=%s", full_name)
+        return ""
+    except Exception:
+        logger.exception("Unexpected README fetch error. repo=%s", full_name)
+        return ""
+
+
+def _normalize_repo(repo: dict[str, Any], readme: str = "") -> ContentSchema | None:
     name = repo.get("full_name") or repo.get("name") or ""
     description = repo.get("description") or ""
 
     if not _matches_ai_keyword(name, description):
         return None
 
+    # README가 있으면 설명 + README를 본문으로 합쳐 깊이를 보강한다(없으면 설명만).
+    if readme:
+        body = f"{description}\n\n{readme}".strip() if description else readme
+    else:
+        body = description
+
     return normalize(
         source="github_trending",
         title=name,
         url=repo.get("html_url") or "",
-        body=description,
+        body=body,
         likes=int(repo.get("stargazers_count") or 0),
         published_at=repo.get("created_at"),
     )
@@ -275,7 +312,19 @@ def collect_github(target_total: int = GITHUB_TARGET_ITEMS) -> list[ContentSchem
                     if not url or url in seen_urls:
                         continue
 
-                    item = _normalize_repo(repo)
+                    # README는 적재 후보(미중복·AI키워드 매칭)에 한해서만 조회해 불필요한 콜을 줄인다.
+                    name = repo.get("full_name") or repo.get("name") or ""
+                    description = repo.get("description") or ""
+                    if not _matches_ai_keyword(name, description):
+                        continue
+
+                    readme = (
+                        _fetch_readme(client, name)
+                        if (GITHUB_FETCH_README and token)
+                        else ""
+                    )
+
+                    item = _normalize_repo(repo, readme)
                     if item is None:
                         continue
 
