@@ -2,15 +2,26 @@
 
 크롤링된 콘텐츠를 LLM으로 태깅하고 임베딩을 생성하여 DB에 적재한다.
 
-## 구성 (예정)
+## 구성
+- `haiku_tagging_prompt.md` — Claude Haiku 태깅 프롬프트 v0
 - `tagger.py` — Claude Haiku 태깅 (7개 대주제 relevance + 난이도 + quality_score + content_type)
 - `embedder.py` — OpenAI text-embedding-3-small 임베딩 생성
 - `loader.py` — content + content_node_mapping 적재 (relevance >= 0.5인 노드에 매핑)
 
+## 파이프라인 실행
+
+```bash
+cd backend
+python scripts/run_tagging_pipeline.py ../../data/huggingface_20260531.json
+python scripts/run_tagging_pipeline.py ../../data/hackernews_20260531.json --limit 50
+```
+
+필요 환경변수: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DATABASE_URL`
+
 ## 태깅 출력 포맷
 ```json
 {
-  "topics": {"프롬프트 엔지니어링": 0.8, "Agentic AI": 0.2, ...},
+  "relevance": {"프롬프트 엔지니어링": 0.8, "Agentic AI": 0.2, ...},
   "difficulty": "중급",
   "quality_score": 0.85,
   "content_type": "experience",
