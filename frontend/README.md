@@ -9,7 +9,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## 페이지 구성 (예정)
+## 페이지 구성
 - `app.py` — 진입점
 - `pages/1_피드.py` — 콘텐츠 피드 (태그/난이도 필터)
 - `pages/2_커리큘럼.py` — 내 학습 경로
