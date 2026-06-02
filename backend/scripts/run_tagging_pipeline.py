@@ -8,12 +8,17 @@ JSON 콘텐츠를 읽어 → Anthropic Message Batches로 일괄 태깅(모든 �
 - 태깅만 배치로 보낸다(비싼 단계). 임베딩/적재는 배치 결과 수거 후 건별 동기 처리.
 - 배치는 비동기라 보통 1시간 내(최대 24h) 완료될 때까지 폴링한다.
 - 적재는 **항목별 트랜잭션**으로 분리한다. 한 건이 실패해도 배치 전체가 롤백되지 않는다.
+- 폴링/수거 중 일시적 연결오류(네트워크 블립)는 재시도한다. 한 번 끊겨도 전체가 죽지 않는다.
+- 중간에 끊겼다면 --batch-id로 같은 배치에 재접속해 재태깅 없이 이어서 수거/적재한다.
+  (이때 json_path는 제출 때와 동일해야 한다. custom_id=item-<index>가 items[index]에 대응하기 때문.)
 - 실시간(업로드 즉시) 태깅이 필요하면 app.tagging.tagger.tag_content()를 직접 쓴다.
 
 실행:
     cd backend
     python scripts/run_tagging_pipeline.py ../../data/huggingface_20260531.json
     python scripts/run_tagging_pipeline.py <json> --limit 50
+    # 끊긴 배치 이어받기 (재태깅 없음):
+    python scripts/run_tagging_pipeline.py <json> --batch-id msgbatch_xxx
 """
 import argparse
 import json
@@ -38,6 +43,8 @@ from app.tagging.embedder import embed_content
 from app.tagging.loader import load_content, QUALITY_THRESHOLD
 
 POLL_INTERVAL = 30  # 배치 상태 폴링 간격(초)
+TRANSIENT = (anthropic.APIConnectionError, anthropic.APIStatusError)  # 재시도 대상 일시 오류
+COLLECT_RETRIES = 5  # 결과 수거 재시도 횟수
 
 
 def _parse_tags(text: str) -> dict:
@@ -65,13 +72,18 @@ def _submit_batch(client: anthropic.Anthropic, items: list[dict]):
     ]
     batch = client.beta.messages.batches.create(requests=requests)
     print(f"배치 제출 완료: {batch.id} ({len(requests)}건) — 50% 할인 적용")
-    return batch
+    return batch.id
 
 
 def _wait_for_batch(client: anthropic.Anthropic, batch_id: str) -> None:
-    """배치가 끝날 때까지(ended) 폴링한다."""
+    """배치가 끝날 때까지(ended) 폴링한다. 일시적 연결오류는 재시도한다."""
     while True:
-        batch = client.beta.messages.batches.retrieve(batch_id)
+        try:
+            batch = client.beta.messages.batches.retrieve(batch_id)
+        except TRANSIENT as e:
+            print(f"  폴링 일시 오류({type(e).__name__}) — {POLL_INTERVAL}s 후 재시도")
+            time.sleep(POLL_INTERVAL)
+            continue
         c = batch.request_counts
         print(
             f"  상태={batch.processing_status} "
@@ -83,32 +95,43 @@ def _wait_for_batch(client: anthropic.Anthropic, batch_id: str) -> None:
 
 
 def _collect_tags(client: anthropic.Anthropic, batch_id: str) -> tuple[dict[int, dict], int]:
-    """배치 결과에서 custom_id별 태그 dict를 수거한다. (tags_by_index, 실패건수) 반환."""
-    tags_by_idx: dict[int, dict] = {}
-    failed = 0
-    for result in client.beta.messages.batches.results(batch_id):
+    """배치 결과에서 custom_id별 태그 dict를 수거한다. 일시 오류 시 전체 재시도."""
+    for attempt in range(1, COLLECT_RETRIES + 1):
+        tags_by_idx: dict[int, dict] = {}
+        failed = 0
         try:
-            idx = int(result.custom_id.split("-", 1)[1])
-        except (ValueError, IndexError):
-            failed += 1
-            continue
-        if result.result.type == "succeeded":
-            try:
-                text = result.result.message.content[0].text
-                tags_by_idx[idx] = _parse_tags(text)
-            except Exception as e:
-                print(f"[{idx:03d}] 태그 파싱 실패: {e}")
-                failed += 1
-        else:
-            print(f"[{idx:03d}] 태깅 실패: {result.result.type}")
-            failed += 1
-    return tags_by_idx, failed
+            for result in client.beta.messages.batches.results(batch_id):
+                try:
+                    idx = int(result.custom_id.split("-", 1)[1])
+                except (ValueError, IndexError):
+                    failed += 1
+                    continue
+                if result.result.type == "succeeded":
+                    try:
+                        text = result.result.message.content[0].text
+                        tags_by_idx[idx] = _parse_tags(text)
+                    except Exception as e:
+                        print(f"[{idx:03d}] 태그 파싱 실패: {e}")
+                        failed += 1
+                else:
+                    print(f"[{idx:03d}] 태깅 실패: {result.result.type}")
+                    failed += 1
+            return tags_by_idx, failed
+        except TRANSIENT as e:
+            print(f"  결과 수거 일시 오류({type(e).__name__}) — 재시도 {attempt}/{COLLECT_RETRIES}")
+            time.sleep(POLL_INTERVAL)
+    raise RuntimeError("결과 수거 실패: 일시 오류 재시도 한도 초과")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("json_path", help="입력 JSON 파일 경로")
+    parser.add_argument("json_path", help="입력 JSON 파일 경로 (제출 때와 동일해야 함)")
     parser.add_argument("--limit", type=int, default=None, help="처리할 최대 건수")
+    parser.add_argument(
+        "--batch-id",
+        default=None,
+        help="기존 배치 ID로 재접속(재태깅 없이 수거/적재만). 끊긴 작업 이어받기용.",
+    )
     args = parser.parse_args()
 
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
@@ -132,14 +155,18 @@ def main() -> None:
     openai_client = OpenAI(api_key=openai_key)
     engine = create_engine(db_url)
 
-    print(f"처리 대상: {len(items)}건 (Message Batches, 50% 할인)\n")
+    # 1. 태깅 배치 — 신규 제출 또는 기존 배치 재접속
+    if args.batch_id:
+        batch_id = args.batch_id
+        print(f"기존 배치 재접속: {batch_id} (대상 {len(items)}건, 재태깅 없음)\n")
+    else:
+        print(f"처리 대상: {len(items)}건 (Message Batches, 50% 할인)\n")
+        batch_id = _submit_batch(anthropic_client, items)
 
-    # 1. 태깅 배치 제출 + 완료 대기
-    batch = _submit_batch(anthropic_client, items)
-    _wait_for_batch(anthropic_client, batch.id)
+    _wait_for_batch(anthropic_client, batch_id)
 
     # 2. 결과 수거 (index -> tags)
-    tags_by_idx, tag_failed = _collect_tags(anthropic_client, batch.id)
+    tags_by_idx, tag_failed = _collect_tags(anthropic_client, batch_id)
 
     # 3. 임베딩 + 적재 (건별 트랜잭션 — 한 건 실패가 배치 전체를 롤백하지 않음)
     inserted = skipped_quality = skipped_dup = load_failed = 0
