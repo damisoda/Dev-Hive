@@ -263,7 +263,6 @@ def _normalize_repo(repo: dict[str, Any], readme: str = "") -> ContentSchema | N
         body = f"{description}\n\n{readme}".strip() if description else readme
     else:
         body = description
-
     return normalize(
         source="github_trending",
         title=name,
