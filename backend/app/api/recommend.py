@@ -6,7 +6,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -43,6 +43,10 @@ def get_user_state(
     HIVE-22(GraphRAG) 추천 시 LLM 프롬프트 컨텍스트로 주입하기 위해 사용한다.
     """
     state = build_user_state(user_id, db)
+    if state == "":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="user not found"
+        )
     return UserStateResponse(user_id=user_id, user_state=state)
 
 

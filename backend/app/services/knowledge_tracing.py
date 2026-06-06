@@ -15,12 +15,7 @@ HIVE-22(GraphRAG) 추천 시 프롬프트 컨텍스트로 소비된다.
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-# 온보딩 문항 키 → 관심 노드 이름 매핑 (profile_vector.py와 동일 기준)
-_QUESTION_TO_NODES: dict[str, list[str]] = {
-    "ai_tool_usage": ["AI 워크플로우 & 자동화", "프롬프트 엔지니어링"],
-    "llm_understanding": ["AI 엔지니어링", "RAG & 지식 관리"],
-    "advanced_topics": ["Agentic AI", "멀티모달 AI", "오픈소스 AI"],
-}
+from app.services.constants import QUESTION_TO_NODES
 
 
 def build_user_state(user_id: int, db: Session) -> str:
@@ -43,18 +38,23 @@ def build_user_state(user_id: int, db: Session) -> str:
     current_level = user_row.current_level or "입문"
     onboarding_answers: dict = user_row.onboarding_answers or {}
 
-    # 관심 분야 추출 (온보딩 점수 1 이상인 문항의 노드)
+    # 관심 분야 추출 (온보딩 점수 1 이상인 문항의 노드, 중복 제거 후 순서 유지)
     interested_nodes: list[str] = []
-    for question_key, node_names in _QUESTION_TO_NODES.items():
-        score = int(onboarding_answers.get(question_key, 0))
+    seen: set[str] = set()
+    for question_key, node_names in QUESTION_TO_NODES.items():
+        score = int(onboarding_answers.get(question_key) or 0)  # null 방어
         if score >= 1:
-            interested_nodes.extend(node_names)
+            for node_name in node_names:
+                if node_name not in seen:
+                    interested_nodes.append(node_name)
+                    seen.add(node_name)
 
-    # 노드별 읽음 건수 조회
+    # 노드별 읽음 건수 조회 (중복 읽음 이벤트 방지: DISTINCT content_id)
+    # Note: parent_id IS NULL → 대주제 7개만 집계. 하위 노드 추가 시 쿼리 수정 필요.
     node_read_counts = db.execute(
         text(
             """
-            SELECT cn.name, COUNT(ure.id) AS read_count
+            SELECT cn.name, COUNT(DISTINCT ure.content_id) AS read_count
             FROM curriculum_nodes cn
             LEFT JOIN content_node_mapping cnm ON cnm.node_id = cn.id
             LEFT JOIN user_read_events ure
@@ -76,11 +76,14 @@ def build_user_state(user_id: int, db: Session) -> str:
     else:
         lines.append("관심 분야: 없음")
 
-    lines.append("읽음 이력:")
-    for row in node_read_counts:
-        if row.read_count > 0:
-            lines.append(f"  - {row.name}: {row.read_count}건 완료")
-        else:
-            lines.append(f"  - {row.name}: 미학습")
+    if node_read_counts:
+        lines.append("읽음 이력:")
+        for row in node_read_counts:
+            if row.read_count > 0:
+                lines.append(f"  - {row.name}: {row.read_count}건 완료")
+            else:
+                lines.append(f"  - {row.name}: 미학습")
+    else:
+        lines.append("읽음 이력: 없음")
 
     return "\n".join(lines)
