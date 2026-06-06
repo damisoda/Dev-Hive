@@ -56,3 +56,12 @@ def mark_read(user_id: int, content_id: int):
         json={"user_id": user_id, "content_id": content_id},
         timeout=10,
     ))
+
+
+def get_graph():
+    # /graph는 similar_to를 매 호출마다 계산해 다소 느릴 수 있어 넉넉한 타임아웃.
+    try:
+        return _handle(requests.get(f"{API_BASE_URL}/graph", timeout=30))
+    except requests.RequestException as e:
+        st.error(f"그래프 API 연결 실패 (백엔드가 켜져 있나요?): {e}")
+        return None
