@@ -12,8 +12,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.recommend.rule_based import recommend_next
+from app.services.knowledge_tracing import build_user_state
 
 router = APIRouter(prefix="/recommend", tags=["recommend"])
+
+
+class UserStateResponse(BaseModel):
+    user_id: int
+    user_state: str
 
 
 class Recommendation(BaseModel):
@@ -25,6 +31,19 @@ class Recommendation(BaseModel):
 
 class RecommendResponse(BaseModel):
     recommendations: list[Recommendation]
+
+
+@router.get("/user-state", response_model=UserStateResponse)
+def get_user_state(
+    user_id: int,
+    db: Session = Depends(get_db),
+) -> UserStateResponse:
+    """유저 상태를 자연어 텍스트로 반환한다.
+
+    HIVE-22(GraphRAG) 추천 시 LLM 프롬프트 컨텍스트로 주입하기 위해 사용한다.
+    """
+    state = build_user_state(user_id, db)
+    return UserStateResponse(user_id=user_id, user_state=state)
 
 
 @router.get("", response_model=RecommendResponse)
