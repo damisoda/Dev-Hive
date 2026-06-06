@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
+from app.services.profile_vector import build_initial_vector
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -63,6 +64,11 @@ def create_profile(payload: ProfileCreate, db: Session = Depends(get_db)) -> Pro
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    # 온보딩 답변 기반 profile_vector 초기값 설정 (HIVE-30)
+    if payload.onboarding_answers:
+        build_initial_vector(user.id, payload.onboarding_answers, db)
+
     return ProfileResponse(
         user_id=user.id,
         display_name=user.display_name,

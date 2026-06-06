@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models.content import Content
 from app.models.event import UserReadEvent
 from app.models.user import User
+from app.services.profile_vector import update_from_read_history
 
 router = APIRouter(prefix="/progress", tags=["progress"])
 
@@ -45,4 +46,8 @@ def mark_read(
     db.add(event)
     db.commit()
     db.refresh(event)
+
+    # 읽음 이력 기반 profile_vector 갱신 (HIVE-30)
+    update_from_read_history(payload.user_id, db)
+
     return ProgressResponse(status="ok", read_at=event.read_at)
