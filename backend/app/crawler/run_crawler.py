@@ -9,6 +9,7 @@ from typing import Any
 
 from app.crawler.github_crawler import collect_github
 from app.crawler.reddit_crawler import DEFAULT_SUBREDDITS, collect_reddit
+from app.crawler.velog_crawler import collect_velog
 
 logging.basicConfig(
     level=logging.INFO,
@@ -72,20 +73,23 @@ def save_json(items: list[Any], output_dir: str | Path = "data/raw") -> Path:
 
 
 def crawl_all() -> list[Any]:
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         reddit_future = executor.submit(collect_reddit, DEFAULT_SUBREDDITS, 600)
         github_future = executor.submit(collect_github, 300)
+        velog_future = executor.submit(collect_velog, 300)
 
         reddit_items = reddit_future.result()
         github_items = github_future.result()
+        velog_items = velog_future.result()
 
-    merged = reddit_items + github_items
+    merged = reddit_items + github_items + velog_items
     deduped = dedupe_by_url(merged)
 
     logger.info(
-        "Crawl finished. reddit=%s github=%s merged=%s deduped=%s",
+        "Crawl finished. reddit=%s github=%s velog=%s merged=%s deduped=%s",
         len(reddit_items),
         len(github_items),
+        len(velog_items),
         len(merged),
         len(deduped),
     )
