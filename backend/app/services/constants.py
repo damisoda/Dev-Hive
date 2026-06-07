@@ -29,3 +29,34 @@ DEFAULT_INITIAL_MASTERY: float = 0.0
 # 어려운 글을 읽어낼수록 이해 기여가 크다고 가정해 난이도가 높을수록 gain ↑.
 DIFFICULTY_TO_GAIN: dict[str, float] = {"입문": 0.10, "중급": 0.15, "고급": 0.20}
 DEFAULT_GAIN: float = 0.05  # difficulty NULL/미지정 콘텐츠
+
+
+# ── 페르소나별 온보딩 구성 (HIVE-36) ──────────────────────────────────
+# 직군별 요소(문항 점수키·노드매핑)는 페르소나별, 레벨 계산/레벨업 로직은 공통.
+# 현재 개발자만. 직군 추가 시 이 딕셔너리에 키만 추가하면 레벨 로직은 그대로 재사용된다.
+#   baseline_keys/ai_keys = {온보딩 답변 키: 해당 문항 만점}
+#   - baseline: 일반 직무(개발) 역량  /  ai: AI 도메인 숙련도
+# 페르소나별 레벨 산정 파라미터까지 함께 둔다.
+# 레벨 경계(ai_beginner_max/ai_mid_max)도 페르소나별 — ai_keys 만점이 직군마다 다를 수 있어
+# 전역 매직넘버로 두면 직군 추가 시 compute_initial_level을 또 고쳐야 한다(확장성 깨짐).
+#   - ai_beginner_max: ai_score가 이 값 이하면 입문
+#   - ai_mid_max     : ai_score가 이 값 이하면 중급, 초과면 고급. 이 값이 "중급 상단"이며
+#                      시니어 보정이 발동하는 지점.
+#   - senior_baseline_min: baseline_score가 이 값 이상이면 시니어
+DEFAULT_PERSONA = "개발자"
+PERSONA_ONBOARDING: dict[str, dict] = {
+    "개발자": {
+        "baseline_keys": {"dev_career": 3, "prod_experience": 2},          # 0~5
+        "ai_keys": {"ai_tool_usage": 2, "llm_understanding": 2, "advanced_topics": 2},  # 0~6
+        "question_to_nodes": QUESTION_TO_NODES,  # AI 문항 → 관심 노드 (페르소나별)
+        "ai_beginner_max": 1,        # ai 0~1 → 입문
+        "ai_mid_max": 4,             # ai 2~4 → 중급, 5~6 → 고급 (4=중급 상단=시니어 보정점)
+        "senior_baseline_min": 4,    # baseline 5점 만점 중 4 이상이면 시니어
+    },
+}
+
+# 레벨업 임계값: 현재 레벨에서 평균 mastery가 이 값 이상이면 다음 레벨로 승급.
+# 레벨이 3개(입문/중급/고급)뿐이라 한 칸 점프가 크다 → 못 따라가는 위험을 막기 위해
+# 보수적으로(현재 레벨 주제를 확실히 익혔을 때만) 둔다. mastery는 HIVE-23 산출물 재사용.
+LEVEL_UP_THRESHOLD: dict[str, float] = {"입문": 0.6, "중급": 0.75}
+LEVEL_ORDER: list[str] = ["입문", "중급", "고급"]
