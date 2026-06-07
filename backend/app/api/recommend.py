@@ -1,9 +1,9 @@
 """다음 콘텐츠 추천.
 
-⚠️ 추천 로직은 여기서 구현하지 않는다. HIVE-13(진하 담당)의
-`app.recommend.rule_based.recommend_next()`를 호출만 한다.
+HIVE-22: GraphRAG(graphrag.recommend_next)로 추천하고, 실패 시 rule_based(v0)로 폴백한다.
 """
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -11,10 +11,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.recommend.rule_based import recommend_next
+from app.recommend.graphrag import recommend_next as _graphrag_recommend
+from app.recommend.rule_based import recommend_next as _rule_based_recommend
 from app.services.knowledge_tracing import build_user_state, estimate_mastery
 
 router = APIRouter(prefix="/recommend", tags=["recommend"])
+logger = logging.getLogger(__name__)
 
 
 class UserStateResponse(BaseModel):
@@ -78,7 +80,11 @@ def recommend(
     top_n: int = Query(5, ge=1, le=50),
     db: Session = Depends(get_db),
 ) -> RecommendResponse:
-    result = recommend_next(user_id, top_n, db)
-    return RecommendResponse(
-        recommendations=[Recommendation(**item) for item in result]
-    )
+    # HIVE-22: GraphRAG 우선, 실패 시 rule_based(v0)로 폴백 — 데모 중 500 방지
+    try:
+        result = _graphrag_recommend(user_id, top_n, db)
+        recs = [Recommendation(**item) for item in result]
+    except Exception:
+        logger.exception("graphrag 추천 실패 → rule_based 폴백")
+        recs = [Recommendation(**item) for item in _rule_based_recommend(user_id, top_n, db)]
+    return RecommendResponse(recommendations=recs)
