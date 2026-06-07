@@ -107,3 +107,46 @@ def get_user_state(user_id: int):
     if r.status_code != 200:
         return None
     return r.json()
+
+
+# ── 피드백 / 통계 (HIVE-37) ──────────────────────────────────────────
+
+def set_feedback(user_id: int, content_id: int, feedback: str):
+    """콘텐츠 피드백 저장/갱신 (understood/too_hard/want_more/not_interested)."""
+    return _handle(requests.put(
+        f"{API_BASE_URL}/feedback",
+        json={"user_id": user_id, "content_id": content_id, "feedback": feedback},
+        timeout=10,
+    ))
+
+
+def clear_feedback(user_id: int, content_id: int):
+    """콘텐츠 피드백 해제 (토글 off)."""
+    return _handle(requests.delete(
+        f"{API_BASE_URL}/feedback",
+        json={"user_id": user_id, "content_id": content_id},
+        timeout=10,
+    ))
+
+
+def list_feedback(user_id: int) -> dict:
+    """유저 피드백 `{content_id: feedback}`. 없음/오류면 빈 dict(조용히)."""
+    try:
+        r = requests.get(f"{API_BASE_URL}/feedback", params={"user_id": user_id}, timeout=10)
+    except requests.RequestException:
+        return {}
+    if r.status_code != 200:
+        return {}
+    # JSON 객체 키는 문자열 → int로 정규화
+    return {int(k): v for k, v in (r.json() or {}).items()}
+
+
+def get_stats(user_id: int):
+    """influence_score / streak / heatmap. 없음/오류면 None(조용히)."""
+    try:
+        r = requests.get(f"{API_BASE_URL}/stats", params={"user_id": user_id}, timeout=15)
+    except requests.RequestException:
+        return None
+    if r.status_code != 200:
+        return None
+    return r.json()

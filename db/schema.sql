@@ -65,6 +65,17 @@ CREATE TABLE IF NOT EXISTS user_read_events (
     read_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 6b. 유저 콘텐츠 피드백 (HIVE-37) — (user, content)당 1행, 최신값 upsert
+CREATE TABLE IF NOT EXISTS user_content_feedback (
+    user_id    INT REFERENCES users(id) ON DELETE CASCADE,
+    content_id INT REFERENCES content(id) ON DELETE CASCADE,
+    feedback   VARCHAR(20) NOT NULL,  -- understood / too_hard / want_more / not_interested
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, content_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ucf_user ON user_content_feedback(user_id);
+
 -- 6. 노드 간 소프트 링크 (Layer 2부터 활용)
 CREATE TABLE IF NOT EXISTS node_links (
     source_node_id INT REFERENCES curriculum_nodes(id) ON DELETE CASCADE,

@@ -24,6 +24,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.services.feedback_signals import feedback_excluded_ids
 from app.services.knowledge_tracing import build_user_state, estimate_mastery
 
 logger = logging.getLogger(__name__)
@@ -108,10 +109,19 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
     profile = _parse_vec(urow.pv)
     mastery = estimate_mastery(user_id, db)  # {node_id: 0~1}
 
+    # 피드백 제외(HIVE-37): understood/not_interested 콘텐츠는 추천에서 뺀다.
+    # 공용 헬퍼(feedback_signals)로 rule_based와 동일 신호를 공유한다.
+    excluded = feedback_excluded_ids(user_id, db)
+    params: dict = {"uid": user_id}
+    excl_clause = ""
+    if excluded:
+        params["excluded"] = list(excluded)
+        excl_clause = "AND c.id <> ALL(:excluded)"
+
     # 후보: 미독 + 임베딩 보유 + 대표 노드(최고 relevance_score)
     rows = db.execute(
         text(
-            """
+            f"""
             SELECT c.id, c.title, c.difficulty, c.quality_score,
                    c.text_embedding::text AS emb,
                    (SELECT m.node_id FROM content_node_mapping m
@@ -122,9 +132,10 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
               AND c.id NOT IN (
                   SELECT content_id FROM user_read_events WHERE user_id = :uid
               )
+              {excl_clause}
             """
         ),
-        {"uid": user_id},
+        params,
     ).fetchall()
     if not rows:
         return []

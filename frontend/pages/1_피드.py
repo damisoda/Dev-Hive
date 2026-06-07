@@ -6,7 +6,7 @@ import math
 
 import streamlit as st
 
-from lib.api import list_content
+from lib.api import list_content, list_feedback
 from lib.components import content_card
 
 st.set_page_config(page_title="피드 · Dev-Hive", layout="wide")
@@ -50,8 +50,9 @@ total = data.get("total", 0)
 pages = max(1, math.ceil(total / page_size))
 st.caption(f"총 {total}건 · {page}/{pages} 페이지")
 
+feedback_map = list_feedback(st.session_state["user_id"])
 for item in data["items"]:
-    content_card(item, st.session_state["user_id"], key_prefix="feed")
+    content_card(item, st.session_state["user_id"], key_prefix="feed", feedback_map=feedback_map)
 
 nav = st.columns([1, 2, 1])
 with nav[0]:

@@ -60,3 +60,22 @@ PERSONA_ONBOARDING: dict[str, dict] = {
 # 보수적으로(현재 레벨 주제를 확실히 익혔을 때만) 둔다. mastery는 HIVE-23 산출물 재사용.
 LEVEL_UP_THRESHOLD: dict[str, float] = {"입문": 0.6, "중급": 0.75}
 LEVEL_ORDER: list[str] = ["입문", "중급", "고급"]
+
+
+# ── 피드백 / influence_score (HIVE-37) ────────────────────────────────
+# 피드백 종류 (콘텐츠 1건당 유저 1개, 최신값으로 upsert)
+FEEDBACK_TYPES = frozenset({"understood", "too_hard", "want_more", "not_interested"})
+# 추천에서 제외할 피드백 (현재 상태 기반 — 피드백 취소/변경 시 즉시 복구)
+FEEDBACK_EXCLUDE = frozenset({"understood", "not_interested"})
+
+# influence_score = (읽은수 × 난이도가중 + streak × 0.5) × 레벨가중
+# 곱셈(가중)이라 활동이 0이면 레벨 높아도 0 (공짜 점수 없음). 정수 반올림 저장.
+INFLUENCE_DIFFICULTY_WEIGHT: dict[str, int] = {"입문": 1, "중급": 2, "고급": 3}
+INFLUENCE_DEFAULT_DIFFICULTY_WEIGHT: int = 1  # difficulty NULL/미지정
+INFLUENCE_STREAK_WEIGHT: float = 0.5
+INFLUENCE_LEVEL_MULTIPLIER: dict[str, float] = {"입문": 1.0, "중급": 1.15, "고급": 1.3}
+
+# rule_based 피드백 점수 가중 (휴리스틱, 데이터 fit 아님 — 추후 튜닝 대상)
+# want_more 중심과의 유사도 보너스 / too_hard 난이도 감점
+FEEDBACK_WANT_MORE_WEIGHT: float = 0.3
+FEEDBACK_TOO_HARD_PENALTY: float = 0.2
