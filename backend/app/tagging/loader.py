@@ -17,15 +17,19 @@ def load_content(
     tags: dict,
     embedding: list[float],
     conn: Connection,
+    min_quality: float = QUALITY_THRESHOLD,
 ) -> int | None:
     """
     content 테이블에 INSERT하고 content_node_mapping을 추가한다.
 
+    min_quality: 적재 최소 품질 점수(기본 0.5, 크롤 경로 유지).
+                 사용자 업로드(HIVE-33)는 더 낮은 값(예: 0.3)을 넘겨 기준을 완화한다.
+
     Returns:
-        삽입된 content.id. quality_score < 0.5이거나 URL 중복이면 None 반환.
+        삽입된 content.id. quality_score < min_quality이거나 URL 중복이면 None 반환.
     """
     quality_score = tags.get("quality_score", 0.0)
-    if quality_score < QUALITY_THRESHOLD:
+    if quality_score < min_quality:
         return None
 
     # content INSERT (URL 중복 시 스킵)

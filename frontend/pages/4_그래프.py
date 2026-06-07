@@ -26,6 +26,15 @@ if st.sidebar.button("새로고침", help="Auto-HKG 실행 후 등 최신 그래
     st.cache_data.clear()
     st.rerun()
 
+# 업로드 직후 진입(5_업로드에서 핸드오프): 캐시를 비워 방금 글의 노드를 즉시 반영 + 배너
+_uploaded = st.session_state.pop("just_uploaded", None)
+if _uploaded:
+    st.cache_data.clear()
+    if _uploaded.get("is_new_node"):
+        st.success(f"방금 올린 글로 새 주제 '{_uploaded.get('node_name')}'가 생겼어요 — 금색 노드를 찾아보세요.")
+    else:
+        st.success(f"방금 올린 글이 '{_uploaded.get('node_name')}'에 편입됐어요.")
+
 data = _load_graph()
 if not data:
     st.warning("그래프 데이터를 불러오지 못했습니다. 백엔드가 켜져 있는지 확인하세요.")
