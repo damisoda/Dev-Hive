@@ -183,6 +183,26 @@ def _is_ai_related(tags: list[str]) -> bool:
     return any(tag.casefold() in _AI_TAGS for tag in tags)
 
 
+# haiku content_type=experience 신호어 — 키워드 경로에서 경험글만 거르는 데 사용.
+# (튜토리얼/개념정리/뉴스/스터디노트 배제. 시드 유저는 사전 검증돼 미적용)
+_EXPERIENCE_SIGNALS: tuple[str, ...] = (
+    "해봤", "써봤", "만들어봤", "적용해봤", "구축해봤", "붙여봤", "돌려봤",
+    "사용해봤", "연결해봤", "써보니", "해보니", "만들어보니", "써본",
+    "만들기", "구현기", "도전기", "사용기", "적용기",
+    "후기", "회고", "느낀점", "느낀 점", "삽질", "시행착오", "경험담", "경험기",
+    "실제로", "실무에서", "실무 적용", "구축했", "만들었", "개발했", "적용했",
+    "활용했", "도입했", "연동했", "배포했", "마이그레이션했",
+    "배웠", "알게됐", "알게 됐", "깨달",
+    "i built", "i tried", "i used", "we built", "we used",
+    "lessons learned", "case study", "in production", "my experience",
+)
+
+
+def _is_experience(title: str, description: str) -> bool:
+    text = (title + " " + description).lower()
+    return any(sig in text for sig in _EXPERIENCE_SIGNALS)
+
+
 def _make_url(username: str, url_slug: str) -> str:
     return f"https://velog.io/@{username}/{url_slug}"
 
@@ -251,6 +271,11 @@ def fetch_by_keyword(keyword: str, seen_urls: set[str]) -> list[ContentSchema]:
             if not _is_ai_related(post.get("tags") or []):
                 continue
 
+            # 키워드 경로: 경험글만 통과(튜토/개념정리/뉴스/스터디노트 제외).
+            # title + short_description의 경험 신호로 판정 — body fetch 전이라 비용도 절약.
+            if not _is_experience(post.get("title") or "", post.get("short_description") or ""):
+                continue
+
             if int(post.get("likes") or 0) < VELOG_MIN_LIKES:
                 continue
 
@@ -291,7 +316,11 @@ def fetch_by_user(username: str, seen_urls: set[str]) -> list[ContentSchema]:
             if url in seen_urls:
                 continue
 
-            # 시드 유저는 AI 작성자로 사전 검증됐으므로 태그 필터 미적용
+            # 시드 유저도 AI 글만 — teo 등은 프론트/커리어 글이 더 많아 도메인 필터 필수.
+            # (경험 필터는 미적용 — 시드는 이미 경험비율로 엄선된 작성자)
+            if not _is_ai_related(post.get("tags") or []):
+                continue
+
             if int(post.get("likes") or 0) < VELOG_MIN_LIKES:
                 continue
 
@@ -332,15 +361,17 @@ def collect_velog(target: int = VELOG_TARGET_ITEMS, skip_seen: bool = True) -> l
         logger.info("기존 수집 URL %d건 로드 — 중복 제외", len(seen_urls))
     results: list[ContentSchema] = []
 
-    for keyword in VELOG_SEARCH_KEYWORDS:
-        if len(results) >= target:
-            break
-        results.extend(fetch_by_keyword(keyword, seen_urls))
-
+    # 시드 유저(엄선한 경험 작성자) 먼저 — 키워드 벌크에 밀려 스킵되지 않도록.
     for username in VELOG_SEED_USERS:
         if len(results) >= target:
             break
         results.extend(fetch_by_user(username, seen_urls))
+
+    # 남은 분량을 키워드 검색으로 채운다(경험 필터 적용 → 튜토/노트 배제).
+    for keyword in VELOG_SEARCH_KEYWORDS:
+        if len(results) >= target:
+            break
+        results.extend(fetch_by_keyword(keyword, seen_urls))
 
     logger.info("Velog 최종 수집: %d건", len(results))
     return results[:target]
