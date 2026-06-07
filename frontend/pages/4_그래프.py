@@ -13,6 +13,7 @@ from lib.graph_viz import build_network
 st.set_page_config(page_title="지식그래프 · Dev-Hive", layout="wide")
 st.title("지식그래프")
 st.caption("커뮤니티 콘텐츠가 대주제로 뭉치고, Auto-HKG가 새 하위노드를 키운다. 노드를 드래그·줌·호버해 보세요.")
+st.page_link("pages/5_업로드.py", label="이 그래프에 내 글 더하기 →")
 
 
 # /graph는 similar_to를 매번 pgvector로 재계산해 느리다 → 캐싱.

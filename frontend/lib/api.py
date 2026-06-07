@@ -82,3 +82,28 @@ def upload_content(title: str, body: str, url: str | None = None, user_id: int |
     except requests.RequestException as e:
         st.error(f"업로드 실패 (백엔드가 켜져 있나요?): {e}")
         return None
+
+
+def get_mastery(user_id: int):
+    """노드별 mastery(0~1) dict — 응답 `{user_id, mastery}`에서 mastery만 언랩 반환.
+
+    데이터 없음(404 등)/오류면 None(빨간 배너 없이 조용히 — 신규 유저 정상 경로).
+    """
+    try:
+        r = requests.get(f"{API_BASE_URL}/recommend/mastery", params={"user_id": user_id}, timeout=15)
+    except requests.RequestException:
+        return None
+    if r.status_code != 200:
+        return None
+    return (r.json() or {}).get("mastery") or {}
+
+
+def get_user_state(user_id: int):
+    """유저 상태 `{user_id, user_state}` — 프로필 학습 현황용. 없음/오류면 None(조용히)."""
+    try:
+        r = requests.get(f"{API_BASE_URL}/recommend/user-state", params={"user_id": user_id}, timeout=15)
+    except requests.RequestException:
+        return None
+    if r.status_code != 200:
+        return None
+    return r.json()

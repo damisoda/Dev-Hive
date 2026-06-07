@@ -73,6 +73,10 @@ if "user_id" not in st.session_state:
                 st.session_state["current_level"] = profile.get("current_level", "입문")
                 st.rerun()
 else:
-    st.markdown(
-        "좌측 사이드바의 **피드 / 커리큘럼 / 프로필** 페이지를 이용해주세요."
+    st.subheader("온보딩 완료")
+    st.write("이제 숙련도에 맞춘 학습 경로와 추천을 볼 수 있어요.")
+    st.page_link("pages/2_커리큘럼.py", label="내 커리큘럼 보러가기 →")
+    st.caption(
+        "좌측 사이드바: **커리큘럼**(추천) · **피드**(탐색) · **그래프**(전체 지도) · "
+        "**업로드**(내 글 기여) · **프로필**"
     )

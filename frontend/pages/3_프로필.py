@@ -1,8 +1,7 @@
-"""프로필 - 본인 정보 표시. 읽은 이력은 Layer 2에서 별도 엔드포인트 추가."""
-
+"""프로필 - 본인 정보 + 학습 현황(user-state 자연어)."""
 import streamlit as st
 
-from lib.api import get_profile
+from lib.api import get_profile, get_user_state
 
 st.set_page_config(page_title="프로필 · Dev-Hive", layout="wide")
 st.title("프로필")
@@ -11,16 +10,25 @@ if "user_id" not in st.session_state:
     st.warning("프로필을 먼저 생성해주세요 (메인 페이지).")
     st.stop()
 
-profile = get_profile(st.session_state["user_id"])
+uid = st.session_state["user_id"]
+profile = get_profile(uid)
 if profile:
     cols = st.columns(2)
     with cols[0]:
         st.metric("이름", profile.get("display_name", "-"))
         st.metric("직군", profile.get("persona", "-"))
     with cols[1]:
-        st.metric("현재 단계", profile.get("current_level", "입문") if "current_level" in profile else "입문")
-        st.metric("영향력 점수", profile.get("influence_score", 0) if "influence_score" in profile else 0)
+        st.metric("현재 단계", profile.get("current_level") or "입문")
+        st.metric("영향력 점수", profile.get("influence_score") or 0)
 
 st.divider()
-st.subheader("읽은 콘텐츠 이력")
-st.info("이력 조회 엔드포인트는 Layer 2(6/7~)에서 추가 예정입니다.")
+st.subheader("내 학습 현황")
+state = get_user_state(uid)
+if state and state.get("user_state"):
+    # 현재 레벨 · 관심 분야 · 노드별 읽음 이력(자연어). 줄바꿈 보존 위해 text.
+    st.text(state["user_state"])
+else:
+    st.caption("콘텐츠를 읽으면 여기에 레벨·관심 분야·읽음 이력이 표시됩니다.")
+
+st.divider()
+st.page_link("pages/2_커리큘럼.py", label="내 커리큘럼으로 →")
