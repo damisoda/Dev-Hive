@@ -10,7 +10,11 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 def _handle(response: requests.Response):
     if response.status_code >= 400:
-        st.error(f"API 오류 ({response.status_code}): {response.text}")
+        try:
+            detail = response.json().get("detail") or response.text
+        except Exception:
+            detail = response.text
+        st.error(detail)   # FastAPI detail을 그대로(친화적 메시지), raw JSON/상태코드 노출 방지
         return None
     return response.json()
 
@@ -64,4 +68,17 @@ def get_graph():
         return _handle(requests.get(f"{API_BASE_URL}/graph", timeout=30))
     except requests.RequestException as e:
         st.error(f"그래프 API 연결 실패 (백엔드가 켜져 있나요?): {e}")
+        return None
+
+
+def upload_content(title: str, body: str, url: str | None = None, user_id: int | None = None):
+    # 태깅+임베딩+Auto-HKG(LLM 호출 포함)라 넉넉한 타임아웃.
+    try:
+        return _handle(requests.post(
+            f"{API_BASE_URL}/content",
+            json={"title": title, "body": body, "url": url, "user_id": user_id},
+            timeout=60,
+        ))
+    except requests.RequestException as e:
+        st.error(f"업로드 실패 (백엔드가 켜져 있나요?): {e}")
         return None
