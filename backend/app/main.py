@@ -1,8 +1,21 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api import auth, content, progress, recommend
+from app.crawler.scheduler import start_scheduler, stop_scheduler
 
-app = FastAPI(title="Dev-Hive API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_scheduler()
+    try:
+        yield
+    finally:
+        stop_scheduler()
+
+
+app = FastAPI(title="Dev-Hive API", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/health")

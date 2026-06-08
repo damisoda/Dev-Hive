@@ -34,13 +34,14 @@ def load_content(
     content 테이블에 INSERT하고 content_node_mapping을 추가한다.
 
     Returns:
-        삽입된 content.id. quality_score < 0.5이거나 URL 중복이면 None 반환.
+        신규 삽입된 content.id. quality_score < 0.5이거나 기존 URL upsert이면 None 반환.
     """
     quality_score = tags.get("quality_score", 0.0)
     if quality_score < QUALITY_THRESHOLD:
         return None
 
-    # content INSERT (URL 중복 시 스킵)
+    # content INSERT.
+    # URL 중복 시 body/text_embedding은 건드리지 않고 engagement만 최신 수치로 갱신한다.
     row = conn.execute(
         text("""
             INSERT INTO content (
@@ -52,8 +53,11 @@ def load_content(
                 :language, :difficulty, :quality_score, :content_type,
                 (:embedding)::vector, :likes, :comments, :published_at
             )
-            ON CONFLICT (url) DO NOTHING
-            RETURNING id
+            ON CONFLICT (url) DO UPDATE SET
+                engagement_likes = EXCLUDED.engagement_likes,
+                engagement_comments = EXCLUDED.engagement_comments,
+                crawled_at = NOW()
+            RETURNING id, (xmax = 0) AS inserted
         """),
         {
             "title": item.get("title", ""),
@@ -73,7 +77,10 @@ def load_content(
     ).fetchone()
 
     if row is None:
-        return None  # URL 중복으로 스킵됨
+        return None
+
+    if not row.inserted:
+        return None  # 기존 콘텐츠는 engagement만 갱신하고 재매핑/본문 재삽입은 하지 않음
 
     content_id = row.id
 

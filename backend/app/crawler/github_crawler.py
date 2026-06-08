@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import html
 import logging
 import os
 import re
@@ -14,6 +16,7 @@ from app.crawler.normalizer import ContentSchema, normalize
 logger = logging.getLogger(__name__)
 
 GITHUB_API_URL = "https://api.github.com/search/repositories"
+GITHUB_REPO_API_URL = "https://api.github.com/repos/{full_name}/readme"
 
 GITHUB_TARGET_ITEMS = int(os.getenv("GITHUB_TARGET_ITEMS", "300"))
 GITHUB_MIN_STARS = int(os.getenv("GITHUB_MIN_STARS", "30"))
@@ -25,6 +28,7 @@ GITHUB_REQUEST_SLEEP_SECONDS = float(os.getenv("GITHUB_REQUEST_SLEEP_SECONDS", "
 GITHUB_RATE_LIMIT_MAX_SLEEP_SECONDS = int(os.getenv("GITHUB_RATE_LIMIT_MAX_SLEEP_SECONDS", "60"))
 GITHUB_MAX_SEARCHES_WITH_TOKEN = int(os.getenv("GITHUB_MAX_SEARCHES_WITH_TOKEN", "120"))
 GITHUB_MAX_SEARCHES_WITHOUT_TOKEN = int(os.getenv("GITHUB_MAX_SEARCHES_WITHOUT_TOKEN", "10"))
+GITHUB_README_MAX_CHARS = int(os.getenv("GITHUB_README_MAX_CHARS", "2500"))
 HTTP_TIMEOUT_SECONDS = int(os.getenv("HTTP_TIMEOUT_SECONDS", "30"))
 # README 본문 보강(레퍼런스 깊이). repo 설명 한 줄로는 학습 콘텐츠가 부실해 README를 body로 합친다.
 # README 조회는 repo당 API 1콜이라 rate limit 보호를 위해 토큰이 있을 때만 호출한다.
@@ -189,6 +193,16 @@ def _sleep_for_rate_limit(response: httpx.Response) -> None:
     time.sleep(sleep_seconds)
 
 
+def _parse_github_datetime(value: str | None) -> datetime:
+    if not value:
+        return datetime.now(timezone.utc)
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        logger.exception("Failed to parse GitHub datetime: %s", value)
+        return datetime.now(timezone.utc)
+
+
 def _fetch_search_page(
     client: httpx.Client,
     query: str,
@@ -223,54 +237,25 @@ def _fetch_search_page(
         logger.exception("Unexpected GitHub error. query=%s page=%s", query, page)
         return []
 
-
-def _fetch_readme(client: httpx.Client, full_name: str) -> str:
-    """레포 README 원문을 가져온다(raw 텍스트). 없거나(404) 실패하면 ''를 반환한다."""
-    if not full_name:
-        return ""
-    try:
-        response = client.get(
-            f"https://api.github.com/repos/{full_name}/readme",
-            headers={"Accept": "application/vnd.github.raw+json"},
-        )
-
-        if response.status_code in {403, 429}:
-            _sleep_for_rate_limit(response)
-            return ""
-        if response.status_code == 404:
-            return ""
-
-        response.raise_for_status()
-        return response.text[:GITHUB_README_MAX_CHARS]
-
-    except (httpx.HTTPStatusError, httpx.RequestError):
-        logger.warning("GitHub README fetch failed. repo=%s", full_name)
-        return ""
-    except Exception:
-        logger.exception("Unexpected README fetch error. repo=%s", full_name)
-        return ""
-
-
-def _normalize_repo(repo: dict[str, Any], readme: str = "") -> ContentSchema | None:
+def _normalize_repo(client: httpx.Client, repo: dict[str, Any]) -> ContentSchema | None:
     name = repo.get("full_name") or repo.get("name") or ""
     description = repo.get("description") or ""
 
     if not _matches_ai_keyword(name, description):
         return None
 
-    # README가 있으면 설명 + README를 본문으로 합쳐 깊이를 보강한다(없으면 설명만).
-    if readme:
-        body = f"{description}\n\n{readme}".strip() if description else readme
+    token = os.getenv("GITHUB_TOKEN")
+    if GITHUB_FETCH_README and token:
+        body = _fetch_readme_body(client, name, description)
     else:
         body = description
-
     return normalize(
         source="github_trending",
         title=name,
         url=repo.get("html_url") or "",
         body=body,
         likes=int(repo.get("stargazers_count") or 0),
-        published_at=repo.get("created_at"),
+        published_at=_parse_github_datetime(repo.get("created_at")),
     )
 
 
@@ -318,13 +303,7 @@ def collect_github(target_total: int = GITHUB_TARGET_ITEMS) -> list[ContentSchem
                     if not _matches_ai_keyword(name, description):
                         continue
 
-                    readme = (
-                        _fetch_readme(client, name)
-                        if (GITHUB_FETCH_README and token)
-                        else ""
-                    )
-
-                    item = _normalize_repo(repo, readme)
+                    item = _normalize_repo(client, repo)
                     if item is None:
                         continue
 
