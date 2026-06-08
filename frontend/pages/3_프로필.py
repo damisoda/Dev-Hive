@@ -1,7 +1,8 @@
 """프로필 - 본인 정보 + 학습 현황(user-state 자연어)."""
 import streamlit as st
 
-from lib.api import get_profile, get_user_state
+from lib.api import get_profile, get_stats, get_user_state
+from lib.components import render_contribution_heatmap
 
 st.set_page_config(page_title="프로필 · Dev-Hive", layout="wide")
 st.title("프로필")
@@ -12,14 +13,26 @@ if "user_id" not in st.session_state:
 
 uid = st.session_state["user_id"]
 profile = get_profile(uid)
+stats = get_stats(uid)
+inf = stats.get("influence_score", 0) if stats else 0
+streak = stats.get("streak", 0) if stats else 0
 if profile:
-    cols = st.columns(2)
+    cols = st.columns(4)
     with cols[0]:
         st.metric("이름", profile.get("display_name", "-"))
-        st.metric("직군", profile.get("persona", "-"))
     with cols[1]:
         st.metric("현재 단계", profile.get("current_level") or "입문")
-        st.metric("영향력 점수", profile.get("influence_score") or 0)
+    with cols[2]:
+        st.metric("영향력 점수", inf)
+    with cols[3]:
+        st.metric("연속 학습", f"{streak}일")
+
+st.divider()
+st.subheader("학습 잔디")
+if stats and stats.get("heatmap"):
+    render_contribution_heatmap(stats["heatmap"])
+else:
+    st.caption("콘텐츠를 읽으면 여기에 학습 기록(잔디)이 채워집니다.")
 
 st.divider()
 st.subheader("내 학습 현황")

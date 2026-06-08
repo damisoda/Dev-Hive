@@ -15,6 +15,7 @@ from app.database import get_db
 from app.models.content import Content
 from app.models.event import UserReadEvent
 from app.models.user import User
+from app.services.influence import update_influence_score
 from app.services.leveling import check_and_level_up
 from app.services.profile_vector import update_from_read_history
 
@@ -32,6 +33,7 @@ class ProgressResponse(BaseModel):
     read_at: datetime
     leveled_up: bool = False        # 이번 읽음으로 레벨이 올랐는지 (HIVE-36)
     new_level: Optional[str] = None  # 올랐다면 새 레벨, 아니면 None
+    influence_score: Optional[int] = None  # 갱신된 영향력 점수 (HIVE-37)
 
 
 @router.patch("", response_model=ProgressResponse)
@@ -68,9 +70,17 @@ def mark_read(
     except Exception:
         logger.exception("레벨업 체크 실패 (user_id=%s)", payload.user_id)
 
+    influence = None
+    try:
+        # influence_score 갱신 (HIVE-37) — 레벨업 뒤라 새 레벨가중이 반영됨
+        influence = update_influence_score(payload.user_id, db)
+    except Exception:
+        logger.exception("influence_score 갱신 실패 (user_id=%s)", payload.user_id)
+
     return ProgressResponse(
         status="ok",
         read_at=event.read_at,
         leveled_up=level_up is not None,
         new_level=level_up["new_level"] if level_up else None,
+        influence_score=influence,
     )
