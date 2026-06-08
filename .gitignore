@@ -34,6 +34,7 @@ build/
 
 # 크롤링 데이터 (DB에 적재, git에 올리지 않음)
 data/raw/
+data/raw/*
 data/cache/
 data/*.json
 data/*.csv

@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 
 VELOG_GQL_URL = "https://v2.velog.io/graphql"
 HTTP_TIMEOUT = int(os.getenv("HTTP_TIMEOUT_SECONDS", "30"))
-VELOG_TARGET_ITEMS = int(os.getenv("VELOG_TARGET_ITEMS", "300"))
+VELOG_TARGET_ITEMS = int(os.getenv("VELOG_TARGET_ITEMS", "600"))
 VELOG_PAGE_SIZE = int(os.getenv("VELOG_PAGE_SIZE", "20"))
-VELOG_MAX_PAGES_PER_KEYWORD = int(os.getenv("VELOG_MAX_PAGES_PER_KEYWORD", "5"))
+VELOG_MAX_PAGES_PER_KEYWORD = int(os.getenv("VELOG_MAX_PAGES_PER_KEYWORD", "15"))
 VELOG_REQUEST_SLEEP = float(os.getenv("VELOG_REQUEST_SLEEP", "0.5"))
-VELOG_MIN_LIKES = int(os.getenv("VELOG_MIN_LIKES", "0"))
+VELOG_MIN_LIKES = int(os.getenv("VELOG_MIN_LIKES", "1"))
 VELOG_FETCH_FULL_BODY = os.getenv("VELOG_FETCH_FULL_BODY", "true").lower() != "false"
 VELOG_MIN_BODY_LEN = int(os.getenv("VELOG_MIN_BODY_LEN", "500"))
 
@@ -35,8 +35,20 @@ VELOG_SEARCH_KEYWORDS: list[str] = [
         "프롬프트,프롬프트엔지니어링,"
         # Agentic AI
         "에이전트,MCP,멀티에이전트,claude code,"
-        # 멀티모달 AI
+        # 최신 AI 에이전트 프레임워크 & 도구
+        "CrewAI,AutoGen,AG2,AgentScope,LangGraph,"
+        "Hermes Agent,OpenClaw,Claude Design,"
+        "Pydantic AI,OpenAI Agents SDK,Google ADK,Gemini ADK,"
+        "Windsurf,OpenCode,SwarmClaw,Kimi,"
+        # 멀티모달 AI — 이미지·영상 생성, 디자인 프롬프트
         "이미지생성,멀티모달,"
+        "미드저니,midjourney,stable diffusion,스테이블디퓨전,"
+        "Flux,GPT Image 2,gpt image,firefly,"
+        "나노바나나,덕테이프,ducktape,"
+        "ComfyUI,Ideogram,이디어그램,"
+        "Kling,클링,Runway,Hailuo,하이루오,Veo,"
+        "이미지 프롬프트,디자인 프롬프트,AI 그림,AI 디자인,"
+        "AI 이미지,그림 생성,영상 생성,sora,"
         # RAG & 지식 관리
         "RAG,langchain,임베딩,"
         # 오픈소스 AI
@@ -115,10 +127,23 @@ _AI_TAGS: frozenset[str] = frozenset(
         "에이전트", "agent", "agentic", "MCP", "멀티에이전트", "multi-agent",
         "claude code", "codex", "langgraph", "crewai", "autogen",
         "도구호출", "tool use", "function calling",
+        # 최신 에이전트 프레임워크 & 도구 (2025~2026)
+        "ag2", "agentscope", "hermes agent", "hermes",
+        "openclaw", "claude design", "swarmclaw",
+        "pydantic ai", "openai agents sdk", "openai sdk",
+        "google adk", "gemini adk",
+        "windsurf", "opencode", "kimi",
         # 멀티모달 AI
         "멀티모달", "multimodal", "이미지생성", "image generation",
         "VLM", "비전모델", "sora", "midjourney", "stable diffusion",
         "diffusion", "text-to-image", "텍스트투이미지",
+        "미드저니", "스테이블디퓨전", "Flux", "GPT Image 2", "gpt image",
+        "firefly", "파이어플라이", "Adobe Firefly",
+        "ComfyUI", "Ideogram", "이디어그램",
+        "Kling", "클링", "Runway", "Hailuo", "하이루오", "Veo",
+        "이미지 프롬프트", "디자인 프롬프트", "AI 그림", "AI 디자인",
+        "AI 이미지", "그림 생성", "영상 생성", "Canva AI", "캔바 AI",
+        "나노바나나", "덕테이프", "ducktape", "nano banana",
         # RAG & 지식 관리
         "RAG", "임베딩", "embedding", "벡터DB", "vector db", "벡터데이터베이스",
         "langchain", "llamaindex", "검색증강생성", "pinecone", "pgvector",
@@ -127,32 +152,20 @@ _AI_TAGS: frozenset[str] = frozenset(
         "huggingface", "ollama", "vllm", "파인튜닝", "fine-tuning", "lora",
         "로컬AI", "로컬LLM", "오픈소스AI", "transformer", "머신러닝", "딥러닝",
         "자연어처리", "nlp", "ml",
-        # AI 워크플로우 & 자동화
-        "n8n", "make.com", "zapier", "자동화", "업무자동화", "AI자동화",
-        "workflow", "워크플로우", "반복작업자동화",
-        # AI 엔지니어링
-        "MLOps", "LLMOps", "AI개발", "AI엔지니어링", "배포", "fastapi",
-        "풀스택AI", "성능최적화", "프로덕션AI", "copilot",
+        # AI 워크플로우 & 자동화 (n8n/zapier 등 AI 자동화 도구 특화 — "워크플로우" 단독은 제외)
+        "n8n", "make.com", "zapier", "AI자동화", "업무자동화",
+        # AI 엔지니어링 ("배포"·"fastapi"·"성능최적화" 제외 — 일반 웹개발 태그로도 쓰임)
+        "MLOps", "LLMOps", "AI개발", "AI엔지니어링", "프로덕션AI", "copilot",
     ]
 )
 
 # AI/ML 글을 작성하는 시드 유저 목록
 # 팀에서 직접 확인한 양질의 작성자를 여기에 추가하세요 (velog.io/@<username>)
+# .env의 VELOG_SEED_USERS (쉼표 구분) 로 관리 — 코드에 하드코딩 금지
 VELOG_SEED_USERS: list[str] = [
-    # velog_seed_finder --experience-first (pages=5) 결과
-    # 조건: AI 도메인 키워드 검색에서 발견 + 경험글 비율 높음 + 수집 검증 완료
-    "teo",           # 9021좋아요, 29글, 31%경험, 4도메인
-    "ken708",        # 3240좋아요, 20글, 50%경험, Agentic·오픈소스·멀티모달
-    "addiescode",    # 3564좋아요, 9글,  100%경험, AI엔지니어링
-    "hayounsong",    # 3204좋아요, 9글,  100%경험, AI엔지니어링
-    "velopert",      # 3168좋아요, 20글, 80%경험, AI엔지니어링
-    "ansrjsdn",      # 1671좋아요, 14글, 86%경험, AI엔지니어링
-    "kim-taewoo",    # 1689좋아요, 9글,  100%경험, AI엔지니어링
-    "bokdol11859",   # 1116좋아요, 9글,  100%경험, 멀티모달AI
-    "hmmhmmhm",      # 807좋아요,  3글,  100%경험, 멀티모달AI·프롬프트
-    "hustle-dev",    # 611좋아요,  1글,  100%경험, AI엔지니어링
-    "k-svelte-master",  # 481좋아요, 4글, 25%경험, Agentic·프롬프트
-    "jujini31",      # 43좋아요,   1글,  100%경험, Agentic AI (Codex·MCP)
+    u.strip()
+    for u in os.getenv("VELOG_SEED_USERS", "").split(",")
+    if u.strip()
 ]
 
 
@@ -341,7 +354,7 @@ def fetch_by_user(username: str, seen_urls: set[str]) -> list[ContentSchema]:
 
 
 def _load_seen_urls(data_dir: Path = Path("data/raw")) -> set[str]:
-    """기존 수집 파일에서 URL을 로드해 재수집 시 중복을 방지한다."""
+    """기존 수집 파일 + 블랙리스트에서 URL을 로드해 재수집 시 중복을 방지한다."""
     seen: set[str] = set()
     for f in data_dir.glob("velog_*.json"):
         try:
@@ -352,6 +365,14 @@ def _load_seen_urls(data_dir: Path = Path("data/raw")) -> set[str]:
             )
         except Exception:
             pass
+    # 수동 제외 목록 — 파일에서 삭제해도 재수집되지 않도록
+    exclusions = data_dir / "velog_exclusions.txt"
+    if exclusions.exists():
+        for line in exclusions.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                seen.add(line)
+        logger.debug("수집 제외 목록 로드: %s", exclusions)
     return seen
 
 

@@ -47,6 +47,18 @@ EXPERIENCE_KEYWORDS: dict[str, list[str]] = {
         "AI 삽질", "AI 시행착오",
         "n8n 후기", "ollama 후기", "RAG 후기",
         "에이전트 후기", "MCP 후기",
+        # 입문 경험 타겟
+        "처음 써봤", "처음 써본", "처음 사용해봤",
+        "입문기", "도입기", "도입 후기",
+        "마이그레이션", "codex 후기", "cursor 후기",
+        "claude code 후기", "vibe coding",
+        # 입문·중급 AI 코딩 도구 후기
+        "cursor ai", "커서 ai", "코파일럿 후기", "github copilot 후기",
+        "AI 코딩 후기", "AI 코딩 경험",
+        # 입문자 관점
+        "AI 입문", "AI 독학", "AI 공부",
+        "챗GPT 활용", "ChatGPT 활용", "chatgpt 후기",
+        "노코드 후기", "자동화 후기", "업무 자동화 후기",
     ],
 }
 
