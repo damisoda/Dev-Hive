@@ -30,3 +30,4 @@ pytest==8.3.3
 # 그래프 (Layer 2)
 networkx==3.6.1  # 이종 그래프 표현 (app.graph.builder)
 # torch / torch-geometric는 Colab 환경에서 설치 (GraphSAGE)
+#
