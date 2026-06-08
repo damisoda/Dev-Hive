@@ -13,6 +13,7 @@ from lib.graph_viz import build_network
 st.set_page_config(page_title="지식그래프 · Dev-Hive", layout="wide")
 st.title("지식그래프")
 st.caption("커뮤니티 콘텐츠가 대주제로 뭉치고, Auto-HKG가 새 하위노드를 키운다. 노드를 드래그·줌·호버해 보세요.")
+st.page_link("pages/5_업로드.py", label="이 그래프에 내 글 더하기 →")
 
 
 # /graph는 similar_to를 매번 pgvector로 재계산해 느리다 → 캐싱.
@@ -25,6 +26,15 @@ def _load_graph():
 if st.sidebar.button("새로고침", help="Auto-HKG 실행 후 등 최신 그래프 다시 받기"):
     st.cache_data.clear()
     st.rerun()
+
+# 업로드 직후 진입(5_업로드에서 핸드오프): 캐시를 비워 방금 글의 노드를 즉시 반영 + 배너
+_uploaded = st.session_state.pop("just_uploaded", None)
+if _uploaded:
+    st.cache_data.clear()
+    if _uploaded.get("is_new_node"):
+        st.success(f"방금 올린 글로 새 주제 '{_uploaded.get('node_name')}'가 생겼어요 — 금색 노드를 찾아보세요.")
+    else:
+        st.success(f"방금 올린 글이 '{_uploaded.get('node_name')}'에 편입됐어요.")
 
 data = _load_graph()
 if not data:

@@ -19,12 +19,10 @@ Note: pgvector는 vector * numeric 연산 미지원 → 가중 평균을 Python�
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-# 온보딩 문항 키 → 관심 curriculum_node 이름 매핑
-_QUESTION_TO_NODES: dict[str, list[str]] = {
-    "ai_tool_usage": ["AI 워크플로우 & 자동화", "프롬프트 엔지니어링"],
-    "llm_understanding": ["AI 엔지니어링", "RAG & 지식 관리"],
-    "advanced_topics": ["Agentic AI", "멀티모달 AI", "오픈소스 AI"],
-}
+# 온보딩 문항 키 → 관심 curriculum_node 이름 매핑 (단일 소스: constants).
+# 별도 복사본을 두면 매핑 변경 시 mastery/user_state와 profile_vector가 다른 노드를
+# 보게 되므로, constants의 정의를 그대로 재사용한다.
+from app.services.constants import QUESTION_TO_NODES as _QUESTION_TO_NODES
 
 _ONBOARDING_WEIGHT_MAX = 1.0
 _ONBOARDING_WEIGHT_MIN = 0.1

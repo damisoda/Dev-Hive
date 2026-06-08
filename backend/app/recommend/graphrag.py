@@ -1,0 +1,176 @@
+"""HIVE-22: GraphRAG 추천 (구조 우선).
+
+추천 '결정'은 알고리즘 4성분 점수로 내린다 (LLM 아님):
+  관련성 0.3 — profile_vector ↔ content 임베딩 mean-centering 코사인
+  난이도 0.4 — estimate_mastery(node) ↔ content.difficulty 적합도
+              (약한 개념 → 쉬운/선행, 강한 개념 → 어려운/심화)
+  경로   0.2 — 선후(prerequisite) 일관성. ※ 현재 prerequisite 데이터가 없어 중립값.
+              Auto-HKG가 precedes를 채우면 활성화(지금은 순위에 영향 없음).
+  다양성 0.1 — 같은 노드 편중 방지(그리디 다양성 재정렬, MMR 변형).
+
+LLM(Haiku)은 top-1의 '왜 이 순서' 근거 1회 생성에만 쓴다 — 결정엔 미관여,
+키가 없거나 실패하면 템플릿으로 폴백.
+
+참고: CG-RAG(2602.00020)의 mastery 기반 커리큘럼 검색 방향. 4성분 가중치/centering은
+도메인 적응(튜닝 대상)이며 논문 수치 그대로가 아님.
+rule_based.recommend_next와 동일 시그니처 — 드롭인 교체.
+"""
+from __future__ import annotations
+
+import logging
+
+import numpy as np
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.services.knowledge_tracing import build_user_state, estimate_mastery
+
+logger = logging.getLogger(__name__)
+
+W_REL, W_DIFF, W_PATH, W_DIV = 0.3, 0.4, 0.2, 0.1
+_DIFFICULTY_NORM = {"입문": 0.0, "중급": 0.5, "고급": 1.0}
+_NEUTRAL_PATH = 0.5          # prerequisite 데이터 부재 시 중립(순위 무영향)
+_HAIKU_MODEL = "claude-haiku-4-5-20251001"
+
+
+def _parse_vec(raw) -> np.ndarray | None:
+    """pgvector 반환(str "[...]" 또는 list)을 np.ndarray로."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        vals = [v for v in raw.strip("[]").split(",") if v.strip()]
+        if not vals:                      # "[]"/"" 같은 빈 임베딩 방어
+            return None
+        return np.array([float(x) for x in vals], dtype=float)
+    return np.array([float(x) for x in raw], dtype=float)
+
+
+def _global_centroid(db: Session) -> np.ndarray | None:
+    """전체 콘텐츠 임베딩 평균(anisotropy 보정용 중심). 데이터 늘면 변하므로 호출 시점 계산."""
+    row = db.execute(
+        text("SELECT AVG(text_embedding)::text FROM content WHERE text_embedding IS NOT NULL")
+    ).scalar()
+    return _parse_vec(row)
+
+
+def _difficulty_fit(content_difficulty: str | None, mastery: float) -> float:
+    """이상 난이도 ≈ 현재 mastery → 적합도 = 1 - |난이도 - mastery| (0~1)."""
+    d = _DIFFICULTY_NORM.get(content_difficulty, 0.5)
+    return 1.0 - abs(d - mastery)
+
+
+def _template_reason(c: dict) -> str:
+    # profile_vector 기반 관련성이 실제로 계산됐을 때만 '관심 적합' 표기(quality 폴백을 관심으로 오표기 방지)
+    reason = f"난이도 적합 {c['diff']:.0%}"
+    if c.get("rel_real"):
+        reason += f" · 관심 적합 {c['rel']:.0%}"
+    return reason
+
+
+def _rationale(user_state: str, item: dict) -> str | None:
+    """top-1 근거 한 문장(Haiku). 키 없거나 실패 시 None → 템플릿 폴백."""
+    try:
+        import anthropic
+
+        key = settings.anthropic_api_key or None
+        client = anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
+        msg = client.messages.create(
+            model=_HAIKU_MODEL,
+            max_tokens=200,
+            system=(
+                "학습 추천 이유를 한국어 한 문장으로 설명한다. 유저 상태와 콘텐츠를 보고 "
+                "'왜 지금 이걸 봐야 하는지'를 과장 없이 간결하게."
+            ),
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"[유저 상태]\n{user_state}\n\n"
+                    f"[추천 콘텐츠]\n제목: {item['title']}\n난이도: {item.get('difficulty')}"
+                ),
+            }],
+        )
+        return msg.content[0].text.strip()
+    except Exception as exc:  # 키 부재/네트워크/응답 형식 등 — 결정엔 영향 없으므로 폴백
+        logger.warning("rationale 생성 실패(템플릿 폴백): %s", exc)
+        return None
+
+
+def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
+    """4성분 알고리즘으로 미독 콘텐츠를 정렬해 top_n 추천. (rule_based 드롭인 교체)"""
+    urow = db.execute(
+        text("SELECT profile_vector::text AS pv FROM users WHERE id = :uid"),
+        {"uid": user_id},
+    ).fetchone()
+    if urow is None:
+        return []
+
+    profile = _parse_vec(urow.pv)
+    mastery = estimate_mastery(user_id, db)  # {node_id: 0~1}
+
+    # 후보: 미독 + 임베딩 보유 + 대표 노드(최고 relevance_score)
+    rows = db.execute(
+        text(
+            """
+            SELECT c.id, c.title, c.difficulty, c.quality_score,
+                   c.text_embedding::text AS emb,
+                   (SELECT m.node_id FROM content_node_mapping m
+                    WHERE m.content_id = c.id
+                    ORDER BY m.relevance_score DESC LIMIT 1) AS node_id
+            FROM content c
+            WHERE c.text_embedding IS NOT NULL
+              AND c.id NOT IN (
+                  SELECT content_id FROM user_read_events WHERE user_id = :uid
+              )
+            """
+        ),
+        {"uid": user_id},
+    ).fetchall()
+    if not rows:
+        return []
+
+    g = _global_centroid(db)
+    pc = (profile - g) if (profile is not None and g is not None) else None
+
+    cands: list[dict] = []
+    for r in rows:
+        emb = _parse_vec(r.emb)
+        # 관련성: centered 코사인 → 0~1. profile_vector(또는 centroid) 없으면 quality로 대체(콜드스타트).
+        rel_real = pc is not None and emb is not None
+        if rel_real:
+            ec = emb - g
+            denom = float(np.linalg.norm(pc) * np.linalg.norm(ec)) or 1.0
+            rel = (float(np.dot(pc, ec) / denom) + 1.0) / 2.0
+        else:
+            rel = float(r.quality_score) if r.quality_score is not None else 0.5
+        diff = _difficulty_fit(r.difficulty, mastery.get(r.node_id, 0.0))
+        base = W_REL * rel + W_DIFF * diff + W_PATH * _NEUTRAL_PATH
+        cands.append({
+            "content_id": r.id, "title": r.title, "difficulty": r.difficulty,
+            "node_id": r.node_id, "rel": rel, "rel_real": rel_real, "diff": diff, "base": base,
+        })
+
+    # 그리디 선택: 매 단계 base + 다양성(같은 노드 누적 penalty) 최대를 뽑는다.
+    selected: list[dict] = []
+    node_count: dict = {}
+    while cands and len(selected) < top_n:
+        best, best_score = None, -1.0
+        for c in cands:
+            div = 1.0 / (1.0 + node_count.get(c["node_id"], 0))
+            s = c["base"] + W_DIV * div
+            if s > best_score:
+                best, best_score = c, s
+        selected.append({**best, "score": round(best_score, 4)})
+        node_count[best["node_id"]] = node_count.get(best["node_id"], 0) + 1
+        cands.remove(best)
+
+    # top-1만 LLM 근거(1회), 나머지는 템플릿
+    user_state = build_user_state(user_id, db)
+    out: list[dict] = []
+    for i, c in enumerate(selected):
+        reason = (_rationale(user_state, c) or _template_reason(c)) if i == 0 else _template_reason(c)
+        out.append({
+            "content_id": c["content_id"], "title": c["title"],
+            "score": c["score"], "reason": reason,
+        })
+    return out
