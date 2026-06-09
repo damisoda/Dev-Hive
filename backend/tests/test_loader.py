@@ -36,7 +36,9 @@ class _FakeConn:
     def execute(self, clause, params=None):
         sql = str(clause)
         if "INSERT INTO content " in sql:
-            return _Result([] if self._url_conflict else [_row(id=self._content_id)])
+            # ON CONFLICT DO UPDATE ... RETURNING id, (xmax = 0) AS inserted (HIVE-35 dedup):
+            # 신규 삽입이면 inserted=True, 기존 URL(충돌→engagement만 갱신)이면 inserted=False.
+            return _Result([_row(id=self._content_id, inserted=not self._url_conflict)])
         if "SELECT id, name FROM curriculum_nodes" in sql:
             return _Result([_row(id=i, name=n) for i, n in self._nodes])
         if "INSERT INTO content_node_mapping" in sql:
