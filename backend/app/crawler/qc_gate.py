@@ -31,8 +31,8 @@ ALLOWED_SOURCES = frozenset(
 
 # github_trending 최소 star 수. stars = engagement.likes(github_crawler가 매핑).
 # stars = "써볼 만하다"는 사회적 증거. 실측 분포(300건): ≥500→18% / ≥300→26% / ≥100→60%.
-# 300 = notable은 살리되 개인 토이레포 꼬리는 컷(≥500은 과하게 빡셈, ≥100은 "인기"라기엔 느슨). 튜닝 가능.
-GITHUB_MIN_STARS = 300
+# 100 = 명백한 토이레포(<100)만 컷하고 볼륨 확보(팀장 결정). 튜닝 가능.
+GITHUB_MIN_STARS = 100
 
 # 큐레이션된 경험-풍부 서브레딧.
 # 근거: reddit_crawler.DEFAULT_SUBREDDITS를 기준으로 잡되,
