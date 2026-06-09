@@ -8,6 +8,10 @@
 secrets/
 credentials.json
 service-account.json
+# Google 서비스 계정 키 (HIVE-35) — 실제 키 파일명(google_service_account.json) 및 변형 차단
+google_service_account.json
+*service_account*.json
+*service-account*.json
 
 # Python
 __pycache__/
