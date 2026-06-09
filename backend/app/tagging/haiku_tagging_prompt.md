@@ -62,10 +62,10 @@
 
 | 값 | 기준 |
 | --- | --- |
+| concept | 개념 정리, 입문 설명, "무엇인지"를 알려주는 글 (정의·원리·용어 풀이) |
 | tutorial | 단계별 사용법, 가이드, 따라 하기 |
 | experience | 개인/팀의 실제 사용 후기, 시행착오, 사례 공유 (직접 경험한 내용) |
-| news | 출시, 업데이트, 이슈, 트렌드 소개 |
-| paper | 논문, 모델, 벤치마크, 연구 결과 설명 |
+| tool | 도구/라이브러리/서비스 소개·큐레이션, "이런 도구가 있다" |
 | discussion | 비교, 의견, 토론, 문제 제기, 타인 사례 분석/비판 |
 
 ## language 기준
@@ -137,6 +137,82 @@
   "difficulty": "고급",
   "quality_score": 0.92,
   "content_type": "experience",
+  "language": "ko"
+}
+```
+
+### 예시 입력 (concept)
+
+```json
+{
+  "title": "RAG가 정확히 뭔가요? 임베딩부터 검색까지 한 번에 정리",
+  "body": "RAG(Retrieval-Augmented Generation)는 LLM이 답을 생성하기 전에 외부 지식 베이스에서 관련 문서를 검색해 컨텍스트로 넣어주는 구조다. 핵심은 임베딩으로 문서를 벡터화해 벡터 DB에 저장하고, 질문도 같은 임베딩 공간으로 변환해 코사인 유사도로 가까운 문서를 찾는 것. 파인튜닝과 달리 모델 가중치를 건드리지 않고 지식만 갈아끼울 수 있다는 게 차이점이다.",
+  "source": "velog",
+  "author_name": "study_note",
+  "url": "https://example.com/what-is-rag",
+  "published_at": "2026-05-20T09:00:00+09:00",
+  "language": "ko",
+  "engagement": {
+    "likes": 88,
+    "comments": 12
+  }
+}
+```
+
+### 예시 출력 (concept)
+
+```json
+{
+  "relevance": {
+    "프롬프트 엔지니어링": 0.1,
+    "Agentic AI": 0.0,
+    "멀티모달 AI": 0.0,
+    "RAG & 지식 관리": 0.95,
+    "오픈소스 AI": 0.0,
+    "AI 워크플로우 & 자동화": 0.0,
+    "AI 엔지니어링": 0.3
+  },
+  "difficulty": "입문",
+  "quality_score": 0.78,
+  "content_type": "concept",
+  "language": "ko"
+}
+```
+
+### 예시 입력 (tool)
+
+```json
+{
+  "title": "로컬에서 LLM 돌릴 때 쓰는 도구 7개 정리 (Ollama, vLLM, LM Studio...)",
+  "body": "로컬 추론 환경을 꾸릴 때 자주 쓰는 도구들을 모았다. Ollama는 설치가 가장 쉽고 CLI 한 줄로 모델을 받아 실행할 수 있어 입문용으로 좋다. vLLM은 PagedAttention으로 처리량이 높아 서빙용. LM Studio는 GUI라 비개발자도 접근하기 쉽다. 각 도구의 장단점과 추천 상황을 표로 비교했다.",
+  "source": "reddit",
+  "author_name": "local_llm_fan",
+  "url": "https://example.com/local-llm-tools",
+  "published_at": "2026-05-22T14:00:00+09:00",
+  "language": "ko",
+  "engagement": {
+    "likes": 230,
+    "comments": 41
+  }
+}
+```
+
+### 예시 출력 (tool)
+
+```json
+{
+  "relevance": {
+    "프롬프트 엔지니어링": 0.0,
+    "Agentic AI": 0.0,
+    "멀티모달 AI": 0.0,
+    "RAG & 지식 관리": 0.0,
+    "오픈소스 AI": 0.9,
+    "AI 워크플로우 & 자동화": 0.2,
+    "AI 엔지니어링": 0.5
+  },
+  "difficulty": "입문",
+  "quality_score": 0.7,
+  "content_type": "tool",
   "language": "ko"
 }
 ```

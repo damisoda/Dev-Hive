@@ -4,6 +4,7 @@
 가짜 커넥션으로 검증한다. 노드 id가 옛 하드코딩 위치(1~7)와 달라도, Auto-HKG가 만든 새 노드여도
 name으로 올바로 매핑되는지가 핵심.
 """
+import json
 from types import SimpleNamespace
 
 from app.tagging.loader import load_content
@@ -32,10 +33,12 @@ class _FakeConn:
         self._content_id = content_id
         self._url_conflict = url_conflict
         self.mappings = []  # 캡처한 (content_id, node_id, score)
+        self.content_params = None  # 캡처한 content INSERT 파라미터(synthesis 등 검증용)
 
     def execute(self, clause, params=None):
         sql = str(clause)
         if "INSERT INTO content " in sql:
+            self.content_params = params
             # ON CONFLICT DO UPDATE ... RETURNING id, (xmax = 0) AS inserted (HIVE-35 dedup):
             # 신규 삽입이면 inserted=True, 기존 URL(충돌→engagement만 갱신)이면 inserted=False.
             return _Result([_row(id=self._content_id, inserted=not self._url_conflict)])
@@ -97,3 +100,24 @@ def test_no_relevant_topics_still_inserts_content():
     tags = {"quality_score": 0.9, "relevance": {"Agentic AI": 0.2}}
     assert load_content(_ITEM, tags, _EMB, conn) == 100
     assert conn.mappings == []
+
+
+def test_synthesis_stored_as_json():
+    # HIVE-41: synthesis 카드가 content INSERT의 synthesis 파라미터에 JSON 문자열로 들어간다.
+    conn = _FakeConn(nodes=[(1, "Agentic AI")])
+    tags = {"quality_score": 0.9, "relevance": {"Agentic AI": 0.6}}
+    card = {"content_type": "experience", "one_liner": "한 줄", "findings": ["a", "b"]}
+    cid = load_content(_ITEM, tags, _EMB, conn, synthesis=card)
+    assert cid == 100
+    # 직렬화된 JSON 문자열로 바인딩되어야 한다(::jsonb 캐스트 대상)
+    stored = conn.content_params["synthesis"]
+    assert isinstance(stored, str)
+    assert json.loads(stored) == card
+
+
+def test_synthesis_none_binds_null():
+    # synthesis 미지정(기존 호출 호환) → 파라미터는 None(컬럼 NULL).
+    conn = _FakeConn(nodes=[(1, "Agentic AI")])
+    tags = {"quality_score": 0.9, "relevance": {"Agentic AI": 0.6}}
+    load_content(_ITEM, tags, _EMB, conn)
+    assert conn.content_params["synthesis"] is None

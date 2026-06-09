@@ -82,7 +82,7 @@ def _validate_schema(result: dict) -> None:
         "RAG & 지식 관리", "오픈소스 AI", "AI 워크플로우 & 자동화", "AI 엔지니어링",
     }
     valid_difficulties = {"입문", "중급", "고급"}
-    valid_types = {"tutorial", "experience", "news", "paper", "discussion"}
+    valid_types = {"experience", "tutorial", "concept", "tool", "discussion"}
     valid_langs = {"ko", "en"}
 
     if set(result.get("relevance", {}).keys()) != expected_topics:
