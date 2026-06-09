@@ -113,6 +113,7 @@ CATEGORY_KEYWORDS = {
     ),
 }
 
+
 def _keyword_to_regex(keyword: str) -> re.Pattern[str]:
     tokens = re.findall(r"[a-z0-9]+", keyword.casefold())
     if not tokens:
@@ -134,12 +135,15 @@ _COMPILED_PATTERNS = tuple(
     for pattern in (_keyword_to_regex(keyword) for keyword in keywords)
 )
 
+
 def _matches_ai_keyword(title: str, body: str) -> bool:
     haystack = f"{title or ''}\n{body or ''}".casefold()
     return any(pattern.search(haystack) for pattern in _COMPILED_PATTERNS)
 
+
 def _quote_term(term: str) -> str:
     return f'"{term}"' if re.search(r"\s|\.", term) else term
+
 
 def _github_queries() -> list[str]:
     since = (datetime.now(timezone.utc) - timedelta(days=GITHUB_LOOKBACK_DAYS)).date()
@@ -154,6 +158,7 @@ def _github_queries() -> list[str]:
 
     return queries
 
+
 def _headers(token: str | None = None) -> dict[str, str]:
     headers = {
         "Accept": "application/vnd.github+json",
@@ -162,6 +167,7 @@ def _headers(token: str | None = None) -> dict[str, str]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
+
 
 def _sleep_for_rate_limit(response: httpx.Response) -> None:
     retry_after = response.headers.get("Retry-After")
@@ -177,6 +183,7 @@ def _sleep_for_rate_limit(response: httpx.Response) -> None:
     sleep_seconds = min(sleep_seconds, GITHUB_RATE_LIMIT_MAX_SLEEP_SECONDS)
     logger.warning("GitHub rate limit hit. Sleeping for %s seconds", sleep_seconds)
     time.sleep(sleep_seconds)
+
 
 def _fetch_search_page(
     client: httpx.Client,
@@ -212,6 +219,7 @@ def _fetch_search_page(
         logger.exception("Unexpected GitHub error. query=%s page=%s", query, page)
         return []
 
+
 def _fetch_readme(client: httpx.Client, full_name: str) -> str:
     if not full_name:
         return ""
@@ -237,6 +245,7 @@ def _fetch_readme(client: httpx.Client, full_name: str) -> str:
         logger.exception("Unexpected README fetch error. repo=%s", full_name)
         return ""
 
+
 def _normalize_repo(repo: dict[str, Any], readme: str = "") -> ContentSchema | None:
     name = repo.get("full_name") or repo.get("name") or ""
     description = repo.get("description") or ""
@@ -255,6 +264,7 @@ def _normalize_repo(repo: dict[str, Any], readme: str = "") -> ContentSchema | N
         likes=int(repo.get("stargazers_count") or 0),
         published_at=repo.get("created_at"),
     )
+
 
 def collect_github(target_total: int = GITHUB_TARGET_ITEMS) -> list[ContentSchema]:
     token = os.getenv("GITHUB_TOKEN")
