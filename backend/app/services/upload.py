@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.crawler.qc_gate import qc_gate
 from app.graph.auto_hkg import _node_centroids, _node_info, expand_one
 from app.tagging.embedder import embed_content
 from app.tagging.loader import load_content
@@ -52,6 +53,12 @@ def upload_user_content(
         "engagement": {"likes": 0, "comments": 0},
         "published_at": datetime.now(timezone.utc),
     }
+
+    # QC 게이트(태깅·임베딩 비용 전). 유저 경로는 NSFW·빈본문만 적용(소스/별/서브레딧 우회).
+    passed, _report = qc_gate([item], expected_source="user")
+    if not passed:
+        reason = next(iter(_report["by_reason"]), "거부됨")
+        raise UploadError(f"업로드가 품질 게이트에서 거부됐어요 (사유: {reason}).")
 
     anthropic_client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
     openai_client = OpenAI(api_key=settings.openai_api_key)
