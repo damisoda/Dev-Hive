@@ -298,7 +298,7 @@ def _collect_subreddit(subreddit: str, start: datetime, end: datetime, seen: set
                 seen.add(item.url)
                 results.append(item)
 
-        last_ts = posts[-1].get("created_utc") or 0
+        last_ts = max((p.get("created_utc") or 0) for p in posts)
         next_cursor = datetime.fromtimestamp(float(last_ts) + 1, tz=timezone.utc)
         if next_cursor <= cursor:
             break

@@ -140,14 +140,14 @@ def fetch_beginner_keyword(keyword: str, seen_urls: set[str]) -> list[ContentSch
             ):
                 continue
 
-            seen_urls.add(url)
-
             url_slug = post["url_slug"]
             body = _fetch_body(username, url_slug)
             time.sleep(VELOG_REQUEST_SLEEP)
 
             if len(body) < BEGINNER_MIN_BODY:
                 continue
+
+            seen_urls.add(url)
 
             item = normalize(
                 title=post.get("title") or "",
@@ -179,7 +179,8 @@ def collect_velog_beginner(target: int = BEGINNER_TARGET) -> list[ContentSchema]
     for keyword in BEGINNER_KEYWORDS:
         if len(results) >= target:
             break
-        results.extend(fetch_beginner_keyword(keyword, seen_urls))
+        remaining = target - len(results)
+        results.extend(fetch_beginner_keyword(keyword, seen_urls)[:remaining])
 
     logger.info("Velog 입문 수집 완료: %d건", len(results))
     return results[:target]

@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import time
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -364,7 +365,6 @@ def collect_github_discussions(target: int = GITHUB_DISCUSSIONS_TARGET) -> list[
         results.extend(_collect_repo(owner, repo, cutoff, seen, seen_hashes))
 
     # 작성자별 최대 2건 — 좋아요 순 유지 (스팸 반복 게시 방지)
-    from collections import defaultdict
     author_counts: dict[str, int] = defaultdict(int)
     deduped: list[ContentSchema] = []
     for item in sorted(results, key=lambda x: x.engagement.get("likes", 0), reverse=True):

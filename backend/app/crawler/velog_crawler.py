@@ -167,6 +167,8 @@ VELOG_SEED_USERS: list[str] = [
     for u in os.getenv("VELOG_SEED_USERS", "").split(",")
     if u.strip()
 ]
+if not VELOG_SEED_USERS:
+    logger.warning("VELOG_SEED_USERS 환경변수 미설정 — 시드 유저 수집 비활성화. .env에 VELOG_SEED_USERS를 설정하세요.")
 
 
 def _gql(query: str, variables: dict[str, Any]) -> dict[str, Any] | None:
