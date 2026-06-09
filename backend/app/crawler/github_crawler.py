@@ -312,11 +312,7 @@ def collect_github(target_total: int = GITHUB_TARGET_ITEMS) -> list[ContentSchem
                     if not _matches_ai_keyword(name, description):
                         continue
 
-                    readme = (
-                        _fetch_readme(client, name)
-                        if (GITHUB_FETCH_README and token)
-                        else ""
-                    )
+                    readme = _fetch_readme(client, name) if GITHUB_FETCH_README else ""
 
                     item = _normalize_repo(repo, readme)
                     if item is None:
