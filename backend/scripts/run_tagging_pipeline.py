@@ -43,6 +43,7 @@ from app.crawler.qc_gate import qc_gate
 from app.tagging.tagger import MODEL, _SYSTEM_PROMPT
 from app.tagging.embedder import embed_content
 from app.tagging.loader import load_content, QUALITY_THRESHOLD
+from app.tagging.synthesizer import synthesize
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -195,10 +196,18 @@ def main() -> None:
                 skipped_quality += 1
                 continue
 
+            # 가공(태깅 후·임베딩 전): content_type별 카드 생성. 실패(None)는 비차단 — 가공 없이 적재.
+            try:
+                synthesis = synthesize(item, tags, anthropic_client)
+            except Exception as e:
+                print(f"[{i:03d}] WARN(synthesis)  {title}\n      {e}")
+                synthesis = None
+
+            # 임베딩은 원문 고정(가공본 임베딩 X). 가공본은 synthesis 컬럼에만 저장.
             embedding = embed_content(item, openai_client)
 
             with engine.begin() as conn:
-                content_id = load_content(item, tags, embedding, conn)
+                content_id = load_content(item, tags, embedding, conn, synthesis=synthesis)
 
             if content_id is None:
                 print(f"[{i:03d}] SKIP(dup url)  {title}")

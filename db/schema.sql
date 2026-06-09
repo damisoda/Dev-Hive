@@ -28,9 +28,10 @@ CREATE TABLE IF NOT EXISTS content (
     language            VARCHAR(5) DEFAULT 'en',     -- en / ko
     difficulty          VARCHAR(10),                 -- 입문 / 중급 / 고급
     quality_score       FLOAT,                       -- 0.0 ~ 1.0
-    content_type        VARCHAR(20),                 -- tutorial / experience / news / paper / discussion
+    content_type        VARCHAR(20),                 -- experience / tutorial / concept / tool / discussion
     tags                JSONB DEFAULT '[]',          -- ["Cursor", "Claude Code", ...]
-    text_embedding      vector(1536),                -- OpenAI text-embedding-3-small
+    synthesis           JSONB,                       -- HIVE-41 가공 카드(synthesized_card). NULL이면 원문 링크 폴백
+    text_embedding      vector(1536),                -- OpenAI text-embedding-3-small (원문 고정, 가공본 임베딩 X)
     graph_embedding     vector(256),                 -- GraphSAGE 산출물 (Layer 2, NULL 가능)
     engagement_likes    INT DEFAULT 0,
     engagement_comments INT DEFAULT 0,

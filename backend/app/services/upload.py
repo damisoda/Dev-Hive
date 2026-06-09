@@ -19,6 +19,7 @@ from app.crawler.qc_gate import qc_gate
 from app.graph.auto_hkg import _node_centroids, _node_info, expand_one
 from app.tagging.embedder import embed_content
 from app.tagging.loader import load_content
+from app.tagging.synthesizer import synthesize
 from app.tagging.tagger import tag_content
 
 
@@ -64,11 +65,19 @@ def upload_user_content(
     openai_client = OpenAI(api_key=settings.openai_api_key)
 
     tags = tag_content(item, anthropic_client)
+    # 가공(태깅 후·적재 전): content_type별 카드 생성. 실패(None)는 비차단 — 가공 없이 적재.
+    try:
+        synthesis = synthesize(item, tags, anthropic_client)
+    except Exception:
+        synthesis = None
+    # 임베딩은 원문 고정(가공본 임베딩 X). 가공본은 synthesis 컬럼에만 저장.
     embedding = embed_content(item, openai_client)
 
     conn = db.connection()
     # 사용자 업로드는 크롤(0.5)보다 완화된 품질 하한 적용(HIVE-33)
-    content_id = load_content(item, tags, embedding, conn, min_quality=USER_MIN_QUALITY)
+    content_id = load_content(
+        item, tags, embedding, conn, min_quality=USER_MIN_QUALITY, synthesis=synthesis
+    )
     if content_id is None:
         q = float(tags.get("quality_score", 0.0))
         if q < USER_MIN_QUALITY:

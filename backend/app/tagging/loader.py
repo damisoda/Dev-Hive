@@ -5,6 +5,8 @@ relevance >= 0.5인 대주제를 content_node_mapping에 매핑한다.
 
 quality_score < 0.5인 콘텐츠는 적재하지 않는다.
 """
+import json
+
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -18,12 +20,15 @@ def load_content(
     embedding: list[float],
     conn: Connection,
     min_quality: float = QUALITY_THRESHOLD,
+    synthesis: dict | None = None,
 ) -> int | None:
     """
     content 테이블에 INSERT하고 content_node_mapping을 추가한다.
 
     min_quality: 적재 최소 품질 점수(기본 0.5, 크롤 경로 유지).
                  사용자 업로드(HIVE-33)는 더 낮은 값(예: 0.3)을 넘겨 기준을 완화한다.
+    synthesis:   HIVE-41 가공 카드(synthesized_card). None이면 synthesis 컬럼 NULL로 적재한다.
+                 임베딩은 원문 고정이며 가공본은 표시/근거용으로 이 컬럼에만 저장한다.
 
     Returns:
         신규 삽입된 content.id. quality_score < min_quality이거나 기존 URL(중복 upsert)이면 None 반환.
@@ -39,11 +44,11 @@ def load_content(
             INSERT INTO content (
                 title, body, url, source, author_name,
                 language, difficulty, quality_score, content_type,
-                text_embedding, engagement_likes, engagement_comments, published_at
+                synthesis, text_embedding, engagement_likes, engagement_comments, published_at
             ) VALUES (
                 :title, :body, :url, :source, :author_name,
                 :language, :difficulty, :quality_score, :content_type,
-                (:embedding)::vector, :likes, :comments, :published_at
+                (:synthesis)::jsonb, (:embedding)::vector, :likes, :comments, :published_at
             )
             ON CONFLICT (url) DO UPDATE SET
                 engagement_likes = EXCLUDED.engagement_likes,
@@ -61,6 +66,7 @@ def load_content(
             "difficulty": tags.get("difficulty"),
             "quality_score": quality_score,
             "content_type": tags.get("content_type"),
+            "synthesis": json.dumps(synthesis, ensure_ascii=False) if synthesis is not None else None,
             "embedding": str(embedding),
             "likes": item.get("engagement", {}).get("likes", 0),
             "comments": item.get("engagement", {}).get("comments", 0),
