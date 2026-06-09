@@ -22,6 +22,7 @@ JSON 콘텐츠를 읽어 → Anthropic Message Batches로 일괄 태깅(모든 �
 """
 import argparse
 import json
+import logging
 import os
 import re
 import sys
@@ -38,9 +39,13 @@ load_dotenv(ROOT / ".env")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.crawler.qc_gate import qc_gate
 from app.tagging.tagger import MODEL, _SYSTEM_PROMPT
 from app.tagging.embedder import embed_content
 from app.tagging.loader import load_content, QUALITY_THRESHOLD
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 30  # 배치 상태 폴링 간격(초)
 TRANSIENT = (anthropic.APIConnectionError, anthropic.APIStatusError)  # 재시도 대상 일시 오류
@@ -150,6 +155,13 @@ def main() -> None:
         items = items[: args.limit]
     if not items:
         sys.exit("입력 항목이 없습니다.")
+
+    # QC 게이트 — 정규화 후·태깅 전. 명백한 junk를 LLM 비용 들기 전에 컷(무료 휴리스틱).
+    # 결정적(pure)이라 --batch-id 재접속 때도 동일 결과 → custom_id=item-<index> 정렬 유지.
+    items, qc_report = qc_gate(items)
+    logger.info("QC 게이트: %s", json.dumps(qc_report, ensure_ascii=False))
+    if not items:
+        sys.exit("QC 게이트 통과 항목이 없습니다.")
 
     anthropic_client = anthropic.Anthropic(api_key=anthropic_key)
     openai_client = OpenAI(api_key=openai_key)
