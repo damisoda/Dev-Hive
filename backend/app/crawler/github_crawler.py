@@ -253,6 +253,10 @@ def _normalize_repo(repo: dict[str, Any], readme: str = "") -> ContentSchema | N
     if not _matches_ai_keyword(name, description):
         return None
 
+    repo_name = name.split("/")[-1].casefold()
+    if "awesome" in repo_name:
+        return None
+
     # README 우선, 없으면 about(description) 폴백
     body = readme if readme else description
 
@@ -309,7 +313,8 @@ def collect_github(target_total: int = GITHUB_TARGET_ITEMS) -> list[ContentSchem
                     description = repo.get("description") or ""
                     # README API 호출 전 early-exit — 불필요한 네트워크 콜 방지.
                     # _normalize_repo 내부에서도 동일 조건을 재확인한다.
-                    if not _matches_ai_keyword(name, description):
+                    repo_name = name.split("/")[-1].casefold()
+                    if not _matches_ai_keyword(name, description) or "awesome" in repo_name:
                         continue
 
                     readme = _fetch_readme(client, name) if GITHUB_FETCH_README else ""
