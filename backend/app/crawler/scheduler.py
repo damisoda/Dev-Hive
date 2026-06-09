@@ -5,7 +5,7 @@ from threading import Lock
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from app.crawler.run_crawler import crawl_github_hn, crawl_reddit_rss, run_pipeline
+from app.crawler.run_crawler import crawl_github, crawl_reddit, run_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -22,32 +22,32 @@ def _run_named_pipeline(name: str, crawl_func) -> None:
         logger.exception("Scheduled crawler job failed: %s", name)
 
 
-def run_github_hn_job() -> None:
-    _run_named_pipeline("github_hackernews_12h", crawl_github_hn)
+def run_github_job() -> None:
+    _run_named_pipeline("github_12h", crawl_github)
 
 
-def run_reddit_rss_job() -> None:
-    _run_named_pipeline("reddit_rss_24h", crawl_reddit_rss)
+def run_reddit_job() -> None:
+    _run_named_pipeline("reddit_24h", crawl_reddit)
 
 
 def start_scheduler() -> BackgroundScheduler:
     with _scheduler_lock:
-        if not scheduler.get_job("github_hackernews_12h"):
+        if not scheduler.get_job("github_12h"):
             scheduler.add_job(
-                run_github_hn_job,
+                run_github_job,
                 trigger="interval",
                 hours=12,
-                id="github_hackernews_12h",
+                id="github_12h",
                 max_instances=1,
                 coalesce=True,
                 replace_existing=True,
             )
-        if not scheduler.get_job("reddit_rss_24h"):
+        if not scheduler.get_job("reddit_24h"):
             scheduler.add_job(
-                run_reddit_rss_job,
+                run_reddit_job,
                 trigger="interval",
                 hours=24,
-                id="reddit_rss_24h",
+                id="reddit_24h",
                 max_instances=1,
                 coalesce=True,
                 replace_existing=True,

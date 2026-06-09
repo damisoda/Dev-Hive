@@ -10,7 +10,11 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 def _handle(response: requests.Response):
     if response.status_code >= 400:
-        st.error(f"API 오류 ({response.status_code}): {response.text}")
+        try:
+            detail = response.json().get("detail") or response.text
+        except Exception:
+            detail = response.text
+        st.error(detail)   # FastAPI detail을 그대로(친화적 메시지), raw JSON/상태코드 노출 방지
         return None
     return response.json()
 
@@ -56,3 +60,93 @@ def mark_read(user_id: int, content_id: int):
         json={"user_id": user_id, "content_id": content_id},
         timeout=10,
     ))
+
+
+def get_graph():
+    # /graph는 similar_to를 매 호출마다 계산해 다소 느릴 수 있어 넉넉한 타임아웃.
+    try:
+        return _handle(requests.get(f"{API_BASE_URL}/graph", timeout=30))
+    except requests.RequestException as e:
+        st.error(f"그래프 API 연결 실패 (백엔드가 켜져 있나요?): {e}")
+        return None
+
+
+def upload_content(title: str, body: str, url: str | None = None, user_id: int | None = None):
+    # 태깅+임베딩+Auto-HKG(LLM 호출 포함)라 넉넉한 타임아웃.
+    try:
+        return _handle(requests.post(
+            f"{API_BASE_URL}/content",
+            json={"title": title, "body": body, "url": url, "user_id": user_id},
+            timeout=60,
+        ))
+    except requests.RequestException as e:
+        st.error(f"업로드 실패 (백엔드가 켜져 있나요?): {e}")
+        return None
+
+
+def get_mastery(user_id: int):
+    """노드별 mastery(0~1) dict — 응답 `{user_id, mastery}`에서 mastery만 언랩 반환.
+
+    데이터 없음(404 등)/오류면 None(빨간 배너 없이 조용히 — 신규 유저 정상 경로).
+    """
+    try:
+        r = requests.get(f"{API_BASE_URL}/recommend/mastery", params={"user_id": user_id}, timeout=15)
+    except requests.RequestException:
+        return None
+    if r.status_code != 200:
+        return None
+    return (r.json() or {}).get("mastery") or {}
+
+
+def get_user_state(user_id: int):
+    """유저 상태 `{user_id, user_state}` — 프로필 학습 현황용. 없음/오류면 None(조용히)."""
+    try:
+        r = requests.get(f"{API_BASE_URL}/recommend/user-state", params={"user_id": user_id}, timeout=15)
+    except requests.RequestException:
+        return None
+    if r.status_code != 200:
+        return None
+    return r.json()
+
+
+# ── 피드백 / 통계 (HIVE-37) ──────────────────────────────────────────
+
+def set_feedback(user_id: int, content_id: int, feedback: str):
+    """콘텐츠 피드백 저장/갱신 (understood/too_hard/want_more/not_interested)."""
+    return _handle(requests.put(
+        f"{API_BASE_URL}/feedback",
+        json={"user_id": user_id, "content_id": content_id, "feedback": feedback},
+        timeout=10,
+    ))
+
+
+def clear_feedback(user_id: int, content_id: int):
+    """콘텐츠 피드백 해제 (토글 off)."""
+    return _handle(requests.delete(
+        f"{API_BASE_URL}/feedback",
+        json={"user_id": user_id, "content_id": content_id},
+        timeout=10,
+    ))
+
+
+def list_feedback(user_id: int) -> dict:
+    """유저 피드백 `{content_id: feedback}`. 없음/오류면 빈 dict(조용히)."""
+    try:
+        r = requests.get(f"{API_BASE_URL}/feedback", params={"user_id": user_id}, timeout=10)
+    except requests.RequestException:
+        return {}
+    if r.status_code != 200:
+        return {}
+    # JSON 객체 키는 문자열 → int로 정규화
+    return {int(k): v for k, v in (r.json() or {}).items()}
+
+
+def get_stats(user_id: int):
+    """influence_score / streak / heatmap. 없음/오류면 None(조용히)."""
+    try:
+        r = requests.get(f"{API_BASE_URL}/stats", params={"user_id": user_id}, timeout=15)
+    except requests.RequestException:
+        return None
+    if r.status_code != 200:
+        return None
+    return r.json()

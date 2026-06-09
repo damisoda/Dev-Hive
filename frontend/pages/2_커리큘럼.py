@@ -1,40 +1,67 @@
-"""개인화 커리큘럼 - 추천 엔진이 선정한 다음 콘텐츠."""
+"""개인화 커리큘럼 - 학습 경로(mastery 진척) + 다음 추천(GraphRAG).
 
+A. 내 학습 경로: 노드별 mastery를 약한 것부터(다음에 배울 것) 진척 막대로.
+B. 다음에 읽을 추천: GraphRAG 추천 + 자연어 근거(reason) 강조.
+"""
 import streamlit as st
 
-from lib.api import recommend, mark_read
+from lib.api import get_graph, get_mastery, recommend
+from lib.components import recommendation_card
 
 st.set_page_config(page_title="커리큘럼 · Dev-Hive", layout="wide")
 st.title("내 커리큘럼")
-st.caption("당신에게 맞는 다음 콘텐츠 5건")
+st.caption("내 숙련도 기반 학습 경로와, 다음에 읽을 개인화 추천")
 
 if "user_id" not in st.session_state:
     st.warning("프로필을 먼저 생성해주세요 (메인 페이지).")
     st.stop()
 
-top_n = st.slider("추천 개수", 3, 10, 5)
-data = recommend(st.session_state["user_id"], top_n=top_n)
+uid = st.session_state["user_id"]
 
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _topic_nodes():
+    # 노드 이름 조회용(무거운 /graph는 캐싱). mastery는 매번 신선하게 따로 조회.
+    return [n for n in (get_graph() or {}).get("nodes", []) if n.get("kind") == "topic"]
+
+
+def _mastery_label(m: float) -> str:
+    return "미학습" if m < 0.3 else ("학습중" if m < 0.7 else "숙련")
+
+
+# ── A. 내 학습 경로 ───────────────────────────────────────────────
+st.subheader("내 학습 경로")
+st.caption("약한 개념이 위 — 다음에 배우면 좋아요")
+mastery = get_mastery(uid) or {}
+topics = _topic_nodes()
+if not topics:
+    st.caption("그래프가 비어 있어 경로를 표시할 수 없습니다.")
+else:
+    rows = []
+    for n in topics:
+        try:
+            nid = int(str(n["id"]).split(":")[1])
+        except (IndexError, ValueError):
+            continue
+        rows.append({
+            "name": n.get("label") or "?",
+            "m": float(mastery.get(str(nid), 0.0)),
+            "auto": bool(n.get("auto")),
+        })
+    rows.sort(key=lambda r: r["m"])   # 약한 개념 먼저
+    for r in rows:
+        tag = " ✦Auto-HKG" if r["auto"] else ""
+        st.progress(r["m"], text=f"{r['name']}{tag} · {_mastery_label(r['m'])} {r['m']:.0%}")
+
+st.divider()
+
+# ── B. 다음에 읽을 추천 ───────────────────────────────────────────
+st.subheader("다음에 읽을 추천")
+top_n = st.slider("추천 개수", 3, 10, 5)
+data = recommend(uid, top_n=top_n)
 if not data or not data.get("recommendations"):
-    st.info(
-        "아직 추천할 콘텐츠가 충분하지 않습니다. "
-        "피드에서 몇 개를 읽으면 추천이 시작됩니다."
-    )
+    st.info("아직 추천이 충분하지 않습니다. 피드에서 몇 개를 읽으면 추천이 시작됩니다.")
+    st.page_link("pages/1_피드.py", label="피드에서 콘텐츠 둘러보기 →")
 else:
     for i, rec in enumerate(data["recommendations"], 1):
-        with st.container(border=True):
-            cols = st.columns([1, 9])
-            with cols[0]:
-                st.markdown(f"# {i}")
-            with cols[1]:
-                st.markdown(f"### {rec['title']}")
-                if rec.get("score") is not None:
-                    st.caption(f"점수 {rec['score']:.2f}")
-                if rec.get("reason"):
-                    st.markdown(f"> {rec['reason']}")
-                else:
-                    st.caption("추천 근거는 Layer 2(GraphRAG)에서 자연어로 생성됩니다.")
-                if st.button("읽음 처리", key=f"recread_{rec['content_id']}"):
-                    if mark_read(st.session_state["user_id"], rec["content_id"]):
-                        st.toast("읽음 처리됨. 다음 추천을 갱신합니다.")
-                        st.rerun()
+        recommendation_card(rec, uid, i)

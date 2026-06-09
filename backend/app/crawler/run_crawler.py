@@ -11,7 +11,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from app.crawler.github_crawler import collect_github
 from app.crawler.google_drive_uploader import upload_to_drive
+from app.crawler.reddit_crawler import DEFAULT_SUBREDDITS, collect_reddit
+from app.crawler.velog_crawler import collect_velog
 
 logging.basicConfig(
     level=logging.INFO,
@@ -130,101 +133,48 @@ def save_json(items: list[Any], output_dir: str | Path = RAW_DATA_DIR) -> Path:
     return file_path
 
 
-def _optional_collect_rss() -> list[Any]:
-    try:
-        from app.crawler.rss_crawler import crawl_all as collect_rss
-    except ImportError:
-        logger.info("RSS crawler module not found; skipping RSS collection")
-        return []
-
-    try:
-        return collect_rss()
-    except Exception:
-        logger.exception("RSS crawler failed")
-        return []
-
-
-def _collect_github() -> list[Any]:
-    from app.crawler.github_crawler import collect_github
-
-    return collect_github(300)
-
-
-def _collect_hackernews() -> list[Any]:
-    from app.crawler.hackernews_crawler import crawl_all as collect_hackernews
-
-    return collect_hackernews()
-
-
-def _collect_reddit() -> list[Any]:
-    from app.crawler.reddit_crawler import DEFAULT_SUBREDDITS, collect_reddit
-
-    return collect_reddit(DEFAULT_SUBREDDITS, 600)
-
-
-def crawl_github_hn() -> list[Any]:
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        github_future = executor.submit(_collect_github)
-        hn_future = executor.submit(_collect_hackernews)
-
-        github_items = github_future.result()
-        hn_items = hn_future.result()
-
-    merged = github_items + hn_items
-    deduped = dedupe_by_url(merged)
+def crawl_github() -> list[Any]:
+    items = collect_github(300)
+    deduped = dedupe_by_url(items)
 
     logger.info(
-        "GitHub/HN crawl finished. github=%s hn=%s merged=%s deduped=%s",
-        len(github_items),
-        len(hn_items),
-        len(merged),
+        "GitHub crawl finished. github=%s deduped=%s",
+        len(items),
         len(deduped),
     )
     return deduped
 
 
-def crawl_reddit_rss() -> list[Any]:
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        reddit_future = executor.submit(_collect_reddit)
-        rss_future = executor.submit(_optional_collect_rss)
-
-        reddit_items = reddit_future.result()
-        rss_items = rss_future.result()
-
-    merged = reddit_items + rss_items
-    deduped = dedupe_by_url(merged)
+def crawl_reddit() -> list[Any]:
+    items = collect_reddit(DEFAULT_SUBREDDITS, 600)
+    deduped = dedupe_by_url(items)
 
     logger.info(
-        "Reddit/RSS crawl finished. reddit=%s rss=%s merged=%s deduped=%s",
-        len(reddit_items),
-        len(rss_items),
-        len(merged),
+        "Reddit crawl finished. reddit=%s deduped=%s",
+        len(items),
         len(deduped),
     )
     return deduped
 
 
 def crawl_all() -> list[Any]:
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        reddit_future = executor.submit(_collect_reddit)
-        github_future = executor.submit(_collect_github)
-        hn_future = executor.submit(_collect_hackernews)
-        rss_future = executor.submit(_optional_collect_rss)
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        reddit_future = executor.submit(collect_reddit, DEFAULT_SUBREDDITS, 600)
+        github_future = executor.submit(collect_github, 300)
+        velog_future = executor.submit(collect_velog, 300)
 
         reddit_items = reddit_future.result()
         github_items = github_future.result()
-        hn_items = hn_future.result()
-        rss_items = rss_future.result()
+        velog_items = velog_future.result()
 
-    merged = reddit_items + github_items + hn_items + rss_items
+    merged = reddit_items + github_items + velog_items
     deduped = dedupe_by_url(merged)
 
     logger.info(
-        "Crawl finished. reddit=%s github=%s hn=%s rss=%s merged=%s deduped=%s",
+        "Crawl finished. reddit=%s github=%s velog=%s merged=%s deduped=%s",
         len(reddit_items),
         len(github_items),
-        len(hn_items),
-        len(rss_items),
+        len(velog_items),
         len(merged),
         len(deduped),
     )

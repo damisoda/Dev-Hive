@@ -4,18 +4,21 @@ text_embedding / graph_embedding은 무겁고 클라이언트에 불필요하므
 제외한다(쿼리 시에도 SELECT하지 않도록 컬럼을 명시 로드한다).
 """
 
+import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, defer
 
 from app.database import get_db
 from app.models.content import Content
 from app.models.mapping import ContentNodeMapping
+from app.services.upload import UploadError, upload_user_content
 
 router = APIRouter(prefix="/content", tags=["content"])
+logger = logging.getLogger(__name__)
 
 # node_id 필터링 시 매핑 관련도 임계값
 RELEVANCE_THRESHOLD = 0.5
@@ -84,3 +87,43 @@ def list_content(
         items=[ContentItem.model_validate(row) for row in rows],
         total=total,
     )
+
+
+class ContentUpload(BaseModel):
+    title: str
+    body: str
+    url: Optional[str] = None
+    user_id: Optional[int] = None
+
+
+class UploadResult(BaseModel):
+    content_id: int
+    title: str
+    action: str                      # existing / new_sub / new_top / skipped
+    node_id: Optional[int] = None
+    node_name: Optional[str] = None
+    is_new_node: bool
+    difficulty: Optional[str] = None
+    content_type: Optional[str] = None
+
+
+@router.post("", response_model=UploadResult, status_code=status.HTTP_201_CREATED)
+def upload_content(payload: ContentUpload, db: Session = Depends(get_db)) -> UploadResult:
+    """HIVE-33: 사용자 글 업로드 → 태깅·임베딩·적재·Auto-HKG 편입.
+
+    올린 글이 기존 노드에 편입되거나 Auto-HKG가 새 하위/최상위 노드를 생성한다.
+    """
+    try:
+        result = upload_user_content(
+            payload.title, payload.body, payload.url, payload.user_id, db
+        )
+    except UploadError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except Exception:
+        # 태깅/임베딩/Auto-HKG의 upstream(LLM·임베딩 API) 오류 → 사용자 탓 아님(503)
+        logger.exception("업로드 처리 실패(upstream)")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="업로드 처리 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
+        )
+    return UploadResult(**result)
