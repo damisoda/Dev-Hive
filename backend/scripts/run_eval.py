@@ -72,6 +72,101 @@ def _recommendation_samples(db, n_users: int = 3, top_n: int = 5) -> list[dict]:
     return samples
 
 
+def _semantic_metrics(db) -> dict:
+    """auto 토픽 클러스터의 의미(semantic) 품질.
+
+    PRIMARY = tag_purity: 클러스터링에 쓰이지 않은 **독립 태거 라벨**(content_type·대주제)로
+    각 auto 클러스터가 얼마나 단일 라벨로 구성되는지(순도)를 잰다. baseline(랜덤 클러스터 기대)
+    대비 높으면 '의미가 있게 묶였다'는 해석 가능 — silhouette보다 직접적이고 비순환적.
+
+    embedding_geometry = cluster_quality(cohesion/separation/silhouette)는 임베딩 기하라
+    파라미터 튜닝·회귀 게이트용(튜닝용)으로만 둔다.
+    """
+    import numpy as np
+
+    from app.graph.metrics import (
+        cluster_label_purity,
+        cluster_quality,
+        label_cluster_agreement,
+    )
+
+    # auto 멤버십 + content_type + 임베딩 (한 번에 조회)
+    rows = db.execute(
+        text(
+            """
+            SELECT m.node_id AS tid, m.content_id AS cid,
+                   c.content_type AS ctype, c.text_embedding AS emb
+            FROM content_node_mapping m
+            JOIN curriculum_nodes n ON n.id = m.node_id
+            JOIN content c ON c.id = m.content_id
+            WHERE n.is_auto_generated = TRUE AND c.text_embedding IS NOT NULL
+            """
+        )
+    ).fetchall()
+
+    # 콘텐츠별 우세 대주제(non-auto root, relevance_score argmax)
+    dom_rows = db.execute(
+        text(
+            """
+            SELECT m.content_id AS cid, m.node_id AS rid, m.relevance_score AS rel
+            FROM content_node_mapping m
+            JOIN curriculum_nodes n ON n.id = m.node_id
+            WHERE n.is_auto_generated = FALSE AND n.parent_id IS NULL
+            """
+        )
+    ).fetchall()
+    dominant_root: dict = {}    # content_id -> root_node_id (relevance 최대)
+    best_rel: dict = {}
+    for r in dom_rows:
+        rel = float(r.rel) if r.rel is not None else 0.0
+        if r.cid not in best_rel or rel > best_rel[r.cid]:
+            best_rel[r.cid] = rel
+            dominant_root[r.cid] = r.rid
+
+    topic_embeddings: dict = {}             # tid -> [embedding] (임베딩 기하용)
+    labels_ctype: dict = {}                 # tid -> [content_type] (순도 PRIMARY)
+    labels_topic: dict = {}                 # tid -> [dominant_root_id]
+    for r in rows:
+        topic_embeddings.setdefault(r.tid, []).append(
+            np.array(str(r.emb).strip()[1:-1].split(","), dtype=float)
+        )
+        labels_ctype.setdefault(r.tid, []).append(r.ctype)
+        labels_topic.setdefault(r.tid, []).append(dominant_root.get(r.cid))
+
+    geometry = cluster_quality(topic_embeddings)
+    tag_purity_ctype = cluster_label_purity(labels_ctype)
+    tag_purity_topic = cluster_label_purity(labels_topic)
+
+    # V-measure: 클러스터링 vs 독립 라벨 일치도(purity 편향 보정). 평평한 (true,pred)로.
+    flat_true_ct = [l for ls in labels_ctype.values() for l in ls]
+    flat_true_tp = [l for ls in labels_topic.values() for l in ls]
+    flat_pred = [tid for tid, ls in labels_ctype.items() for _ in ls]
+    flat_pred_tp = [tid for tid, ls in labels_topic.items() for _ in ls]
+    vmeasure_ctype = label_cluster_agreement(flat_true_ct, flat_pred)
+    vmeasure_topic = label_cluster_agreement(flat_true_tp, flat_pred_tp)
+
+    # coverage: 세분(auto) 토픽에 매핑된 콘텐츠 비율(나머지는 7대주제로만 흡수).
+    total = db.execute(
+        text("SELECT count(*) FROM content WHERE text_embedding IS NOT NULL")
+    ).scalar() or 0
+    in_auto = db.execute(
+        text(
+            "SELECT count(DISTINCT m.content_id) FROM content_node_mapping m "
+            "JOIN curriculum_nodes n ON n.id = m.node_id WHERE n.is_auto_generated = TRUE"
+        )
+    ).scalar() or 0
+    return {
+        "tag_purity_content_type": tag_purity_ctype,
+        "tag_purity_topic": tag_purity_topic,
+        "v_measure_content_type": vmeasure_ctype,
+        "v_measure_topic": vmeasure_topic,
+        "embedding_geometry": geometry,       # 튜닝용(headline 아님)
+        "coverage_ratio": round(in_auto / total, 4) if total else 0.0,
+        "content_in_auto_topics": in_auto,
+        "content_total": total,
+    }
+
+
 def _snapshot(out_path: str) -> None:
     db = SessionLocal()
     try:
@@ -84,11 +179,13 @@ def _snapshot(out_path: str) -> None:
             "content": metrics["kinds"].get("content", 0),
             "edges": metrics["edges"],
         }
+        semantic = _semantic_metrics(db)
         samples = _recommendation_samples(db)
     finally:
         db.close()
 
-    snapshot = {"metrics": metrics, "growth": node_growth, "rec_samples": samples}
+    snapshot = {"metrics": metrics, "growth": node_growth,
+                "semantic": semantic, "rec_samples": samples}
     # default=str: 혹시 남은 비직렬화 타입(numpy/Decimal 등)도 죽지 않게 방어
     Path(out_path).write_text(
         json.dumps(snapshot, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
@@ -111,6 +208,26 @@ def _print_report(s: dict) -> None:
     print(f"브릿지(단절점)  : {m['articulation_points']}개")
     print(f"LCC             : {m['lcc_size']} ({m['lcc_ratio']*100:.1f}%) · 성분 {m['num_components']}개")
     print(f"평균 군집계수   : {m['avg_clustering']}")
+    # HIVE-46 과파편화 지표
+    cpt = m.get("content_per_auto_topic", {})
+    print(f"고아노드비율    : {m.get('orphan_ratio')}  (auto토픽 {m.get('auto_topics')}개 중 콘텐츠≤1)")
+    print(f"토픽최대깊이    : {m.get('max_topic_depth')}  (눈덩이 중첩 지표)")
+    print(f"auto토픽당콘텐츠: mean {cpt.get('mean')} / median {cpt.get('median')} / max {cpt.get('max')}")
+    sem = s.get("semantic", {})
+    if sem:
+        print("\n" + "-" * 60)
+        print("의미(semantic) — auto 클러스터 라벨 순도 (PRIMARY)")
+        print("-" * 60)
+        ct = sem.get("tag_purity_content_type", {})
+        tp = sem.get("tag_purity_topic", {})
+        print(f"content_type 순도: mean {ct.get('purity_mean')} / weighted {ct.get('purity_weighted')} / baseline {ct.get('baseline')}  (클러스터 {ct.get('n_clusters')}개)")
+        print(f"대주제 순도      : mean {tp.get('purity_mean')} / weighted {tp.get('purity_weighted')} / baseline {tp.get('baseline')}  (클러스터 {tp.get('n_clusters')}개)")
+        vc = sem.get("v_measure_content_type", {})
+        vt = sem.get("v_measure_topic", {})
+        print(f"V-measure        : content_type {vc.get('v_measure')} (homog {vc.get('homogeneity')}/compl {vc.get('completeness')}, 랜덤 {vc.get('baseline')}) / 대주제 {vt.get('v_measure')} (랜덤 {vt.get('baseline')})")
+        geo = sem.get("embedding_geometry", {})
+        print(f"  (튜닝용) 임베딩기하: silhouette {geo.get('silhouette')} / cohesion {geo.get('cohesion')} / separation {geo.get('separation')}")
+        print(f"coverage        : {sem.get('coverage_ratio')} ({sem.get('content_in_auto_topics')}/{sem.get('content_total')})")
     print("\n매개중심성 상위(브릿지 역할):")
     for b in m["top_betweenness"]:
         print(f"  - {b['node']}  ({b['score']})")
@@ -147,7 +264,32 @@ def _compare(before_path: str, after_path: str) -> None:
     row("브릿지(단절점)", "articulation_points")
     row("LCC 비율", "lcc_ratio")
     row("평균군집계수", "avg_clustering")
-    print("\n해석: modularity↑/커뮤니티 형성 + 허브·브릿지 출현 + LCC 유지 = '주제를 넘어 조직된다'")
+    # HIVE-46 과파편화 지표(health 축 — modularity와 달리 직접적)
+    row("고아노드비율", "orphan_ratio")
+    row("토픽최대깊이", "max_topic_depth")
+
+    # 의미 품질(semantic) 비교 — semantic은 스냅샷 최상위 키. 구버전 스냅샷 가드.
+    bf = json.loads(Path(before_path).read_text(encoding="utf-8")).get("semantic", {})
+    af = json.loads(Path(after_path).read_text(encoding="utf-8")).get("semantic", {})
+    if bf or af:
+        print("\n[의미(semantic) — 클러스터 라벨 순도 (PRIMARY)]")
+
+        def srow(label, top_key, sub_key):
+            bv = (bf.get(top_key) or {}).get(sub_key)
+            av = (af.get(top_key) or {}).get(sub_key)
+            print(f"{label:22} {str(bv):>14} → {str(av):>14}")
+
+        srow("content_type 순도", "tag_purity_content_type", "purity_mean")
+        srow("  baseline", "tag_purity_content_type", "baseline")
+        srow("대주제 순도", "tag_purity_topic", "purity_mean")
+        srow("  baseline", "tag_purity_topic", "baseline")
+        srow("V-measure(ctype)", "v_measure_content_type", "v_measure")
+        srow("  랜덤 baseline", "v_measure_content_type", "baseline")
+        srow("V-measure(대주제)", "v_measure_topic", "v_measure")
+        srow("(튜닝)silhouette", "embedding_geometry", "silhouette")
+        print(f"{'coverage':22} {str(bf.get('coverage_ratio')):>14} → {str(af.get('coverage_ratio')):>14}")
+    print("\n해석: 과파편화는 modularity가 아니라 orphan_ratio↓·articulation↓·max_depth↓로 본다.")
+    print("      의미는 tag_purity(순도)가 baseline을 넘는지로 '의미있게 묶였나'를 본다(silhouette은 튜닝용).")
 
 
 def main() -> None:
