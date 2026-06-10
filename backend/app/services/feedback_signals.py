@@ -49,6 +49,47 @@ def want_more_centroid(user_id: int, db: Session) -> str | None:
     return raw
 
 
+def _representative_topics(user_id: int, db: Session, feedback: str) -> set[int]:
+    """특정 피드백 콘텐츠의 '대표 토픽' node_id 집합 (HIVE-48).
+
+    대표 토픽 = content_node_mapping에서 relevance_score 최고 노드 — graphrag 후보 쿼리의
+    node_id 선정 기준(ORDER BY relevance_score DESC LIMIT 1)과 동일하게 맞춘다.
+    feedback 값(too_hard/understood)별로 호출한다(피드백 종류는 호출부에서 고정 — 인젝션 무관).
+    """
+    rows = db.execute(
+        text(
+            """
+            SELECT (
+                SELECT m.node_id FROM content_node_mapping m
+                WHERE m.content_id = f.content_id
+                ORDER BY m.relevance_score DESC LIMIT 1
+            ) AS node_id
+            FROM user_content_feedback f
+            WHERE f.user_id = :uid AND f.feedback = :fb
+            """
+        ),
+        {"uid": user_id, "fb": feedback},
+    ).fetchall()
+    return {r.node_id for r in rows if r.node_id is not None}
+
+
+def too_hard_topics(user_id: int, db: Session) -> set[int]:
+    """'어려워요' 콘텐츠의 대표 토픽 node_id 집합 (HIVE-48).
+
+    graphrag가 이 토픽들의 mastery를 하향해 더 쉬운 난이도를 추천하도록 쓴다.
+    """
+    return _representative_topics(user_id, db, "too_hard")
+
+
+def understood_topics(user_id: int, db: Session) -> set[int]:
+    """'이해했어요' 콘텐츠의 대표 토픽 node_id 집합 (HIVE-48).
+
+    graphrag가 이 토픽들의 mastery를 상향해 더 어려운(심화) 난이도를 추천하도록 쓴다.
+    (understood 콘텐츠 자체는 feedback_excluded_ids로 추천에서 제외되지만, 토픽 신호는 남긴다.)
+    """
+    return _representative_topics(user_id, db, "understood")
+
+
 def too_hard_difficulties(user_id: int, db: Session) -> set[str]:
     """'어려워요' 표시한 콘텐츠들의 난이도 집합. 이 난이도는 추천에서 감점한다."""
     rows = db.execute(

@@ -24,7 +24,19 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.services.feedback_signals import feedback_excluded_ids
+from app.services.constants import (
+    FEEDBACK_WANT_MORE_GRAPHRAG_WEIGHT as W_FB,
+)
+from app.services.constants import (
+    MASTERY_TOO_HARD_DELTA,
+    MASTERY_UNDERSTOOD_ALPHA,
+)
+from app.services.feedback_signals import (
+    feedback_excluded_ids,
+    too_hard_topics,
+    understood_topics,
+    want_more_centroid,
+)
 from app.services.knowledge_tracing import build_user_state, estimate_mastery
 
 logger = logging.getLogger(__name__)
@@ -109,6 +121,19 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
     profile = _parse_vec(urow.pv)
     mastery = estimate_mastery(user_id, db)  # {node_id: 0~1}
 
+    # 피드백 → 토픽별 mastery 조정(HIVE-48). 전역 난이도 감점 대신 대표 토픽 단위로 정교하게.
+    #   too_hard 토픽 → mastery 하향 → difficulty_fit이 더 쉬운/선행 콘텐츠를 선호
+    #   understood 토픽 → mastery 상향 → 더 어려운/심화 콘텐츠를 선호(역량 신호)
+    # 두 신호가 같은 토픽에 동시에 오면 두 조정이 합쳐져 상쇄된다(자연스러운 절충).
+    for node in too_hard_topics(user_id, db):
+        mastery[node] = max(0.0, mastery.get(node, 0.0) - MASTERY_TOO_HARD_DELTA)
+    for node in understood_topics(user_id, db):
+        mastery[node] = min(1.0, mastery.get(node, 0.0) + MASTERY_UNDERSTOOD_ALPHA)
+
+    # want_more 중심(HIVE-48): profile_vector를 오염시키지 않고 점수 단계에서 보너스로만 더한다.
+    # 관련성과 동일하게 global centroid로 centering한 코사인(0~1)에 W_FB를 곱한다.
+    wm_centroid = _parse_vec(want_more_centroid(user_id, db))
+
     # 피드백 제외(HIVE-37): understood/not_interested 콘텐츠는 추천에서 뺀다.
     # 공용 헬퍼(feedback_signals)로 rule_based와 동일 신호를 공유한다.
     excluded = feedback_excluded_ids(user_id, db)
@@ -142,20 +167,28 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
 
     g = _global_centroid(db)
     pc = (profile - g) if (profile is not None and g is not None) else None
+    # want_more 중심도 관련성과 동일 기준으로 centering(global centroid 필요).
+    wmc = (wm_centroid - g) if (wm_centroid is not None and g is not None) else None
 
     cands: list[dict] = []
     for r in rows:
         emb = _parse_vec(r.emb)
+        ec = (emb - g) if (emb is not None and g is not None) else None
         # 관련성: centered 코사인 → 0~1. profile_vector(또는 centroid) 없으면 quality로 대체(콜드스타트).
-        rel_real = pc is not None and emb is not None
+        rel_real = pc is not None and ec is not None
         if rel_real:
-            ec = emb - g
             denom = float(np.linalg.norm(pc) * np.linalg.norm(ec)) or 1.0
             rel = (float(np.dot(pc, ec) / denom) + 1.0) / 2.0
         else:
             rel = float(r.quality_score) if r.quality_score is not None else 0.5
         diff = _difficulty_fit(r.difficulty, mastery.get(r.node_id, 0.0))
-        base = W_REL * rel + W_DIFF * diff + W_PATH * _NEUTRAL_PATH
+        # want_more 보너스: 별도 항(4성분과 무관). centered 코사인(0~1) × W_FB. 신호 없으면 0.
+        if wmc is not None and ec is not None:
+            wm_denom = float(np.linalg.norm(wmc) * np.linalg.norm(ec)) or 1.0
+            wm_sim = (float(np.dot(wmc, ec) / wm_denom) + 1.0) / 2.0
+        else:
+            wm_sim = 0.0
+        base = W_REL * rel + W_DIFF * diff + W_PATH * _NEUTRAL_PATH + W_FB * wm_sim
         cands.append({
             "content_id": r.id, "title": r.title, "difficulty": r.difficulty,
             "node_id": r.node_id, "rel": rel, "rel_real": rel_real, "diff": diff, "base": base,
