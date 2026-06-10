@@ -16,6 +16,7 @@ from app.graph.auto_hkg import (
     _name_cluster,
     _nearest,
     expand_graph,
+    expand_one,
 )
 
 
@@ -229,3 +230,91 @@ def test_expand_graph_empty_skeleton_skips():
     assert stats["absorbed"] == 0
     assert stats["new_nodes"] == 0       # 둘 다 고아(크기<3)
     assert stats["skipped"] == 2         # 스켈레톤 없어 고아 매핑 불가
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# expand_one — 단건 업로드 편입 (HIVE-47: 복원, 회귀 방지)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class _JudgeAnthropic:
+    """expand_one의 _judge용 가짜 — messages.create로 decision JSON 반환."""
+
+    def __init__(self, decision: dict):
+        outer = self
+        self.calls = 0
+
+        class _Messages:
+            def create(self, *, model, max_tokens, system, messages):
+                outer.calls += 1
+                return SimpleNamespace(content=[SimpleNamespace(text=json.dumps(decision))])
+
+        self.messages = _Messages()
+
+
+def _ucontent(emb_vec, **kw):
+    base = {"id": 100, "title": "업로드글", "tags": [], "difficulty": "중급",
+            "text_embedding": _emb(*emb_vec)}
+    base.update(kw)
+    return base
+
+
+def test_expand_one_high_sim_existing_no_llm():
+    # 콘텐츠가 노드1과 동일방향(cos 1.0 ≥ DEDUP 0.70) → LLM 없이 기존 매핑
+    cents = {1: np.array([1.0, 0, 0, 0]), 2: np.array([0, 1.0, 0, 0])}
+    info = {1: {"name": "n1", "desc": "d", "parent_id": None},
+            2: {"name": "n2", "desc": "d", "parent_id": None}}
+    conn = _Conn([], [], [])
+    client = _JudgeAnthropic({"decision": "new_top", "new_name": "X"})  # 호출되면 안 됨
+    res = expand_one(_ucontent([1, 0, 0, 0]), cents, info, conn, client)
+    assert res["action"] == "existing" and res["node_id"] == 1 and res["llm"] is False
+    assert client.calls == 0
+
+
+def test_expand_one_new_sub_creates_node():
+    # top_sim ~0.45(<0.70) → LLM, new_sub → 노드 생성 + centroids/info in-place 갱신
+    cents = {1: np.array([1.0, 2.0, 0, 0])}
+    info = {1: {"name": "n1", "desc": "d", "parent_id": None}}
+    conn = _Conn([], [], [])
+    client = _JudgeAnthropic({"decision": "new_sub", "parent_id": 1,
+                              "new_name": "LangGraph", "new_desc": "에이전트 프레임워크"})
+    res = expand_one(_ucontent([1, 0, 0, 0]), cents, info, conn, client)
+    assert res["action"] == "new_sub" and res["parent_id"] == 1
+    assert conn.created and conn.created[0][0] == "LangGraph"
+    assert res["node_id"] in cents and res["node_id"] in info   # in-place 갱신
+
+
+def test_expand_one_new_top_when_far():
+    # 모든 노드와 직교(cos 0 < NEW_TOP 0.40) → new_top 허용(parent None)
+    cents = {1: np.array([0, 1.0, 0, 0]), 2: np.array([0, 0, 1.0, 0])}
+    info = {1: {"name": "n1", "desc": "d", "parent_id": None},
+            2: {"name": "n2", "desc": "d", "parent_id": None}}
+    conn = _Conn([], [], [])
+    client = _JudgeAnthropic({"decision": "new_top", "new_name": "양자ML", "new_desc": "d"})
+    res = expand_one(_ucontent([1, 0, 0, 0]), cents, info, conn, client)
+    assert res["action"] == "new_top"
+    assert conn.created[0][2] is None   # parent_id None
+
+
+def test_expand_one_new_top_downgraded_when_close():
+    # top_sim ~0.45 ≥ 0.40 → new_top 제안이라도 new_sub로 강등(부모=top)
+    cents = {1: np.array([1.0, 2.0, 0, 0])}
+    info = {1: {"name": "n1", "desc": "d", "parent_id": None}}
+    conn = _Conn([], [], [])
+    client = _JudgeAnthropic({"decision": "new_top", "new_name": "신규영역", "new_desc": "d"})
+    res = expand_one(_ucontent([1, 0, 0, 0]), cents, info, conn, client)
+    assert res["action"] == "new_sub" and res["parent_id"] == 1
+
+
+def test_expand_one_empty_graph_skipped():
+    conn = _Conn([], [], [])
+    client = _JudgeAnthropic({"decision": "existing", "node_id": 5})
+    res = expand_one(_ucontent([1, 0, 0, 0]), {}, {}, conn, client)
+    assert res["action"] == "skipped"
+
+
+def test_upload_module_imports():
+    # HIVE-47 회귀 가드: upload.py가 expand_one/_node_centroids/_node_info를 import.
+    # (HIVE-44가 이걸 삭제해 앱 부팅이 깨졌던 블로커 재발 방지)
+    import app.services.upload  # noqa: F401
+    from app.graph.auto_hkg import _node_centroids, _node_info  # noqa: F401
