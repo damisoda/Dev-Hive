@@ -28,6 +28,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None, help="처리할 최대 콘텐츠 수")
     parser.add_argument("--dry-run", action="store_true", help="적용하지 않고 롤백(미리보기)")
+    parser.add_argument("--reset", action="store_true",
+                        help="기존 자동노드(is_auto_generated)와 매핑을 먼저 삭제하고 새로 빌드")
     args = parser.parse_args()
 
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
@@ -40,10 +42,20 @@ def main() -> None:
     client = anthropic.Anthropic(api_key=anthropic_key)
     engine = create_engine(db_url)
 
-    print(f"Auto-HKG 실행 (limit={args.limit}, dry_run={args.dry_run})\n")
+    print(f"Auto-HKG 실행 (limit={args.limit}, dry_run={args.dry_run}, reset={args.reset})\n")
     conn = engine.connect()
     trans = conn.begin()
     try:
+        if args.reset:
+            from sqlalchemy import text
+            n_map = conn.execute(text(
+                "DELETE FROM content_node_mapping WHERE node_id IN "
+                "(SELECT id FROM curriculum_nodes WHERE is_auto_generated = TRUE)"
+            )).rowcount
+            n_node = conn.execute(text(
+                "DELETE FROM curriculum_nodes WHERE is_auto_generated = TRUE"
+            )).rowcount
+            print(f"[reset] 기존 자동노드 {n_node}개 / 매핑 {n_map}건 삭제\n")
         stats = expand_graph(conn, client, limit=args.limit)
         if args.dry_run:
             trans.rollback()
@@ -58,8 +70,10 @@ def main() -> None:
     note = "  (dry-run — 롤백됨)" if args.dry_run else ""
     print(
         f"\n--- 완료{note} ---\n"
-        f"처리: {stats['total']}건 / LLM 호출: {stats['llm_calls']}건\n"
-        f"기존 매칭: {stats['existing']} / 새 하위노드: {stats['new_sub']} / 새 최상위: {stats['new_top']} / 스킵: {stats['skipped']}"
+        f"처리: {stats['total']}건 / LLM 호출: {stats['llm_calls']}건 (클러스터 네이밍)\n"
+        f"1패스 대주제 흡수: {stats['absorbed']}건\n"
+        f"2패스 클러스터 노드: {stats['new_nodes']}개 (콘텐츠 {stats['clustered']}건 매핑)\n"
+        f"고아 흡수: {stats['orphan_mapped']}건 / 스킵: {stats['skipped']}건"
     )
 
 
