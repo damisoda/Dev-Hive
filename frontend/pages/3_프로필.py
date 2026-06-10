@@ -1,10 +1,12 @@
 """프로필 - 본인 정보 + 학습 현황(user-state 자연어)."""
 import streamlit as st
+from lib.ui import style
 
 from lib.api import get_profile, get_stats, get_user_state
 from lib.components import render_contribution_heatmap
 
 st.set_page_config(page_title="프로필 · Dev-Hive", layout="wide")
+style()
 st.title("프로필")
 
 if "user_id" not in st.session_state:

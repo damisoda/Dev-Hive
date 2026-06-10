@@ -6,10 +6,12 @@ POST /auth/profile로 프로필을 생성하면서 초기 레벨을 설정한다
 """
 
 import streamlit as st
+from lib.ui import style
 
 from lib.api import create_profile, get_profile
 
 st.set_page_config(page_title="Dev-Hive", layout="wide", page_icon=":bee:")
+style()
 
 # 페르소나별 온보딩 문항 (HIVE-36). 직군마다 문항 세트가 다르다.
 # 현재 개발자만. 직군 추가 시 이 딕셔너리에 키만 추가하면 된다 (백엔드 레벨 로직 공통).

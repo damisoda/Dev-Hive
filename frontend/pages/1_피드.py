@@ -5,11 +5,13 @@
 import math
 
 import streamlit as st
+from lib.ui import style
 
 from lib.api import list_content, list_feedback
 from lib.components import content_card
 
 st.set_page_config(page_title="피드 · Dev-Hive", layout="wide")
+style()
 st.title("피드")
 st.caption("전체 콘텐츠를 출처·난이도로 탐색하세요. (개인화 추천은 ‘커리큘럼’)")
 

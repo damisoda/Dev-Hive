@@ -5,12 +5,14 @@
 - content 노드: 작게(소속 주제 색 옅게, 호버 시 제목). similar_to 엣지는 기본 off(1200여 개라 빽빽) — 토글.
 """
 import streamlit as st
+from lib.ui import style
 import streamlit.components.v1 as components
 
 from lib.api import get_graph
 from lib.graph_viz import build_network
 
 st.set_page_config(page_title="지식그래프 · Dev-Hive", layout="wide")
+style()
 st.title("지식그래프")
 st.caption("커뮤니티 콘텐츠가 대주제로 뭉치고, Auto-HKG가 새 하위노드를 키운다. 노드를 드래그·줌·호버해 보세요.")
 st.page_link("pages/5_업로드.py", label="이 그래프에 내 글 더하기 →")
@@ -55,5 +57,13 @@ st.sidebar.markdown(
     "- 금색 = Auto-HKG가 생성한 하위주제"
 )
 
-net = build_network(data["nodes"], data["edges"], show_similar)
-components.html(net.generate_html(notebook=False), height=780, scrolling=False)
+# 레이아웃(spring) 계산이 무거워 HTML을 캐싱 — 데이터/토글이 바뀔 때만 1회 계산, rerun엔 즉시.
+@st.cache_data(ttl=300, show_spinner="그래프 그리는 중…")
+def _render_graph_html(nodes, edges, show_similar):
+    return build_network(nodes, edges, show_similar).generate_html(notebook=False)
+
+
+components.html(
+    _render_graph_html(data["nodes"], data["edges"], show_similar),
+    height=780, scrolling=False,
+)

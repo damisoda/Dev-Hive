@@ -8,6 +8,7 @@
 import json
 import math
 
+import networkx as nx
 from pyvis.network import Network
 
 # 대주제별 색 팔레트 (어두운 배경에서 구분, 금색과 겹치지 않게). 토픽 순서대로 배정.
@@ -55,47 +56,86 @@ def build_network(nodes, edges, show_similar: bool = False) -> Network:
     """/graph 응답(nodes/edges)을 둥근 만다라형 force-directed pyvis Network로."""
     net = Network(height="780px", width="100%", bgcolor="#16161a",
                   font_color="#e8e8ee", directed=False, cdn_resources="remote")
-    net.set_options(json.dumps(_OPTIONS))
+    # 물리 시뮬레이터 OFF — 좌표를 서버에서 한 번 계산해 정적으로 그린다(노드가 떠다니지 않음).
+    opts = {**_OPTIONS, "physics": {"enabled": False}}
+    net.set_options(json.dumps(opts))
 
-    # 대주제: 색 배정 + 원형 좌표(맨 위 12시부터 시계방향) 고정 배치
+    # 대주제(최상위, auto=False)만 링에 색 배정 + 원형 좌표 고정 배치.
+    # Auto-HKG 하위노드는 링에 올리지 않는다(부모 콘텐츠 군집 옆에 물리로 배치).
     topics = [n for n in nodes if n["kind"] == "topic"]
+    roots = [n for n in topics if not n.get("auto")]
     topic_color, ring_pos = {}, {}
-    for i, n in enumerate(topics):
-        topic_color[n["id"]] = AUTO_COLOR if n.get("auto") else _PALETTE[i % len(_PALETTE)]
-        ang = 2 * math.pi * i / max(len(topics), 1) - math.pi / 2
+    for i, n in enumerate(roots):
+        topic_color[n["id"]] = _PALETTE[i % len(_PALETTE)]
+        ang = 2 * math.pi * i / max(len(roots), 1) - math.pi / 2
         ring_pos[n["id"]] = (_RING_R * math.cos(ang), _RING_R * math.sin(ang))
+    for n in topics:                       # Auto-HKG 하위노드 색(금색) — 콘텐츠 색 상속에 사용
+        if n.get("auto"):
+            topic_color[n["id"]] = AUTO_COLOR
 
-    # 콘텐츠 → 소속 토픽(belongs_to 첫 번째) → 색 상속
-    content_topic = {}
+    # belongs_to 분석: content_topic=색 상속(첫 소속), content_root=배치용 소속 대주제,
+    # auto_content=Auto-HKG 하위노드별 소속 콘텐츠.
+    root_ids = {n["id"] for n in roots}
+    content_topic, content_root, auto_content = {}, {}, {}
     for e in edges:
-        if e["rel"] == "belongs_to" and e["source"] not in content_topic:
-            content_topic[e["source"]] = e["target"]
+        if e["rel"] != "belongs_to":
+            continue
+        src, tgt = e["source"], e["target"]
+        if src not in content_topic:
+            content_topic[src] = tgt
+        if tgt in root_ids and src not in content_root:
+            content_root[src] = tgt
+        if topic_color.get(tgt) == AUTO_COLOR:
+            auto_content.setdefault(tgt, []).append(src)
 
     # 표시할 엣지 + 거기 등장하는 노드만. 고립 콘텐츠는 viz에서 제외.
     shown_edges = [e for e in edges if not (e["rel"] == "similar_to" and not show_similar)]
     linked = {ep for e in shown_edges for ep in (e["source"], e["target"])}
 
+    # ── 정적 좌표 ── 실제 엣지 구조로 force(spring) 레이아웃을 서버에서 한 번만 계산한 뒤
+    # 물리 off로 고정한다. 대주제는 ring에 고정, 콘텐츠/하위노드는 belongs_to를 따라
+    # 자기 주제 쪽으로 organic하게 모인다(인위적 나선 X, 떠다님 X, 중심 강제 쏠림 X).
+    render_ids = {n["id"] for n in nodes if n["kind"] == "topic" or n["id"] in linked}
+    g = nx.Graph()
+    g.add_nodes_from(render_ids)
+    for e in shown_edges:
+        if e["source"] in render_ids and e["target"] in render_ids:
+            g.add_edge(e["source"], e["target"])
+    fixed = [rid for rid in ring_pos if rid in render_ids]
+    pos = nx.spring_layout(
+        g, pos=dict(ring_pos), fixed=(fixed or None),
+        k=90, iterations=50, seed=7,
+    )
+
     added = set()
     for n in nodes:
         nid = n["id"]
-        if n["kind"] == "topic":
+        px, py = pos.get(nid, (0.0, 0.0))
+        if n["kind"] == "topic" and not n.get("auto"):
+            # 대주제: ring 고정 + 큰 노드 + 동색 글로우
             col = topic_color.get(nid, _PALETTE[0])
-            x, y = ring_pos[nid]
             net.add_node(
-                nid, label=n["label"], shape="dot",
-                size=48 if n.get("auto") else 42,   # 콘텐츠(9)와 급 차이 크게(P1)
-                x=x, y=y, physics=False, fixed=True,        # ring에 고정 → 전체가 둥글게
+                nid, label=n["label"], shape="dot", size=42, x=px, y=py, fixed=True,
                 color={"background": col, "border": col},
-                shadow={"enabled": True, "color": col, "size": 26, "x": 0, "y": 0},  # 동색 글로우
-                title=("[Auto-HKG] " if n.get("auto") else "") + n["label"],
+                shadow={"enabled": True, "color": col, "size": 26, "x": 0, "y": 0},
+                title=n["label"],
                 font={"size": 26, "color": "#ffffff", "strokeWidth": 6, "strokeColor": "#101014",
                       "bold": True},
             )
             added.add(nid)
-        elif nid in linked:   # 콘텐츠는 엣지 있는 것만(고립 제외) + 소속 주제 색
-            # label=" "(공백): 빈 문자열을 주면 vis.js가 노드 id를 라벨로 폴백하므로 공백으로 억제.
+        elif n["kind"] == "topic":
+            # Auto-HKG 하위토픽: 소속 콘텐츠 무게중심에, 대주제보다 작게·금색.
+            net.add_node(
+                nid, label=n["label"], shape="dot", size=18, x=px, y=py,
+                color={"background": AUTO_COLOR, "border": AUTO_COLOR},
+                shadow={"enabled": True, "color": AUTO_COLOR, "size": 12, "x": 0, "y": 0},
+                title="[Auto-HKG] " + n["label"],
+                font={"size": 15, "color": "#ffd166", "strokeWidth": 5, "strokeColor": "#101014"},
+            )
+            added.add(nid)
+        elif nid in linked:   # 콘텐츠: 소속 대주제 petal 위치 + 주제 색
             base = topic_color.get(content_topic.get(nid), "#6b7290")
-            net.add_node(nid, label=" ", title=n.get("label", ""),
+            net.add_node(nid, label=" ", title=n.get("label", ""), x=px, y=py,
                          size=9, shape="dot", color=_content_color(base))
             added.add(nid)
 

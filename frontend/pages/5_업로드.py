@@ -4,10 +4,12 @@
 기존 노드 편입 또는 새 하위/최상위 노드 생성 결과를 보여준다.
 """
 import streamlit as st
+from lib.ui import style
 
 from lib.api import upload_content
 
 st.set_page_config(page_title="업로드 · Dev-Hive", layout="centered")
+style()
 st.title("글 올리기")
 st.caption("올린 글이 태깅·임베딩을 거쳐 지식그래프에 자동 편입됩니다. 새로운 주제면 Auto-HKG가 노드를 새로 만듭니다.")
 

@@ -4,11 +4,13 @@ A. 내 학습 경로: 노드별 mastery를 약한 것부터(다음에 배울 것
 B. 다음에 읽을 추천: GraphRAG 추천 + 자연어 근거(reason) 강조.
 """
 import streamlit as st
+from lib.ui import style
 
 from lib.api import get_graph, get_mastery, list_feedback, recommend
 from lib.components import recommendation_card
 
 st.set_page_config(page_title="커리큘럼 · Dev-Hive", layout="wide")
+style()
 st.title("내 커리큘럼")
 st.caption("내 숙련도 기반 학습 경로와, 다음에 읽을 개인화 추천")
 
@@ -39,6 +41,8 @@ if not topics:
 else:
     rows = []
     for n in topics:
+        if n.get("auto"):
+            continue   # Auto-HKG 하위노드는 학습 경로에서 제외 — 대주제 7개만(잡음 방지)
         try:
             nid = int(str(n["id"]).split(":")[1])
         except (IndexError, ValueError):
@@ -46,12 +50,10 @@ else:
         rows.append({
             "name": n.get("label") or "?",
             "m": float(mastery.get(str(nid), 0.0)),
-            "auto": bool(n.get("auto")),
         })
     rows.sort(key=lambda r: r["m"])   # 약한 개념 먼저
     for r in rows:
-        tag = " ✦Auto-HKG" if r["auto"] else ""
-        st.progress(r["m"], text=f"{r['name']}{tag} · {_mastery_label(r['m'])} {r['m']:.0%}")
+        st.progress(r["m"], text=f"{r['name']} · {_mastery_label(r['m'])} {r['m']:.0%}")
 
 st.divider()
 
