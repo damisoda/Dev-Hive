@@ -72,6 +72,51 @@ def _recommendation_samples(db, n_users: int = 3, top_n: int = 5) -> list[dict]:
     return samples
 
 
+def _semantic_metrics(db) -> dict:
+    """auto 토픽 클러스터의 임베딩 품질(cohesion/separation/silhouette) + coverage.
+
+    그래프만으로는 못 보는 '의미 품질'을 임베딩으로 잰다 — 파라미터 튜닝 목적함수·회귀 게이트용.
+    """
+    import numpy as np
+
+    from app.graph.metrics import cluster_quality
+
+    rows = db.execute(
+        text(
+            """
+            SELECT m.node_id AS tid, c.text_embedding AS emb
+            FROM content_node_mapping m
+            JOIN curriculum_nodes n ON n.id = m.node_id
+            JOIN content c ON c.id = m.content_id
+            WHERE n.is_auto_generated = TRUE AND c.text_embedding IS NOT NULL
+            """
+        )
+    ).fetchall()
+    topic_embeddings: dict = {}
+    for r in rows:
+        topic_embeddings.setdefault(r.tid, []).append(
+            np.array(str(r.emb).strip()[1:-1].split(","), dtype=float)
+        )
+    quality = cluster_quality(topic_embeddings)
+
+    # coverage: 세분(auto) 토픽에 매핑된 콘텐츠 비율(나머지는 7대주제로만 흡수).
+    total = db.execute(
+        text("SELECT count(*) FROM content WHERE text_embedding IS NOT NULL")
+    ).scalar() or 0
+    in_auto = db.execute(
+        text(
+            "SELECT count(DISTINCT m.content_id) FROM content_node_mapping m "
+            "JOIN curriculum_nodes n ON n.id = m.node_id WHERE n.is_auto_generated = TRUE"
+        )
+    ).scalar() or 0
+    return {
+        **quality,
+        "coverage_ratio": round(in_auto / total, 4) if total else 0.0,
+        "content_in_auto_topics": in_auto,
+        "content_total": total,
+    }
+
+
 def _snapshot(out_path: str) -> None:
     db = SessionLocal()
     try:
@@ -84,11 +129,13 @@ def _snapshot(out_path: str) -> None:
             "content": metrics["kinds"].get("content", 0),
             "edges": metrics["edges"],
         }
+        semantic = _semantic_metrics(db)
         samples = _recommendation_samples(db)
     finally:
         db.close()
 
-    snapshot = {"metrics": metrics, "growth": node_growth, "rec_samples": samples}
+    snapshot = {"metrics": metrics, "growth": node_growth,
+                "semantic": semantic, "rec_samples": samples}
     # default=str: 혹시 남은 비직렬화 타입(numpy/Decimal 등)도 죽지 않게 방어
     Path(out_path).write_text(
         json.dumps(snapshot, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
@@ -111,6 +158,15 @@ def _print_report(s: dict) -> None:
     print(f"브릿지(단절점)  : {m['articulation_points']}개")
     print(f"LCC             : {m['lcc_size']} ({m['lcc_ratio']*100:.1f}%) · 성분 {m['num_components']}개")
     print(f"평균 군집계수   : {m['avg_clustering']}")
+    # HIVE-46 과파편화 지표
+    cpt = m.get("content_per_auto_topic", {})
+    print(f"고아노드비율    : {m.get('orphan_ratio')}  (auto토픽 {m.get('auto_topics')}개 중 콘텐츠≤1)")
+    print(f"토픽최대깊이    : {m.get('max_topic_depth')}  (눈덩이 중첩 지표)")
+    print(f"auto토픽당콘텐츠: mean {cpt.get('mean')} / median {cpt.get('median')} / max {cpt.get('max')}")
+    sem = s.get("semantic", {})
+    if sem:
+        print(f"클러스터품질    : cohesion {sem.get('cohesion')} / separation {sem.get('separation')} / silhouette {sem.get('silhouette')}")
+        print(f"coverage        : {sem.get('coverage_ratio')} ({sem.get('content_in_auto_topics')}/{sem.get('content_total')}) · 클러스터 {sem.get('n_clusters')}개")
     print("\n매개중심성 상위(브릿지 역할):")
     for b in m["top_betweenness"]:
         print(f"  - {b['node']}  ({b['score']})")
@@ -147,7 +203,20 @@ def _compare(before_path: str, after_path: str) -> None:
     row("브릿지(단절점)", "articulation_points")
     row("LCC 비율", "lcc_ratio")
     row("평균군집계수", "avg_clustering")
-    print("\n해석: modularity↑/커뮤니티 형성 + 허브·브릿지 출현 + LCC 유지 = '주제를 넘어 조직된다'")
+    # HIVE-46 과파편화 지표(health 축 — modularity와 달리 직접적)
+    row("고아노드비율", "orphan_ratio")
+    row("토픽최대깊이", "max_topic_depth")
+
+    # 의미 품질(semantic) 비교
+    bf = json.loads(Path(before_path).read_text(encoding="utf-8")).get("semantic", {})
+    af = json.loads(Path(after_path).read_text(encoding="utf-8")).get("semantic", {})
+    if bf or af:
+        print("\n[클러스터 의미 품질]")
+        for label, key in (("cohesion", "cohesion"), ("separation", "separation"),
+                           ("silhouette", "silhouette"), ("coverage", "coverage_ratio")):
+            print(f"{label:18} {str(bf.get(key)):>14} → {str(af.get(key)):>14}")
+    print("\n해석: 과파편화는 modularity가 아니라 orphan_ratio↓·articulation↓·max_depth↓로 본다.")
+    print("      클러스터 품질은 silhouette↑/cohesion↑로 '잘 묶였나'를 정량화(파라미터 튜닝 기준).")
 
 
 def main() -> None:

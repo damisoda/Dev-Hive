@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections import Counter
 
 import networkx as nx
+import numpy as np
 
 
 def _to_simple_undirected(g: nx.MultiDiGraph) -> nx.Graph:
@@ -58,6 +59,132 @@ def _degree_distribution(degrees: list[int]) -> dict:
     }
 
 
+def _stat(xs: list[float]) -> dict:
+    if not xs:
+        return {"mean": 0.0, "median": 0.0, "min": 0, "max": 0}
+    s = sorted(xs)
+    n = len(s)
+    median = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+    return {"mean": round(sum(xs) / n, 2), "median": round(median, 2), "min": s[0], "max": s[-1]}
+
+
+def _topic_metrics(g: nx.MultiDiGraph) -> dict:
+    """topic 계층/적재 기반 구조 지표 — 과파편화를 직접 측정(HIVE-46).
+
+    - orphan_ratio: auto 토픽 중 콘텐츠 ≤1건(고아) 비율. v1=0.94, 정상≈0.
+    - max_topic_depth: topic 트리 최대 깊이(parent_id 체인). v1=8(눈덩이), 정상 1~2.
+    - content_per_topic / content_per_auto_topic: 토픽당 콘텐츠 수 분포. v1 auto≈1.1.
+    """
+    topics: dict = {}            # node_id -> {parent_id, auto}
+    content_count: dict = {}     # node_id(topic) -> belongs_to 콘텐츠 수
+    for _, d in g.nodes(data=True):
+        if d.get("kind") == "topic":
+            nid = d.get("node_id")
+            topics[nid] = {"parent_id": d.get("parent_id"), "auto": bool(d.get("auto"))}
+            content_count[nid] = 0
+    for _, v, d in g.edges(data=True):
+        if d.get("rel") == "belongs_to":
+            tid = g.nodes[v].get("node_id")
+            if tid in content_count:
+                content_count[tid] += 1
+
+    auto_ids = [tid for tid, t in topics.items() if t["auto"]]
+    orphan = sum(1 for tid in auto_ids if content_count.get(tid, 0) <= 1)
+    orphan_ratio = round(orphan / len(auto_ids), 4) if auto_ids else 0.0
+
+    def _depth(start: int) -> int:
+        d_, cur, seen = 0, start, set()
+        while True:
+            p = topics.get(cur, {}).get("parent_id")
+            if p is None or p not in topics or cur in seen or d_ > 50:
+                break
+            seen.add(cur)
+            cur = p
+            d_ += 1
+        return d_
+
+    max_depth = max((_depth(tid) for tid in topics), default=0)
+
+    return {
+        "auto_topics": len(auto_ids),
+        "orphan_ratio": orphan_ratio,
+        "max_topic_depth": max_depth,
+        "content_per_topic": _stat([content_count[t] for t in topics]),
+        "content_per_auto_topic": _stat([content_count[t] for t in auto_ids]),
+    }
+
+
+def cluster_quality(topic_embeddings: dict[int, list]) -> dict:
+    """클러스터 의미 품질 — 임베딩 기반(그래프 밖, run_eval에서 DB 임베딩 주입).
+
+    파라미터 튜닝 목적함수 + 회귀 게이트용. 멤버 2건 이상 클러스터만 평가.
+    - cohesion: 멤버↔centroid 평균 코사인(클러스터 내 응집). 높을수록 좋음.
+    - separation: centroid 간 평균 코사인(클러스터 간 분리). 낮을수록 좋음.
+    - silhouette: -1~1. 응집·분리 종합(코사인 거리). 높을수록 잘 묶임 → 튜닝 기준.
+    """
+    clusters = {
+        tid: [np.asarray(e, dtype=float) for e in embs]
+        for tid, embs in topic_embeddings.items()
+        if len(embs) >= 2
+    }
+    n_points = sum(len(v) for v in clusters.values())
+    if not clusters:
+        return {"n_clusters": 0, "n_points": 0,
+                "cohesion": None, "separation": None, "silhouette": None}
+
+    def _unit(v: np.ndarray) -> np.ndarray:
+        nrm = np.linalg.norm(v)
+        return v / nrm if nrm else v
+
+    # cohesion + centroids
+    centroids = []
+    cohesions = []
+    for embs in clusters.values():
+        M = np.array([_unit(e) for e in embs])
+        cen = M.mean(axis=0)
+        cohesions.append(float(np.mean(M @ _unit(cen))))
+        centroids.append(_unit(cen))
+    cohesion = round(float(np.mean(cohesions)), 4)
+
+    # separation (centroid 쌍별 코사인 평균)
+    separation = None
+    if len(centroids) >= 2:
+        C = np.array(centroids)
+        S = C @ C.T
+        iu = np.triu_indices(len(C), k=1)
+        separation = round(float(S[iu].mean()), 4)
+
+    # silhouette (코사인 거리), 2개 이상 클러스터일 때만
+    silhouette = None
+    if len(clusters) >= 2:
+        pts, labels = [], []
+        for tid, embs in clusters.items():
+            for e in embs:
+                pts.append(_unit(e))
+                labels.append(tid)
+        X = np.array(pts)
+        labels = np.array(labels)
+        dist = 1.0 - (X @ X.T)
+        uniq = list(clusters.keys())
+        sils = []
+        for i in range(len(X)):
+            same = labels == labels[i]
+            same[i] = False
+            a = float(dist[i, same].mean()) if same.any() else 0.0
+            b = min(float(dist[i, labels == t].mean()) for t in uniq if t != labels[i])
+            denom = max(a, b)
+            sils.append((b - a) / denom if denom > 0 else 0.0)
+        silhouette = round(float(np.mean(sils)), 4)
+
+    return {
+        "n_clusters": len(clusters),
+        "n_points": n_points,
+        "cohesion": cohesion,
+        "separation": separation,
+        "silhouette": silhouette,
+    }
+
+
 def compute_metrics(g: nx.MultiDiGraph, *, betweenness_top: int = 5) -> dict:
     """그래프 자기조직화 지표를 계산해 dict로 반환한다.
 
@@ -74,6 +201,9 @@ def compute_metrics(g: nx.MultiDiGraph, *, betweenness_top: int = 5) -> dict:
 
     if n == 0:
         return {"nodes": 0, "edges": 0, "kinds": kinds}
+    if m == 0:
+        # 엣지 0 — Louvain modularity가 ZeroDivision. 커뮤니티/중심성은 건너뛴다.
+        return {"nodes": n, "edges": 0, "kinds": kinds, **_topic_metrics(g)}
 
     # 커뮤니티 / 모듈성 (가중 Louvain, 시드 고정으로 재현성)
     communities = nx.community.louvain_communities(h, weight="weight", seed=42)
@@ -124,4 +254,6 @@ def compute_metrics(g: nx.MultiDiGraph, *, betweenness_top: int = 5) -> dict:
         "lcc_ratio": round(len(lcc) / n, 4),
         "avg_clustering": round(avg_clustering, 4),
         "num_components": len(comps),
+        # HIVE-46: 과파편화 직접 측정 구조 지표(orphan_ratio·max_topic_depth·content_per_topic)
+        **_topic_metrics(g),
     }
