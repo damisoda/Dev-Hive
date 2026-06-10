@@ -1,0 +1,196 @@
+{
+  "metrics": {
+    "nodes": 931,
+    "edges": 6155,
+    "kinds": {
+      "topic": 7,
+      "content": 924
+    },
+    "modularity": 0.5082,
+    "num_communities": 12,
+    "adc": 0.0142,
+    "max_degree": 746,
+    "hub": "AI 엔지니어링",
+    "degree_dist": {
+      "min": 5,
+      "max": 746,
+      "mean": 13.222,
+      "histogram": {
+        "5": 14,
+        "6": 85,
+        "7": 118,
+        "8": 134,
+        "9": 142,
+        "10": 114,
+        "11": 77,
+        "12": 52,
+        "13": 28,
+        "14": 34,
+        "15": 20,
+        "16": 26,
+        "17": 9,
+        "18": 11,
+        "19": 11,
+        "20": 8,
+        "21": 6,
+        "22": 6,
+        "23": 3,
+        "24": 6,
+        "25": 3,
+        "26": 1,
+        "29": 2,
+        "30": 2,
+        "31": 1,
+        "34": 2,
+        "35": 1,
+        "36": 1,
+        "40": 1,
+        "43": 1,
+        "44": 2,
+        "46": 2,
+        "50": 1,
+        "168": 1,
+        "177": 1,
+        "183": 1,
+        "337": 1,
+        "405": 1,
+        "478": 1,
+        "746": 1
+      }
+    },
+    "articulation_points": 0,
+    "top_betweenness": [
+      {
+        "node": "AI 엔지니어링",
+        "score": 0.5857
+      },
+      {
+        "node": "Agentic AI",
+        "score": 0.1159
+      },
+      {
+        "node": "AI 워크플로우 & 자동화",
+        "score": 0.085
+      },
+      {
+        "node": "오픈소스 AI",
+        "score": 0.0696
+      },
+      {
+        "node": "멀티모달 AI",
+        "score": 0.0383
+      }
+    ],
+    "lcc_size": 931,
+    "lcc_ratio": 1.0,
+    "avg_clustering": 0.4634,
+    "num_components": 1
+  },
+  "growth": {
+    "total_nodes": 931,
+    "topics": 7,
+    "content": 924,
+    "edges": 6155
+  },
+  "rec_samples": [
+    {
+      "user_id": 105,
+      "display_name": "데모_입문개발자",
+      "level": "입문",
+      "avg_mastery": 0.056,
+      "recommendations": [
+        {
+          "title": "Zapier + ChatGPT로 사내 슬랙 봇 만들기 (노코드)",
+          "score": 0.8574,
+          "reason": "난이도 적합 100% · 관심 적합 86%"
+        },
+        {
+          "title": "HuggingFace Spaces에 무료로 LLM 데모 배포하기",
+          "score": 0.8264,
+          "reason": "난이도 적합 100% · 관심 적합 75%"
+        },
+        {
+          "title": "딥러닝 입문기(2) - 행렬과 벡터, 그리고 텐서\n",
+          "score": 0.7731,
+          "reason": "난이도 적합 100% · 관심 적합 58%"
+        },
+        {
+          "title": "[AI] Supermeme 사용기",
+          "score": 0.7643,
+          "reason": "난이도 적합 100% · 관심 적합 55%"
+        },
+        {
+          "title": "[딥러닝] 전이학습(Transfer learning)과 파인 튜닝(Fine tuning)의 차이점",
+          "score": 0.7592,
+          "reason": "난이도 적합 100% · 관심 적합 53%"
+        }
+      ]
+    },
+    {
+      "user_id": 106,
+      "display_name": "데모_중급개발자",
+      "level": "중급",
+      "avg_mastery": 0.183,
+      "recommendations": [
+        {
+          "title": "HuggingFace Spaces에 무료로 LLM 데모 배포하기",
+          "score": 0.8272,
+          "reason": "난이도 적합 100% · 관심 적합 76%"
+        },
+        {
+          "title": "Zapier + ChatGPT로 사내 슬랙 봇 만들기 (노코드)",
+          "score": 0.8038,
+          "reason": "난이도 적합 90% · 관심 적합 81%"
+        },
+        {
+          "title": "딥러닝 입문기(2) - 행렬과 벡터, 그리고 텐서\n",
+          "score": 0.769,
+          "reason": "난이도 적합 100% · 관심 적합 56%"
+        },
+        {
+          "title": "FastAPI + Anthropic SDK 스트리밍 응답 구현 가이드",
+          "score": 0.7346,
+          "reason": "난이도 적합 74% · 관심 적합 80%"
+        },
+        {
+          "title": "Claude와 IntelliJ MCP 연결하기",
+          "score": 0.7277,
+          "reason": "난이도 적합 90% · 관심 적합 56%"
+        }
+      ]
+    },
+    {
+      "user_id": 107,
+      "display_name": "데모_고급개발자",
+      "level": "고급",
+      "avg_mastery": 0.384,
+      "recommendations": [
+        {
+          "title": "Claude Code로 일주일 동안 PR 47개 머지한 후기",
+          "score": 0.815,
+          "reason": "난이도 적합 86% · 관심 적합 90%"
+        },
+        {
+          "title": "AI 앱 배포: Railway vs Vercel vs Fly.io 1년 운영 비교",
+          "score": 0.8092,
+          "reason": "난이도 적합 94% · 관심 적합 78%"
+        },
+        {
+          "title": "ssreeni1/tracebase",
+          "score": 0.7629,
+          "reason": "난이도 적합 99% · 관심 적합 56%"
+        },
+        {
+          "title": "딥러닝 입문기(2) - 행렬과 벡터, 그리고 텐서\n",
+          "score": 0.7599,
+          "reason": "난이도 적합 100% · 관심 적합 53%"
+        },
+        {
+          "title": "FastAPI + Anthropic SDK 스트리밍 응답 구현 가이드",
+          "score": 0.7589,
+          "reason": "난이도 적합 94% · 관심 적합 78%"
+        }
+      ]
+    }
+  ]
+}

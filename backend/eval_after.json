@@ -1,0 +1,200 @@
+{
+  "metrics": {
+    "nodes": 1756,
+    "edges": 7050,
+    "kinds": {
+      "topic": 832,
+      "content": 924
+    },
+    "modularity": 0.5533,
+    "num_communities": 15,
+    "adc": 0.0046,
+    "max_degree": 746,
+    "hub": "AI 엔지니어링",
+    "degree_dist": {
+      "min": 1,
+      "max": 746,
+      "mean": 8.03,
+      "histogram": {
+        "1": 778,
+        "2": 38,
+        "3": 5,
+        "4": 1,
+        "5": 1,
+        "6": 18,
+        "7": 82,
+        "8": 123,
+        "9": 135,
+        "10": 140,
+        "11": 111,
+        "12": 78,
+        "13": 52,
+        "14": 29,
+        "15": 33,
+        "16": 22,
+        "17": 24,
+        "18": 8,
+        "19": 13,
+        "20": 9,
+        "21": 8,
+        "22": 6,
+        "23": 6,
+        "24": 3,
+        "25": 7,
+        "26": 3,
+        "30": 2,
+        "31": 2,
+        "32": 1,
+        "35": 2,
+        "36": 1,
+        "37": 1,
+        "41": 1,
+        "44": 1,
+        "45": 2,
+        "47": 2,
+        "51": 1,
+        "168": 1,
+        "178": 1,
+        "183": 1,
+        "338": 1,
+        "405": 1,
+        "478": 1,
+        "746": 1
+      }
+    },
+    "articulation_points": 778,
+    "top_betweenness": [
+      {
+        "node": "AI 엔지니어링",
+        "score": 0.5742
+      },
+      {
+        "node": "Agentic AI",
+        "score": 0.1233
+      },
+      {
+        "node": "AI 워크플로우 & 자동화",
+        "score": 0.0862
+      },
+      {
+        "node": "오픈소스 AI",
+        "score": 0.0653
+      },
+      {
+        "node": "멀티모달 AI",
+        "score": 0.0427
+      }
+    ],
+    "lcc_size": 1756,
+    "lcc_ratio": 1.0,
+    "avg_clustering": 0.2252,
+    "num_components": 1
+  },
+  "growth": {
+    "total_nodes": 1756,
+    "topics": 832,
+    "content": 924,
+    "edges": 7050
+  },
+  "rec_samples": [
+    {
+      "user_id": 105,
+      "display_name": "데모_입문개발자",
+      "level": "입문",
+      "avg_mastery": 0.001,
+      "recommendations": [
+        {
+          "title": "Zapier + ChatGPT로 사내 슬랙 봇 만들기 (노코드)",
+          "score": 0.8574,
+          "reason": "프롬프트 엔지니어링과 RAG를 학습한 당신이 실제 도구를 연결해 첫 AI 애플리케이션을 만들기에 가장 적합한 단계입니다."
+        },
+        {
+          "title": "HuggingFace Spaces에 무료로 LLM 데모 배포하기",
+          "score": 0.8264,
+          "reason": "난이도 적합 100% · 관심 적합 75%"
+        },
+        {
+          "title": "딥러닝 입문기(2) - 행렬과 벡터, 그리고 텐서\n",
+          "score": 0.7731,
+          "reason": "난이도 적합 100% · 관심 적합 58%"
+        },
+        {
+          "title": "Free job-postings API (1.8M listings) to drop into your n8n workflows",
+          "score": 0.768,
+          "reason": "난이도 적합 100% · 관심 적합 56%"
+        },
+        {
+          "title": "PSA: A possible malware disguised as ComfyUI custom node Claude skills on GitHub",
+          "score": 0.7677,
+          "reason": "난이도 적합 100% · 관심 적합 56%"
+        }
+      ]
+    },
+    {
+      "user_id": 106,
+      "display_name": "데모_중급개발자",
+      "level": "중급",
+      "avg_mastery": 0.002,
+      "recommendations": [
+        {
+          "title": "Zapier + ChatGPT로 사내 슬랙 봇 만들기 (노코드)",
+          "score": 0.8438,
+          "reason": "중급자 수준에서 프롬프트 엔지니어링과 AI 자동화의 실제 접점을 경험할 수 있는 실무 사례이기 때문에 추천합니다."
+        },
+        {
+          "title": "HuggingFace Spaces에 무료로 LLM 데모 배포하기",
+          "score": 0.8272,
+          "reason": "난이도 적합 100% · 관심 적합 76%"
+        },
+        {
+          "title": "PSA: A possible malware disguised as ComfyUI custom node Claude skills on GitHub",
+          "score": 0.7698,
+          "reason": "난이도 적합 100% · 관심 적합 57%"
+        },
+        {
+          "title": "Free job-postings API (1.8M listings) to drop into your n8n workflows",
+          "score": 0.7694,
+          "reason": "난이도 적합 100% · 관심 적합 56%"
+        },
+        {
+          "title": "딥러닝 입문기(2) - 행렬과 벡터, 그리고 텐서\n",
+          "score": 0.769,
+          "reason": "난이도 적합 100% · 관심 적합 56%"
+        }
+      ]
+    },
+    {
+      "user_id": 107,
+      "display_name": "데모_고급개발자",
+      "level": "고급",
+      "avg_mastery": 0.004,
+      "recommendations": [
+        {
+          "title": "초보자를 위한 ChatGPT 프롬프트 기초 - 5가지 원칙",
+          "score": 0.8584,
+          "reason": "이미 프롬프트 엔지니어링 2건과 AI 엔지니어링 3건을 완료한 고급 사용자에게는 입문 난이도 콘텐츠가 적합하지 않습니다.\n\n**추천하지 않는 이유:**\n현재 학습 수준에 비해 난이도가 너무 낮으며, 미학습 분야(RAG & 지식 관리, 오픈소스 AI, 로컬 LLM 셋업 등)에서 실무 역량을 강화하는 것이 우선입니다."
+        },
+        {
+          "title": "Zapier + ChatGPT로 사내 슬랙 봇 만들기 (노코드)",
+          "score": 0.8255,
+          "reason": "난이도 적합 100% · 관심 적합 75%"
+        },
+        {
+          "title": "MCP 입문: Claude Desktop에 SQLite 연결하기 5분 가이드",
+          "score": 0.825,
+          "reason": "난이도 적합 100% · 관심 적합 75%"
+        },
+        {
+          "title": "HuggingFace Spaces에 무료로 LLM 데모 배포하기",
+          "score": 0.8242,
+          "reason": "난이도 적합 100% · 관심 적합 75%"
+        },
+        {
+          "title": "RAG 입문: ChatGPT API + LangChain으로 PDF QA 만들기 30분",
+          "score": 0.8202,
+          "reason": "난이도 적합 100% · 관심 적합 73%"
+        }
+      ]
+    }
+  ]
+}
