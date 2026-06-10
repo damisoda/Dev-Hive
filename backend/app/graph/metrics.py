@@ -22,6 +22,8 @@ build_graph(HIVE-19)가 만든 지식그래프에서 "스스로 조직된다(sel
 """
 from __future__ import annotations
 
+import math
+import random
 from collections import Counter
 
 import networkx as nx
@@ -217,6 +219,49 @@ def cluster_label_purity(cluster_labels: dict) -> dict:
         "purity_weighted": round(modal_sum / total, 4),
         "baseline": round(baseline, 4),
     }
+
+
+def label_cluster_agreement(true_labels: list, cluster_labels: list) -> dict:
+    """클러스터링과 독립 라벨의 일치도 — V-measure(Rosenberg & Hirschberg 2007).
+
+    purity는 클러스터를 잘게 쪼갤수록 1에 수렴하는 편향이 있다. V-measure는
+    homogeneity(각 클러스터가 단일 클래스인가) × completeness(각 클래스가 한 클러스터에
+    모이는가)의 조화평균이라 그 편향을 보정한다. 0~1, 랜덤이면 ~0.
+
+    true_labels/cluster_labels: 같은 점들에 대한 정렬된 라벨 리스트(true가 None인 항목은 제외).
+    엔트로피 기반 수식으로 직접 계산(sklearn 의존 없음). 랜덤(셔플) baseline 동봉.
+    """
+    pairs = [(t, k) for t, k in zip(true_labels, cluster_labels) if t is not None]
+    n = len(pairs)
+    if n == 0:
+        return {"n": 0, "v_measure": None, "homogeneity": None,
+                "completeness": None, "baseline": None}
+    true = [t for t, _ in pairs]
+    pred = [k for _, k in pairs]
+
+    def _entropy(labels: list) -> float:
+        c = Counter(labels)
+        return -sum((v / n) * math.log(v / n) for v in c.values() if v)
+
+    def _cond_entropy(a: list, b: list) -> float:
+        """H(A|B) = -Σ (n_ab/n) log(n_ab/n_b)."""
+        nb = Counter(b)
+        pair = Counter(zip(a, b))
+        return -sum((cnt / n) * math.log(cnt / nb[bk]) for (ak, bk), cnt in pair.items())
+
+    def _v(a: list, b: list) -> tuple[float, float, float]:
+        h_a, h_b = _entropy(a), _entropy(b)
+        homo = 1.0 if h_a == 0 else 1 - _cond_entropy(a, b) / h_a
+        comp = 1.0 if h_b == 0 else 1 - _cond_entropy(b, a) / h_b
+        v = 0.0 if (homo + comp) == 0 else 2 * homo * comp / (homo + comp)
+        return round(v, 4), round(homo, 4), round(comp, 4)
+
+    v, homo, comp = _v(true, pred)
+    rp = list(pred)
+    random.Random(42).shuffle(rp)
+    v_base, _, _ = _v(true, rp)
+    return {"n": n, "v_measure": v, "homogeneity": homo,
+            "completeness": comp, "baseline": v_base}
 
 
 def compute_metrics(g: nx.MultiDiGraph, *, betweenness_top: int = 5) -> dict:

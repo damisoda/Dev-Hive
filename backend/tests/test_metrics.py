@@ -12,6 +12,7 @@ from app.graph.metrics import (
     cluster_label_purity,
     cluster_quality,
     compute_metrics,
+    label_cluster_agreement,
 )
 
 
@@ -114,6 +115,31 @@ def test_cluster_label_purity_empty():
     }
     # 전부 None인 경우도 빈 것과 동일
     assert cluster_label_purity({1: [None, None]})["n_clusters"] == 0
+
+
+# ── label_cluster_agreement (V-measure) ───────────────────────────────────
+
+def test_v_measure_perfect():
+    # 클러스터 == 클래스 → V=1.0
+    r = label_cluster_agreement(["a", "a", "b", "b", "c"], [1, 1, 2, 2, 3])
+    assert r["v_measure"] == 1.0 and r["homogeneity"] == 1.0 and r["completeness"] == 1.0
+
+
+def test_v_measure_matches_sklearn():
+    from sklearn.metrics import homogeneity_completeness_v_measure
+    true = ["a", "a", "b", "a", "b", "c", "c", "a"]
+    pred = [1, 1, 1, 2, 2, 2, 3, 3]
+    r = label_cluster_agreement(true, pred)
+    h, c, v = homogeneity_completeness_v_measure(true, pred)
+    assert abs(r["v_measure"] - round(v, 4)) < 1e-3
+    assert abs(r["homogeneity"] - round(h, 4)) < 1e-3
+    assert abs(r["completeness"] - round(c, 4)) < 1e-3
+
+
+def test_v_measure_ignores_none_and_empty():
+    assert label_cluster_agreement([None, None], [1, 2])["n"] == 0
+    r = label_cluster_agreement(["a", "a", None], [1, 1, 2])
+    assert r["n"] == 2  # None 항목 제외
 
 
 # ── compute_metrics m==0 가드 ──────────────────────────────────────────────

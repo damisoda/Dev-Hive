@@ -84,7 +84,11 @@ def _semantic_metrics(db) -> dict:
     """
     import numpy as np
 
-    from app.graph.metrics import cluster_label_purity, cluster_quality
+    from app.graph.metrics import (
+        cluster_label_purity,
+        cluster_quality,
+        label_cluster_agreement,
+    )
 
     # auto 멤버십 + content_type + 임베딩 (한 번에 조회)
     rows = db.execute(
@@ -133,6 +137,14 @@ def _semantic_metrics(db) -> dict:
     tag_purity_ctype = cluster_label_purity(labels_ctype)
     tag_purity_topic = cluster_label_purity(labels_topic)
 
+    # V-measure: 클러스터링 vs 독립 라벨 일치도(purity 편향 보정). 평평한 (true,pred)로.
+    flat_true_ct = [l for ls in labels_ctype.values() for l in ls]
+    flat_true_tp = [l for ls in labels_topic.values() for l in ls]
+    flat_pred = [tid for tid, ls in labels_ctype.items() for _ in ls]
+    flat_pred_tp = [tid for tid, ls in labels_topic.items() for _ in ls]
+    vmeasure_ctype = label_cluster_agreement(flat_true_ct, flat_pred)
+    vmeasure_topic = label_cluster_agreement(flat_true_tp, flat_pred_tp)
+
     # coverage: 세분(auto) 토픽에 매핑된 콘텐츠 비율(나머지는 7대주제로만 흡수).
     total = db.execute(
         text("SELECT count(*) FROM content WHERE text_embedding IS NOT NULL")
@@ -146,6 +158,8 @@ def _semantic_metrics(db) -> dict:
     return {
         "tag_purity_content_type": tag_purity_ctype,
         "tag_purity_topic": tag_purity_topic,
+        "v_measure_content_type": vmeasure_ctype,
+        "v_measure_topic": vmeasure_topic,
         "embedding_geometry": geometry,       # 튜닝용(headline 아님)
         "coverage_ratio": round(in_auto / total, 4) if total else 0.0,
         "content_in_auto_topics": in_auto,
@@ -208,6 +222,9 @@ def _print_report(s: dict) -> None:
         tp = sem.get("tag_purity_topic", {})
         print(f"content_type 순도: mean {ct.get('purity_mean')} / weighted {ct.get('purity_weighted')} / baseline {ct.get('baseline')}  (클러스터 {ct.get('n_clusters')}개)")
         print(f"대주제 순도      : mean {tp.get('purity_mean')} / weighted {tp.get('purity_weighted')} / baseline {tp.get('baseline')}  (클러스터 {tp.get('n_clusters')}개)")
+        vc = sem.get("v_measure_content_type", {})
+        vt = sem.get("v_measure_topic", {})
+        print(f"V-measure        : content_type {vc.get('v_measure')} (homog {vc.get('homogeneity')}/compl {vc.get('completeness')}, 랜덤 {vc.get('baseline')}) / 대주제 {vt.get('v_measure')} (랜덤 {vt.get('baseline')})")
         geo = sem.get("embedding_geometry", {})
         print(f"  (튜닝용) 임베딩기하: silhouette {geo.get('silhouette')} / cohesion {geo.get('cohesion')} / separation {geo.get('separation')}")
         print(f"coverage        : {sem.get('coverage_ratio')} ({sem.get('content_in_auto_topics')}/{sem.get('content_total')})")
@@ -266,6 +283,9 @@ def _compare(before_path: str, after_path: str) -> None:
         srow("  baseline", "tag_purity_content_type", "baseline")
         srow("대주제 순도", "tag_purity_topic", "purity_mean")
         srow("  baseline", "tag_purity_topic", "baseline")
+        srow("V-measure(ctype)", "v_measure_content_type", "v_measure")
+        srow("  랜덤 baseline", "v_measure_content_type", "baseline")
+        srow("V-measure(대주제)", "v_measure_topic", "v_measure")
         srow("(튜닝)silhouette", "embedding_geometry", "silhouette")
         print(f"{'coverage':22} {str(bf.get('coverage_ratio')):>14} → {str(af.get('coverage_ratio')):>14}")
     print("\n해석: 과파편화는 modularity가 아니라 orphan_ratio↓·articulation↓·max_depth↓로 본다.")
