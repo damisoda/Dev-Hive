@@ -87,6 +87,20 @@ def _feedback_row(content_id: int, user_id: int, current: str | None, key_prefix
                 st.rerun()
 
 
+def _handle_read_result(resp: dict | None) -> bool:
+    """mark_read 응답 처리 — 레벨업이면 축하 알림(HIVE-36/49). 성공 시 True.
+
+    토스트는 rerun을 넘어 유지되므로, 읽음 직후 rerun해도 메시지가 보인다.
+    """
+    if not resp:
+        return False
+    if resp.get("leveled_up"):
+        st.toast(f"레벨 업 — '{resp.get('new_level')}' 단계에 도달했어요")
+    else:
+        st.toast("읽음 처리됨")
+    return True
+
+
 def content_card(
     item: dict,
     user_id: int,
@@ -118,8 +132,7 @@ def content_card(
         cols = st.columns([1, 3])
         with cols[0]:
             if st.button("읽음 처리", key=f"{key_prefix}_read_{item['id']}"):
-                if mark_read(user_id, item["id"]):
-                    st.toast("읽음 처리됨")
+                if _handle_read_result(mark_read(user_id, item["id"])):
                     st.rerun()
         with cols[1]:
             if item.get("engagement_likes") is not None:
@@ -130,14 +143,29 @@ def content_card(
             _feedback_row(item["id"], user_id, feedback_map.get(item["id"]), key_prefix)
 
 
-def recommendation_card(rec: dict, user_id: int, idx: int) -> None:
-    """/recommend 아이템 카드 — 순위 + GraphRAG 근거(reason) 강조 + 읽음 버튼."""
+def recommendation_card(
+    rec: dict, user_id: int, idx: int, *, feedback_map: dict | None = None
+) -> None:
+    """/recommend 카드 — 순위 + 제목(원문 링크) + 가공 요약 + GraphRAG 근거 + 메타 + 피드백 + 읽음.
+
+    feedback_map: {content_id: feedback}. None이면 피드백 버튼 미표시.
+    """
     with st.container(border=True):
         cols = st.columns([1, 9])
         with cols[0]:
             st.markdown(f"# {idx}")
         with cols[1]:
-            st.markdown(f"### {rec['title']}")
+            # 제목 = 원문 링크(HIVE-49). url 없으면 비활성('#').
+            st.markdown(f"### [{rec['title']}]({rec.get('url') or '#'})")
+            if rec.get("summary"):
+                st.markdown(rec["summary"])             # 추천 확정 시 lazy 가공된 요약(one_liner)
+            badges = []
+            if rec.get("difficulty"):
+                badges.append(f"`{rec['difficulty']}`")
+            if rec.get("content_type"):
+                badges.append(f"`{rec['content_type']}`")
+            if badges:
+                st.caption(" · ".join(badges))
             if rec.get("reason"):
                 st.markdown(f"> {rec['reason']}")          # GraphRAG 근거 = 차별점, 강조
             else:
@@ -145,6 +173,7 @@ def recommendation_card(rec: dict, user_id: int, idx: int) -> None:
             if rec.get("score") is not None:
                 st.caption(f"적합도 {rec['score']:.2f}")
             if st.button("읽음 처리", key=f"rec_read_{rec['content_id']}"):
-                if mark_read(user_id, rec["content_id"]):
-                    st.toast("읽음 처리됨. 다음 추천을 갱신합니다.")
+                if _handle_read_result(mark_read(user_id, rec["content_id"])):
                     st.rerun()
+            if feedback_map is not None:
+                _feedback_row(rec["content_id"], user_id, feedback_map.get(rec["content_id"]), "rec")
