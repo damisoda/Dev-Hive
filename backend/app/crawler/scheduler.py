@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from threading import Lock
 
-from app.crawler.run_crawler import crawl_github, crawl_reddit, run_pipeline
+from app.crawler.run_crawler import crawl_github, crawl_reddit, crawl_velog, run_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,10 @@ def run_reddit_job() -> None:
     _run_named_pipeline("reddit_24h", crawl_reddit)
 
 
+def run_velog_job() -> None:
+    _run_named_pipeline("velog_24h", crawl_velog)
+
+
 def start_scheduler():
     """백그라운드 크롤 스케줄러 시작(idempotent). apscheduler를 여기서 lazy import한다."""
     global _scheduler
@@ -55,6 +59,16 @@ def start_scheduler():
                 trigger="interval",
                 hours=24,
                 id="reddit_24h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("velog_24h"):
+            _scheduler.add_job(
+                run_velog_job,
+                trigger="interval",
+                hours=24,
+                id="velog_24h",
                 max_instances=1,
                 coalesce=True,
                 replace_existing=True,
