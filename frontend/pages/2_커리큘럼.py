@@ -5,7 +5,7 @@ B. 다음에 읽을 추천: GraphRAG 추천 + 자연어 근거(reason) 강조.
 """
 import streamlit as st
 
-from lib.api import get_graph, get_mastery, recommend
+from lib.api import get_graph, get_mastery, list_feedback, recommend
 from lib.components import recommendation_card
 
 st.set_page_config(page_title="커리큘럼 · Dev-Hive", layout="wide")
@@ -63,5 +63,6 @@ if not data or not data.get("recommendations"):
     st.info("아직 추천이 충분하지 않습니다. 피드에서 몇 개를 읽으면 추천이 시작됩니다.")
     st.page_link("pages/1_피드.py", label="피드에서 콘텐츠 둘러보기 →")
 else:
+    feedback_map = list_feedback(uid)   # 추천 카드에 피드백 버튼(HIVE-49) — want_more/too_hard가 추천에 반영
     for i, rec in enumerate(data["recommendations"], 1):
-        recommendation_card(rec, uid, i)
+        recommendation_card(rec, uid, i, feedback_map=feedback_map)

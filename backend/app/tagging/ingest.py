@@ -27,7 +27,6 @@ from sqlalchemy.engine import Engine
 from app.crawler.qc_gate import qc_gate
 from app.tagging.embedder import embed_content
 from app.tagging.loader import QUALITY_THRESHOLD, load_content
-from app.tagging.synthesizer import synthesize
 from app.tagging.tagger import MODEL, _SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -205,18 +204,13 @@ def ingest_items(
                 stats["skipped_quality"] += 1
                 continue
 
-            # 가공(태깅 후·임베딩 전): content_type별 카드 생성. 실패(None)는 비차단 — 가공 없이 적재.
-            try:
-                synthesis = synthesize(item, tags, anthropic_client)
-            except Exception as e:
-                logger.info("[%03d] WARN(synthesis)  %s\n      %s", i, title, e)
-                synthesis = None
-
-            # 임베딩은 원문 고정(가공본 임베딩 X). 가공본은 synthesis 컬럼에만 저장.
+            # 가공(synthesis)은 적재 시 하지 않는다(HIVE-49 lazy). 표시 전용이라 롱테일까지
+            # 미리 만들 필요가 없고, '추천으로 확정되어 노출될 때' lazy 생성·캐시한다.
+            # 임베딩은 원문 고정.
             embedding = embed_content(item, openai_client)
 
             with engine.begin() as conn:
-                content_id = load_content(item, tags, embedding, conn, synthesis=synthesis)
+                content_id = load_content(item, tags, embedding, conn)
 
             if content_id is None:
                 logger.info("[%03d] SKIP(dup url)  %s", i, title)

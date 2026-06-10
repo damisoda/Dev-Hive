@@ -88,8 +88,6 @@ def test_ingest_items_happy_path(monkeypatch):
     tags_by_idx = {0: _good_tags(0.9), 1: _good_tags(0.8)}
 
     monkeypatch.setattr(ingest, "embed_content", lambda item, client: [0.0] * 1536)
-    # 가공(synthesis): content_type별 카드. 적재에 그대로 전달되는지 확인.
-    monkeypatch.setattr(ingest, "synthesize", lambda item, tags, client: {"card": item["url"]})
 
     loaded = []
     synth_seen = []
@@ -111,29 +109,8 @@ def test_ingest_items_happy_path(monkeypatch):
     assert stats["load_failed"] == 0
     assert loaded == ["https://a.com", "https://b.com"]
     assert engine.tx_count == 2  # 건별 트랜잭션
-    # 가공본이 임베딩 원문고정과 별개로 적재에 전달됨
-    assert synth_seen == [{"card": "https://a.com"}, {"card": "https://b.com"}]
-
-
-def test_ingest_items_synthesis_failure_non_blocking(monkeypatch):
-    items = [_item("https://a.com")]
-    monkeypatch.setattr(ingest, "embed_content", lambda item, client: [0.0] * 1536)
-
-    def boom(item, tags, client):
-        raise RuntimeError("synth down")
-
-    monkeypatch.setattr(ingest, "synthesize", boom)
-
-    seen = []
-
-    def fake_load(item, tags, embedding, conn, synthesis=None):
-        seen.append(synthesis)
-        return 1
-
-    monkeypatch.setattr(ingest, "load_content", fake_load)
-    stats = ingest_items(items, _FakeAnthropic({0: _good_tags()}), _FakeOpenAI(), _FakeEngine())
-    assert stats["inserted"] == 1   # 가공 실패해도 적재는 진행(비차단)
-    assert seen == [None]           # synthesis=None으로 폴백
+    # HIVE-49 lazy: 적재 시 가공하지 않는다 → synthesis는 항상 None(추천 확정 시 생성).
+    assert synth_seen == [None, None]
 
 
 def test_ingest_items_skips_low_quality(monkeypatch):
@@ -141,7 +118,6 @@ def test_ingest_items_skips_low_quality(monkeypatch):
     tags_by_idx = {0: _good_tags(0.9), 1: _good_tags(0.1)}  # 둘째는 quality 미달
 
     monkeypatch.setattr(ingest, "embed_content", lambda item, client: [0.0] * 1536)
-    monkeypatch.setattr(ingest, "synthesize", lambda *a, **k: None)
     monkeypatch.setattr(ingest, "load_content", lambda *a, **k: 101)
 
     stats = ingest_items(items, _FakeAnthropic(tags_by_idx), _FakeOpenAI(), _FakeEngine())
@@ -152,7 +128,6 @@ def test_ingest_items_skips_low_quality(monkeypatch):
 def test_ingest_items_counts_duplicate(monkeypatch):
     items = [_item("https://a.com")]
     monkeypatch.setattr(ingest, "embed_content", lambda item, client: [0.0] * 1536)
-    monkeypatch.setattr(ingest, "synthesize", lambda *a, **k: None)
     monkeypatch.setattr(ingest, "load_content", lambda *a, **k: None)  # dup → None
 
     stats = ingest_items(items, _FakeAnthropic({0: _good_tags()}), _FakeOpenAI(), _FakeEngine())
@@ -171,7 +146,6 @@ def test_ingest_items_empty_after_qc(monkeypatch):
 def test_ingest_items_limit(monkeypatch):
     items = [_item(f"https://a{i}.com") for i in range(5)]
     monkeypatch.setattr(ingest, "embed_content", lambda item, client: [0.0] * 1536)
-    monkeypatch.setattr(ingest, "synthesize", lambda *a, **k: None)
     monkeypatch.setattr(ingest, "load_content", lambda *a, **k: 1)
     stats = ingest_items(
         items, _FakeAnthropic({0: _good_tags(), 1: _good_tags()}), _FakeOpenAI(),
