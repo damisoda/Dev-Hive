@@ -185,6 +185,40 @@ def cluster_quality(topic_embeddings: dict[int, list]) -> dict:
     }
 
 
+def cluster_label_purity(cluster_labels: dict) -> dict:
+    """클러스터 라벨 동질성(순도) — 의미(semantic) 지표.
+
+    클러스터링에 쓰이지 않은 **독립 라벨**(태거의 content_type·대주제 등)로 평가하므로
+    비순환적이고 해석이 쉽다("각 클러스터가 X% 단일 라벨로 구성"). 임베딩 기하(silhouette)와 달리
+    baseline(전체 최빈 라벨 비율 = 랜덤 클러스터 기대)을 함께 줘서 '높다/낮다'를 판단할 수 있다.
+
+    cluster_labels: {cluster_id: [label, ...]}  (label=None은 무시).
+    반환: purity_mean(클러스터 단순평균) / purity_weighted(크기가중) / baseline / n_clusters.
+    """
+    per: list[float] = []
+    modal_sum = 0
+    total = 0
+    all_labels: list = []
+    for labels in cluster_labels.values():
+        labs = [l for l in labels if l is not None]
+        if not labs:
+            continue
+        modal = Counter(labs).most_common(1)[0][1]
+        per.append(modal / len(labs))
+        modal_sum += modal
+        total += len(labs)
+        all_labels.extend(labs)
+    if not per:
+        return {"n_clusters": 0, "purity_mean": None, "purity_weighted": None, "baseline": None}
+    baseline = Counter(all_labels).most_common(1)[0][1] / len(all_labels)
+    return {
+        "n_clusters": len(per),
+        "purity_mean": round(float(np.mean(per)), 4),
+        "purity_weighted": round(modal_sum / total, 4),
+        "baseline": round(baseline, 4),
+    }
+
+
 def compute_metrics(g: nx.MultiDiGraph, *, betweenness_top: int = 5) -> dict:
     """그래프 자기조직화 지표를 계산해 dict로 반환한다.
 

@@ -7,7 +7,12 @@
 import networkx as nx
 import numpy as np
 
-from app.graph.metrics import _topic_metrics, cluster_quality, compute_metrics
+from app.graph.metrics import (
+    _topic_metrics,
+    cluster_label_purity,
+    cluster_quality,
+    compute_metrics,
+)
 
 
 def _topic(g, nid, parent, auto):
@@ -73,6 +78,42 @@ def test_cluster_quality_ignores_singletons():
     # 멤버 1개 클러스터는 품질평가 제외 → 유효 클러스터 0
     q = cluster_quality({1: [np.array([1.0, 0])], 2: [np.array([0, 1.0])]})
     assert q["n_clusters"] == 0 and q["cohesion"] is None
+
+
+# ── cluster_label_purity ───────────────────────────────────────────────────
+
+def test_cluster_label_purity_fully_homogeneous():
+    # 각 클러스터가 단일 라벨 → 순도 1.0. baseline=전체 최빈비(4/6).
+    p = cluster_label_purity({1: ["a", "a", "a"], 2: ["b", "b"], 3: ["a"]})
+    assert p["n_clusters"] == 3
+    assert p["purity_mean"] == 1.0
+    assert p["purity_weighted"] == 1.0
+    assert p["baseline"] == round(4 / 6, 4)   # a가 4건/총 6건
+
+
+def test_cluster_label_purity_mixed_fraction():
+    # c1: a 2/3 (최빈 2), c2: 단일. mean=(2/3+1)/2, weighted=(2+2)/5.
+    p = cluster_label_purity({1: ["a", "a", "b"], 2: ["b", "b"]})
+    assert p["purity_mean"] == round((2 / 3 + 1.0) / 2, 4)
+    assert p["purity_weighted"] == round(4 / 5, 4)   # 최빈합 4 / 총 5
+    # 전체 b가 3건/5건 → baseline 0.6
+    assert p["baseline"] == 0.6
+
+
+def test_cluster_label_purity_ignores_none():
+    # None은 무시 — c1은 ["a"]만 남아 순도 1.0, 빈 클러스터(c2)는 카운트 제외.
+    p = cluster_label_purity({1: ["a", None], 2: [None, None]})
+    assert p["n_clusters"] == 1
+    assert p["purity_mean"] == 1.0
+    assert p["baseline"] == 1.0      # 유효 라벨이 "a" 하나뿐
+
+
+def test_cluster_label_purity_empty():
+    assert cluster_label_purity({}) == {
+        "n_clusters": 0, "purity_mean": None, "purity_weighted": None, "baseline": None
+    }
+    # 전부 None인 경우도 빈 것과 동일
+    assert cluster_label_purity({1: [None, None]})["n_clusters"] == 0
 
 
 # ── compute_metrics m==0 가드 ──────────────────────────────────────────────
