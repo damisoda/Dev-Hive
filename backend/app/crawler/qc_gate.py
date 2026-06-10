@@ -22,11 +22,11 @@ import re
 # 튜닝 가능한 설정 상수
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 허용 소스. hn·X 미포함 = 자동거부.
+# 허용 소스. hn 미포함 = 자동거부.
 #   - hn: HackerNews 폐기 결정(데이터 품질 미달).
-#   - X: 재작업 전이라 현재 파이프라인에서 제외.
+#   - x: HIVE-28 시드유저(14인 전문가) 재작업 완료 → 포함. source 값은 "x"(소문자).
 ALLOWED_SOURCES = frozenset(
-    {"velog", "tistory", "reddit", "github_trending", "huggingface"}
+    {"velog", "tistory", "reddit", "github_trending", "huggingface", "x"}
 )
 
 # github_trending 최소 star 수. stars = engagement.likes(github_crawler가 매핑).
