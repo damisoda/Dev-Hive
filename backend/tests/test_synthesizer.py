@@ -16,23 +16,28 @@ from app.tagging.synthesizer import _BODY_KEYS, _HEADER_KEYS, synthesize
 
 
 class _FakeMessage:
-    """client.messages.create() 반환을 흉내낸다: .content[0].text."""
+    """client.messages.create() 반환을 흉내낸다: .content[0].text + .stop_reason."""
 
-    def __init__(self, text: str):
+    def __init__(self, text: str, stop_reason: str = "end_turn"):
         self.content = [SimpleNamespace(text=text)]
+        self.stop_reason = stop_reason
 
 
 class _FakeAnthropic:
     """가짜 카드 JSON 문자열을 그대로 돌려주는 mock 클라이언트.
 
     raise_exc=True면 create()에서 예외를 던져 LLM 실패를 시뮬레이션한다.
-    호출된 system 프롬프트를 captured_system에 저장해 분기 검증에 쓴다.
+    stop_reason으로 출력 잘림(max_tokens)을 시뮬레이션한다.
+    호출된 system/max_tokens를 captured_*에 저장해 검증에 쓴다.
     """
 
-    def __init__(self, reply_text: str = "{}", raise_exc: bool = False):
+    def __init__(self, reply_text: str = "{}", raise_exc: bool = False,
+                 stop_reason: str = "end_turn"):
         self._reply_text = reply_text
         self._raise_exc = raise_exc
+        self._stop_reason = stop_reason
         self.captured_system = None
+        self.captured_max_tokens = None
         self.call_count = 0
 
         outer = self
@@ -41,15 +46,34 @@ class _FakeAnthropic:
             def create(self, *, model, max_tokens, system, messages):
                 outer.call_count += 1
                 outer.captured_system = system
+                outer.captured_max_tokens = max_tokens
                 if outer._raise_exc:
                     raise RuntimeError("simulated LLM failure")
-                return _FakeMessage(outer._reply_text)
+                return _FakeMessage(outer._reply_text, stop_reason=outer._stop_reason)
 
         self.messages = _Messages()
 
 
 def _client_returning(card: dict, **kw) -> _FakeAnthropic:
     return _FakeAnthropic(reply_text=json.dumps(card, ensure_ascii=False), **kw)
+
+
+# --- HIVE-45: 출력 토큰 상한 + 잘림 로깅 -----------------------------------
+
+def test_synthesize_uses_3072_max_tokens():
+    from app.tagging import synthesizer
+    client = _FakeAnthropic(reply_text="{}")
+    synthesize(_ITEM, {"content_type": "experience"}, client)
+    assert client.captured_max_tokens == 3072 == synthesizer.MAX_OUTPUT_TOKENS
+
+
+def test_truncation_logs_warning(caplog):
+    import logging
+    # stop_reason=max_tokens면(출력 잘림) 조용한 None이 되지 않게 경고를 남긴다.
+    client = _FakeAnthropic(reply_text="{}", stop_reason="max_tokens")
+    with caplog.at_level(logging.WARNING, logger="app.tagging.synthesizer"):
+        synthesize(_ITEM, {"content_type": "experience"}, client)
+    assert any("max_tokens" in r.getMessage() for r in caplog.records)
 
 
 _ITEM = {"title": "제목", "body": "본문 내용이 충분히 있다."}

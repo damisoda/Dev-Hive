@@ -14,11 +14,18 @@
 tagger.py와 동일 패턴(클라이언트 주입, JSON 출력, 코드블록 제거 후 json.loads).
 """
 import json
+import logging
 import re
 
 import anthropic
 
+logger = logging.getLogger(__name__)
+
 MODEL = "claude-haiku-4-5-20251001"
+# 가공 카드 출력 토큰 상한. 한국어/장문 콘텐츠는 토큰이 무거워 1024로는 JSON이 잘려
+# (stop_reason=max_tokens) 카드가 통째로 누락된다(실측: velog 1.4만자 → 1474토큰 필요).
+# 3072로 헤드룸 확보. 그래도 잘리면 아래에서 경고 로깅한다.
+MAX_OUTPUT_TOKENS = 3072
 
 # 공통헤더(전 타입 공통) — 피드 카드에 노출. 펼치면 타입별 바디.
 _COMMON_HEADER = (
@@ -180,10 +187,17 @@ def synthesize(item: dict, tags: dict, client: anthropic.Anthropic) -> dict | No
     try:
         message = client.messages.create(
             model=MODEL,
-            max_tokens=1024,
+            max_tokens=MAX_OUTPUT_TOKENS,
             system=_build_system_prompt(content_type),
             messages=[{"role": "user", "content": user_msg}],
         )
+        # 출력이 토큰 상한에 걸리면 JSON이 잘려 파싱 실패→None이 된다.
+        # graceful None이 원인을 숨기지 않도록 경고로 가시화한다.
+        if getattr(message, "stop_reason", None) == "max_tokens":
+            logger.warning(
+                "가공 출력이 max_tokens(%s)로 잘림 — content_type=%s title=%s",
+                MAX_OUTPUT_TOKENS, content_type, (item.get("title") or "")[:60],
+            )
         raw = message.content[0].text
         parsed = _parse_card(raw)
     except Exception:
