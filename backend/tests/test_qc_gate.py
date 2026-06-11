@@ -6,6 +6,10 @@
 from app.crawler.qc_gate import (
     GITHUB_MIN_STARS,
     REDDIT_SUBREDDIT_ALLOW,
+    X_MIN_BODY_CHARS,
+    X_ZERO_ENGAGEMENT_MAX_CHARS,
+    detect_language,
+    guess_language_by_script,
     qc_gate,
 )
 
@@ -426,6 +430,240 @@ def test_subreddit_only_from_reddit_host():
     )
     passed, _ = qc_gate([rec])
     assert len(passed) == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HIVE-50: X 전용 필터 — too_short / language_not_supported / zero_engagement_short
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 실측 덤프(x_crawl_dump_500.json) 형태를 본뜬 현실적 트윗 본문들.
+_X_LONG_EN_BODY = (
+    "Build AI Agents That Actually Work: sharing my full experience from "
+    "production. Not just chatbots - agents that use tools, coordinate with "
+    "other agents, and solve real problems. Here is the architecture, the "
+    "eval setup, and the three mistakes that cost me a week of debugging."
+)  # 약 300자 — 중앙값(260) 부근의 전형적 통과 트윗
+
+_X_LONG_KO_BODY = (
+    "LLM 에이전트를 프로덕션에 배포하면서 배운 점을 공유합니다. 툴 호출 실패 "
+    "재시도 전략, 컨텍스트 윈도우 관리, 그리고 평가 파이프라인 구성까지 — "
+    "특히 RAG 검색 품질이 전체 응답 품질을 좌우한다는 걸 실측으로 확인했고, "
+    "임베딩 모델 교체만으로 정답률이 크게 올랐습니다. 자세한 수치는 스레드에."
+)  # 한국어 장문 트윗 (>=100자)
+
+_X_JA_BODY = (
+    "大規模言語モデルの推論を高速化する方法について解説します。"
+    "量子化と蒸留を組み合わせることで、精度を維持しながら推論速度を大幅に改善できます。"
+    "具体的なベンチマーク結果とコード例はリポジトリを参照してください。"
+)  # 일본어 우세 본문 (>=100자, 외국 스크립트)
+
+
+def _x_rec(**kw) -> dict:
+    """X 레코드의 정규화 dict 형태(ContentSchema.to_dict)."""
+    base = _rec(
+        source="x",
+        title=_X_LONG_EN_BODY[:120],
+        body=_X_LONG_EN_BODY,
+        url="https://x.com/swyx/status/1973338922194252059",
+        author_name="swyx",
+        language="und",  # 업스트림이 'und'로 깨져 와도 게이트는 신뢰하지 않음
+        engagement={"likes": 92, "comments": 7},
+    )
+    base.update(kw)
+    return base
+
+
+def test_x_long_english_tweet_passes():
+    # language='und'여도 본문이 라틴 우세면 통과(필드 불신, 텍스트로 판정).
+    passed, report = qc_gate([_x_rec()])
+    assert len(passed) == 1
+    assert report["rejected"] == 0
+
+
+def test_x_korean_tweet_passes():
+    rec = _x_rec(
+        title=_X_LONG_KO_BODY[:120],
+        body=_X_LONG_KO_BODY,
+        engagement={"likes": 12, "comments": 1},
+    )
+    passed, report = qc_gate([rec])
+    assert len(passed) == 1
+    assert report["rejected"] == 0
+
+
+def test_x_short_body_rejected():
+    rec = _x_rec(body="grok is so much fun to use, try the api today")  # <100자
+    passed, report = qc_gate([rec])
+    assert passed == []
+    assert report["by_reason"]["too_short"] == 1
+
+
+def test_x_min_body_boundary():
+    # 경계: 정확히 100자면 통과(미만만 컷).
+    body = "a" * X_MIN_BODY_CHARS
+    passed, _ = qc_gate([_x_rec(body=body, engagement={"likes": 5, "comments": 0})])
+    assert len(passed) == 1
+
+
+def test_x_foreign_script_rejected():
+    rec = _x_rec(title=_X_JA_BODY[:120], body=_X_JA_BODY)
+    passed, report = qc_gate([rec])
+    assert passed == []
+    assert report["by_reason"]["language_not_supported"] == 1
+
+
+def test_x_mixed_script_passes():
+    # 영어 본문에 일본어 인용이 일부 섞인 경우 — 라틴 우세라 통과(애매=통과).
+    rec = _x_rec(body=_X_LONG_EN_BODY + " 日本語の引用が少しあります。")
+    passed, report = qc_gate([rec])
+    assert len(passed) == 1
+    assert report["rejected"] == 0
+
+
+def test_x_zero_engagement_short_rejected():
+    # 짧은 편(<200자) AND likes·comments 모두 0 → 컷.
+    rec = _x_rec(
+        body=_X_LONG_EN_BODY[:150],
+        engagement={"likes": 0, "comments": 0},
+    )
+    passed, report = qc_gate([rec])
+    assert passed == []
+    assert report["by_reason"]["zero_engagement_short"] == 1
+
+
+def test_x_zero_engagement_long_passes():
+    # 반응이 전무해도 본문이 충분히 길면(>=200자) 통과 — likes는 업스트림 깨짐 가능.
+    assert len(_X_LONG_EN_BODY) >= X_ZERO_ENGAGEMENT_MAX_CHARS
+    rec = _x_rec(engagement={"likes": 0, "comments": 0})
+    passed, report = qc_gate([rec])
+    assert len(passed) == 1
+    assert report["rejected"] == 0
+
+
+def test_x_short_with_likes_passes():
+    # 100~200자 사이라도 반응이 있으면 통과.
+    rec = _x_rec(
+        body=_X_LONG_EN_BODY[:150],
+        engagement={"likes": 30, "comments": 0},
+    )
+    passed, _ = qc_gate([rec])
+    assert len(passed) == 1
+
+
+def test_x_flat_toplevel_likes_fallback():
+    # 구버전 평탄 덤프 호환: engagement dict 없이 top-level likes만 있어도
+    # zero-engagement로 오탐하지 않음.
+    rec = _x_rec(body=_X_LONG_EN_BODY[:150])
+    del rec["engagement"]
+    rec["likes"] = 92
+    passed, report = qc_gate([rec])
+    assert len(passed) == 1
+    assert report["rejected"] == 0
+
+
+def test_x_user_upload_bypasses_x_checks():
+    # user 업로드 경로(is_user)는 다른 소스 전용 검사처럼 X 검사도 우회한다.
+    rec = _x_rec(body="short user-pasted tweet about an llm agent", engagement={"likes": 0, "comments": 0})
+    passed, report = qc_gate([rec], expected_source="user")
+    assert len(passed) == 1
+    assert report["rejected"] == 0
+
+
+def test_guess_language_by_script():
+    assert guess_language_by_script(_X_LONG_EN_BODY) == "en"
+    assert guess_language_by_script(_X_LONG_KO_BODY) == "ko"
+    assert guess_language_by_script("👍🔥💯 12345 !!!") is None  # 판별 불가
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HIVE-50: 라틴 2차 언어 세분 — 스페인어 등 라틴계 비영어 거부 (실데이터 보강)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 실측(/tmp/x_trending_only.json)에서 스크립트 휴리스틱을 통과하던 스페인어
+# 하이프/마케팅 트윗 본뜬 본문 — likes가 커서 zero_engagement도 안 걸리던 케이스.
+_X_ES_BODY = (
+    "He encontrado una herramienta con más de 10.000 creativos en vídeo para "
+    "crear anuncios con IA. Están organizados por categorías y puedes usarlos "
+    "gratis esta semana. Le das un objetivo y trabaja solo durante horas."
+)
+
+_X_PT_BODY = (
+    "Você não vai acreditar nesta ferramenta de IA. Ela cria agentes que "
+    "trabalham sozinhos por horas, e tudo isso de graça. Já testei com uma "
+    "base de código enorme e o resultado foi muito além do que eu esperava."
+)
+
+_X_FR_BODY = (
+    "J'ai trouvé un outil incroyable pour créer des agents IA. Vous lui "
+    "donnez un objectif et il travaille seul pendant des heures, avec une "
+    "mémoire infinie. C'est gratuit cette semaine et le résultat est très "
+    "impressionnant pour les développeurs."
+)
+
+# 영어 본문 + 스페인어 차용구 소량 — precision 우선으로 통과해야 한다.
+_X_EN_WITH_LOANWORDS_BODY = (
+    "Shipped my LLM agent de facto standard eval suite today. The fiesta "
+    "starts now: it runs every benchmark, writes the report, and posts it "
+    "to Slack. No mas manual eval runs for my team. Here is the repo and "
+    "the full writeup of the architecture."
+)
+
+
+def test_x_spanish_tweet_rejected():
+    rec = _x_rec(
+        title=_X_ES_BODY[:120],
+        body=_X_ES_BODY,
+        engagement={"likes": 276293, "comments": 900},  # 하이프 트윗 — likes로 못 거름
+    )
+    passed, report = qc_gate([rec])
+    assert passed == []
+    assert report["by_reason"]["language_not_supported"] == 1
+
+
+def test_x_portuguese_tweet_rejected():
+    rec = _x_rec(title=_X_PT_BODY[:120], body=_X_PT_BODY)
+    passed, report = qc_gate([rec])
+    assert passed == []
+    assert report["by_reason"]["language_not_supported"] == 1
+
+
+def test_x_french_tweet_rejected():
+    rec = _x_rec(title=_X_FR_BODY[:120], body=_X_FR_BODY)
+    passed, report = qc_gate([rec])
+    assert passed == []
+    assert report["by_reason"]["language_not_supported"] == 1
+
+
+def test_x_english_with_spanish_loanwords_passes():
+    # 외국어 기능어 히트가 영어 히트를 못 넘으면 영어 취급(precision 우선).
+    rec = _x_rec(
+        title=_X_EN_WITH_LOANWORDS_BODY[:120], body=_X_EN_WITH_LOANWORDS_BODY
+    )
+    passed, report = qc_gate([rec])
+    assert len(passed) == 1
+    assert report["rejected"] == 0
+
+
+def test_x_korean_tweet_still_passes_after_latin_refinement():
+    # 한글 우세 본문은 라틴 세분을 타지 않고 그대로 통과해야 한다.
+    rec = _x_rec(title=_X_LONG_KO_BODY[:120], body=_X_LONG_KO_BODY)
+    passed, report = qc_gate([rec])
+    assert len(passed) == 1
+    assert report["rejected"] == 0
+
+
+def test_detect_language_refines_latin():
+    assert detect_language(_X_ES_BODY) == "es"
+    assert detect_language(_X_PT_BODY) == "pt"
+    assert detect_language(_X_FR_BODY) == "fr"
+    assert detect_language(_X_LONG_EN_BODY) == "en"
+    assert detect_language(_X_LONG_KO_BODY) == "ko"
+    assert detect_language("👍🔥💯 12345 !!!") is None
+
+
+def test_detect_language_short_ambiguous_treated_as_english():
+    # 짧은 라틴 텍스트(기능어 히트 < 3)는 판단 보류 → "en"(통과 방향).
+    assert detect_language("vamos amigos, gran fiesta tech meetup tonight") == "en"
 
 
 def test_korean_midword_not_false_question():
