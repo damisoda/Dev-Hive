@@ -2,6 +2,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 
 from app.api import auth, content, feedback, graph, progress, recommend, stats
 from app.crawler.scheduler import start_scheduler, stop_scheduler
@@ -23,6 +24,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Dev-Hive API", version="0.1.0", lifespan=lifespan)
+
+
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    # API 서버 루트 = 404 대신 Swagger 문서로 안내 (브라우저 직접 방문 대비)
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/health")

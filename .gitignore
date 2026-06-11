@@ -75,3 +75,6 @@ logs/
 
 # GraphSAGE 학습 산출물 (DB에서 재생산 가능 — git에 올리지 않음)
 backend/data/*.npz
+
+# 맥미니 배포 시크릿
+deploy/macmini/.env
