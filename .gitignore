@@ -72,3 +72,6 @@ logs/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# GraphSAGE 학습 산출물 (DB에서 재생산 가능 — git에 올리지 않음)
+backend/data/*.npz
