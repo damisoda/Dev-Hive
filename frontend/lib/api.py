@@ -72,7 +72,8 @@ def list_content(source=None, node_id=None, difficulty=None, limit=20, offset=0)
 
 
 def recommend(user_id: int, top_n: int = 5):
-    return _request("GET", "/recommend", params={"user_id": user_id, "top_n": top_n}, timeout=15)
+    # GraphRAG(LLM rerank+근거)라 실측 ~12s — 타임아웃 여유 필수(커리큘럼 페이지는 세션 캐싱).
+    return _request("GET", "/recommend", params={"user_id": user_id, "top_n": top_n}, timeout=60)
 
 
 def mark_read(user_id: int, content_id: int):

@@ -47,9 +47,25 @@ st.divider()
 # ── B. 다음에 읽을 추천 ───────────────────────────────────────────
 st.subheader("다음에 읽을 추천")
 top_n = st.slider("추천 개수", 3, 10, 5)
-data = call(recommend, uid, top_n=top_n, retry_key="curri_rec")
-if data is None:
-    st.stop()
+
+# GraphRAG 추천은 LLM 경유라 수 초 걸린다(실측 ~12s). 읽음/피드백 클릭의 rerun마다
+# 재계산하면 버튼 하나가 십수 초가 되므로, 결과를 세션에 고정하고 '추천 새로고침'
+# 버튼으로만 다시 계산한다 — 피드백·읽음 반영과 'AI 요약 준비 중' 채움도 이 시점에.
+_rec_key = f"recs_{uid}_{top_n}"
+btn_col, hint_col = st.columns([1, 4])
+with btn_col:
+    if st.button("추천 새로고침", use_container_width=True):
+        st.session_state.pop(_rec_key, None)
+with hint_col:
+    st.caption("읽음·피드백을 반영해 다시 추천받으려면 새로고침하세요.")
+
+if _rec_key not in st.session_state:
+    with st.spinner("개인화 추천을 계산하고 있어요… (몇 초 걸립니다)"):
+        data = call(recommend, uid, top_n=top_n, retry_key="curri_rec")
+    if data is None:
+        st.stop()
+    st.session_state[_rec_key] = data
+data = st.session_state[_rec_key]
 if not data.get("recommendations"):
     # 빈 상태: 온보딩/읽음 데이터가 부족하면 추천이 비어 있을 수 있다 — 피드로 유도
     st.info("아직 추천할 데이터가 부족합니다. 피드에서 콘텐츠를 몇 개 읽고 다시 방문하세요.")
