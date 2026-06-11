@@ -118,3 +118,28 @@ def test_normalize_rejects_retweet():
 def test_normalize_rejects_no_url():
     item = {"full_text": "Sharing my experience with an LLM agent and RAG pipeline"}
     assert normalize_x_item(item) is None  # url/id 없음
+
+
+# ── HIVE-50: language 'und' 폴백 — 본문 스크립트로 추정 ─────────────────────
+
+def test_normalize_language_und_falls_back_to_english():
+    item = _valid_item()
+    item["lang"] = "und"  # 액터가 판별 못 한 경우(DB 실측 다수)
+    c = normalize_x_item(item)
+    assert c is not None
+    assert c.language == "en"  # 라틴 우세 본문 → en
+
+
+def test_normalize_language_missing_falls_back_to_korean():
+    item = _valid_item()
+    del item["lang"]
+    item["full_text"] = "LLM 에이전트를 프로덕션에 배포하면서 배운 점을 공유합니다. RAG 검색 품질 개선 경험 정리."
+    c = normalize_x_item(item)
+    assert c is not None
+    assert c.language == "ko"  # 한글 우세 본문 → ko
+
+
+def test_normalize_language_explicit_value_preserved():
+    c = normalize_x_item(_valid_item())  # lang="en" 명시
+    assert c is not None
+    assert c.language == "en"

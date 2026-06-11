@@ -37,6 +37,13 @@ def load_content(
     if quality_score < min_quality:
         return None
 
+    # engagement: 정규 경로는 중첩 dict({"likes","comments"}, ContentSchema.to_dict).
+    # HIVE-50: 구버전 X 평탄 덤프(likes가 top-level 키)가 0으로 뭉개져 적재되던 문제
+    # (DB 실측 62/64건 likes=0) 방지 — dict가 없으면 최상위 키로 폴백한다.
+    engagement = item.get("engagement")
+    if not isinstance(engagement, dict):
+        engagement = item
+
     # content INSERT.
     # URL 중복 시 body/text_embedding은 건드리지 않고 engagement만 최신 수치로 갱신한다.
     row = conn.execute(
@@ -68,8 +75,8 @@ def load_content(
             "content_type": tags.get("content_type"),
             "synthesis": json.dumps(synthesis, ensure_ascii=False) if synthesis is not None else None,
             "embedding": str(embedding),
-            "likes": item.get("engagement", {}).get("likes", 0),
-            "comments": item.get("engagement", {}).get("comments", 0),
+            "likes": engagement.get("likes") or 0,
+            "comments": engagement.get("comments") or 0,
             "published_at": item.get("published_at"),
         },
     ).fetchone()

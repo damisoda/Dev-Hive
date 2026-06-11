@@ -24,6 +24,7 @@ from typing import Any, Iterable
 from dotenv import load_dotenv
 
 from app.crawler.normalizer import ContentSchema, normalize
+from app.crawler.qc_gate import guess_language_by_script
 
 logger = logging.getLogger(__name__)
 
@@ -285,7 +286,11 @@ def normalize_x_item(item: dict[str, Any]) -> ContentSchema | None:
 
     body = _clean_x_text(raw_text)
     likes, comments = _engagement_counts(item)
-    language = str(_first_value(item, ("lang", "language", "languageCode"), "und") or "und")
+    language = str(_first_value(item, ("lang", "language", "languageCode"), "") or "")
+    # HIVE-50: 액터가 lang을 안 주거나 'und'/'zxx'(트위터 "판별불가")로 주는 경우가
+    # 많다(DB 실측 다수가 'und'로 적재됨). 본문 스크립트 분포로 폴백 추정한다.
+    if language.lower() in ("", "und", "zxx", "qme", "qam"):
+        language = guess_language_by_script(body) or "und"
     published_at = _parse_datetime(
         _first_value(item, ("createdAt", "created_at", "timestamp", "date"))
     )

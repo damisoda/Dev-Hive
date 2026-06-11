@@ -1,7 +1,7 @@
 """HIVE-40 QC 게이트 — 적재 전 무료 휴리스틱 품질 필터.
 
 위치: 정규화 후 · 태깅(Haiku) 전. 명백한 junk(미스라벨 소스/NSFW/빈 본문/저신뢰
-서브레딧/답 없는 질문/배치 내 중복 등)를 LLM 비용을 들이기 전에 걸러낸다.
+서브레딧/답 없는 질문/X 저신호 트윗/배치 내 중복 등)를 LLM 비용을 들이기 전에 걸러낸다.
 
 설계 원칙 — **precision 우선**:
     애매하면 통과시킨다. 좋은 경험글을 오탐으로 버리는 비용이, 노이즈 일부가
@@ -119,21 +119,109 @@ _KOREAN_QUESTION_ENDINGS = (
 # 호스트 앵커로 외부 링크 글의 url에서 오추출 방지(예: example.com/r/X).
 _SUBREDDIT_RE = re.compile(r"reddit\.com/r/([A-Za-z0-9_]+)", re.IGNORECASE)
 
+# ─── HIVE-50: X 전용 필터 상수 ───────────────────────────────────────────────
+
+# X 최소 본문 길이. 실측(x_crawl_dump_500.json, 327건): 본문 길이 min 27 /
+# 중앙값 260 / <100자 = 23건(7.0%) / <200자 = 72건(22.0%).
+# x_crawler가 URL 제거·500자 절단을 이미 한 본문 기준이라, 100자 미만은
+# 실질 인사이트 없는 한 줄 잡담일 확률이 높다 — precision 우선으로 100에 고정.
+X_MIN_BODY_CHARS = 100
+
+# X zero-engagement 컷의 "짧은 편" 경계. likes는 업스트림에서 깨진 사례가 있어
+# (DB 실측 62/64건 likes=0, 원본 덤프는 ~80%가 likes>0) engagement 단독으로는
+# 절대 거부하지 않는다. 짧고(<200자) AND 반응 전무(likes·comments 모두 0)일 때만 컷.
+# 실측: <200자 & likes 0 = 16/327(4.9%), too_short와 합산 38/327 → 통과율 88.4%.
+X_ZERO_ENGAGEMENT_MAX_CHARS = 200
+
+# 외국 스크립트 우세 판정 최소 글자 수. 이보다 적으면 판단 보류=통과(precision 우선).
+_FOREIGN_SCRIPT_MIN_CHARS = 20
+
+# 지원 외 스크립트 코드포인트 범위(가나·한자·키릴·아랍·타이·히브리·데바나가리·벵골).
+# record["language"]는 'und'로 깨져 오는 경우가 많아 신뢰하지 않고
+# 텍스트 자체의 스크립트 분포로 판정한다. 실측: 덤프 327건 중 컷 0건(전부 영어).
+_FOREIGN_SCRIPT_RANGES = (
+    (0x3040, 0x30FF),  # 히라가나·가타카나
+    (0x31F0, 0x31FF),  # 가타카나 음성 확장
+    (0x3400, 0x4DBF),  # CJK 한자 확장 A
+    (0x4E00, 0x9FFF),  # CJK 한자 기본
+    (0xF900, 0xFAFF),  # CJK 호환 한자
+    (0x0400, 0x052F),  # 키릴 + 보충
+    (0x0600, 0x06FF),  # 아랍
+    (0x0750, 0x077F),  # 아랍 보충
+    (0x08A0, 0x08FF),  # 아랍 확장 A
+    (0x0E00, 0x0E7F),  # 타이
+    (0x0590, 0x05FF),  # 히브리
+    (0x0900, 0x097F),  # 데바나가리
+    (0x0980, 0x09FF),  # 벵골
+)
+
+# 한글 범위(완성형 음절 + 자모 + 호환 자모) — 라틴과 함께 "지원 스크립트"로 취급.
+_HANGUL_RANGES = (
+    (0xAC00, 0xD7AF),
+    (0x1100, 0x11FF),
+    (0x3130, 0x318F),
+)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 내부 헬퍼
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _engagement_int(record: dict, key: str) -> int:
-    """engagement[key]를 안전하게 int로. 없거나 비정상이면 0."""
+    """engagement[key]를 안전하게 int로. 없거나 비정상이면 0.
+
+    engagement dict가 아예 없으면 최상위 키로 폴백한다 — 구버전 X 평탄 덤프
+    (likes가 top-level 키) 호환. 폴백 없으면 실제 likes>0인 레코드가 0으로
+    뭉개져 zero-engagement 판정이 오탐된다(precision 우선).
+    """
     eng = record.get("engagement")
     if not isinstance(eng, dict):
-        return 0
+        eng = record
     val = eng.get(key, 0)
     try:
         return int(val)
     except (TypeError, ValueError):
         return 0
+
+
+def _script_counts(text: str) -> tuple[int, int, int]:
+    """텍스트의 (라틴, 한글, 지원외 외국 스크립트) 글자 수를 센다.
+
+    이모지·숫자·구두점·수학기호(트위터의 𝗕𝗼𝗹𝗱 스타일 문자 등)는 어느 쪽에도
+    세지 않는다 — 외국 스크립트로 오인해 거부하지 않기 위함(precision 우선).
+    """
+    latin = hangul = foreign = 0
+    for ch in text:
+        cp = ord(ch)
+        if ("a" <= ch <= "z") or ("A" <= ch <= "Z") or (0x00C0 <= cp <= 0x024F):
+            latin += 1
+        elif any(lo <= cp <= hi for lo, hi in _HANGUL_RANGES):
+            hangul += 1
+        elif any(lo <= cp <= hi for lo, hi in _FOREIGN_SCRIPT_RANGES):
+            foreign += 1
+    return latin, hangul, foreign
+
+
+def _is_foreign_script_dominant(text: str) -> bool:
+    """지원 외 스크립트가 명백히 우세한지. 혼합/애매하면 False(통과)."""
+    latin, hangul, foreign = _script_counts(text)
+    if foreign < _FOREIGN_SCRIPT_MIN_CHARS:
+        return False  # 표본 부족 — 판단 보류
+    return foreign > latin + hangul
+
+
+def guess_language_by_script(text: str) -> str | None:
+    """스크립트 분포로 언어를 추정한다: 한글 우세→"ko", 라틴 우세→"en", 불명→None.
+
+    업스트림 language 필드가 'und'로 깨지는 X 경로의 폴백용(x_crawler에서 재사용).
+    한국어 기술 글은 라틴 용어(LLM, RAG 등)가 많이 섞이므로 한글을 먼저 본다.
+    """
+    latin, hangul, foreign = _script_counts(text)
+    if hangul >= 10 and hangul >= foreign:
+        return "ko"
+    if latin >= 10 and latin > foreign:
+        return "en"
+    return None
 
 
 def _is_nsfw(title: str, body: str) -> bool:
@@ -203,7 +291,11 @@ def qc_gate(
         5. reddit 서브레딧 ∉ allow           → "subreddit_not_allowed"
                                               (추출 실패 시 통과 — precision 우선)
         6. reddit 답 없는 질문(comments==0)  → "unanswered_qa"
-        7. 배치 내 중복 URL                  → "duplicate_url"
+        7. x 본문 < 100자                    → "too_short"
+        8. x 외국 스크립트 우세               → "language_not_supported"
+                                              (혼합/애매 시 통과 — precision 우선)
+        9. x 짧은 편(<200자) AND 반응 전무    → "zero_engagement_short"
+        10. 배치 내 중복 URL                 → "duplicate_url"
     """
     passed: list[dict] = []
     by_reason: dict[str, int] = {}
@@ -264,7 +356,31 @@ def qc_gate(
                 _reject(source, "unanswered_qa")
                 continue
 
-        # 7. 배치 내 중복 URL (빈 URL은 중복 판정에서 제외 — precision 우선)
+        # 7~9. x 전용 검사 (user 경로 제외) — HIVE-50.
+        #      X는 업스트림 메타데이터를 신뢰할 수 없다(language='und' 다수,
+        #      likes는 DB 실측 62/64건이 0으로 깨짐). 본문 텍스트 휴리스틱 중심으로 거른다.
+        if not is_user and source == "x":
+            body_len = len(body.strip())
+            # 7. 최소 길이 — 실측(덤프 327건): <100자 = 23건(7.0%)만 컷. 중앙값 260.
+            if body_len < X_MIN_BODY_CHARS:
+                _reject(source, "too_short")
+                continue
+            # 8. 언어 — record["language"]는 불신('und' 다수). 라틴/한글이면 통과,
+            #    다른 스크립트가 명백히 우세할 때만 거부. 실측 컷 0/327(전부 영어).
+            if _is_foreign_script_dominant(f"{title}\n{body}"):
+                _reject(source, "language_not_supported")
+                continue
+            # 9. 짧은 편(<200자) AND 반응 전무(likes·comments 0)일 때만 컷 —
+            #    실측 16/327(4.9%). likes 단독 거부는 업스트림 깨짐 때문에 하지 않는다.
+            if (
+                body_len < X_ZERO_ENGAGEMENT_MAX_CHARS
+                and _engagement_int(record, "likes") == 0
+                and _engagement_int(record, "comments") == 0
+            ):
+                _reject(source, "zero_engagement_short")
+                continue
+
+        # 10. 배치 내 중복 URL (빈 URL은 중복 판정에서 제외 — precision 우선)
         if url and url in seen_urls:
             _reject(source, "duplicate_url")
             continue
