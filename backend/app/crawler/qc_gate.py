@@ -162,6 +162,87 @@ _HANGUL_RANGES = (
     (0x3130, 0x318F),
 )
 
+# ─── HIVE-50: 라틴 스크립트 2차 언어 판별(영어 vs 주요 라틴계 언어) ──────────
+#
+# 스크립트 휴리스틱만으로는 스페인어·포르투갈어 등 라틴계 언어가 전부 'en'으로
+# 판정된다(실측: trending 덤프 215건에서 스페인어 하이프/마케팅 트윗이 그대로
+# 통과, likes가 커서 zero_engagement도 안 걸림). 기능어(관사·전치사·대명사)
+# 빈도 + 언어 특유 문자(¿ ¡ ñ ã õ ç ü ß) 신호로 2차 판별한다. stdlib only.
+#
+# precision 우선: 외국어 기능어 히트 >= _LATIN_FOREIGN_MIN_HITS AND
+# > 영어 기능어 히트일 때만 비영어로 분류. 애매하거나 짧으면 영어 취급(통과).
+# 단어 선정 원칙: 영어와 철자가 겹치는 기능어는 제외(do/no/as/was/am/man/hat/
+# per/come/in/son/plus/os 등) — 영어 본문 오탐(false reject) 방지.
+
+# 영어 기능어 — 외국어 히트와 비교할 기준선.
+_EN_FUNCTION_WORDS = frozenset(
+    """the a an and or but is are was were be been being to of in on at by for
+    with from as that this these those it its you your i we they he she him her
+    my our their not no have has had will would can could should shall may
+    might what which who whom how when where why if all just about out up down
+    so get got like more most now new here there then than them some any only
+    also very much many do does did done make made use used""".split()
+)
+
+# 라틴계 외국어별 기능어. 영어 동철어 제외(위 원칙). 언어 간 공유어(de/que/la
+# 등)는 각 언어에 중복 수록 — 최댓값 언어 하나만 고르므로 합산 인플레이션 없음.
+_LATIN_LANG_FUNCTION_WORDS: dict[str, frozenset[str]] = {
+    "es": frozenset(
+        """el la los las un una unos unas que qué de del en es son está están
+        estaba para por con sin se su sus lo le les más pero como cómo este
+        esta esto ese esa eso aquí ahora muy todo toda todos todas nada hay ya
+        también porque cuando donde sobre entre hasta desde te tu tus mi mis
+        yo él ella ellos nosotros ustedes vosotros tenéis hacer hace tiene
+        tienen puede puedes pueden quiero quieres si sí cada otro otra cosa
+        cosas semana gratis nuevo nueva esto""".split()
+    ),
+    "pt": frozenset(
+        """não nao você voce vocês uma um uns umas que de da das dos em na nas
+        é são sao está estão esta para pra por com sem se seu sua seus suas
+        mais mas como isso isto esse essa muito tudo todo já também tambem
+        porque quando onde sobre entre até desde ele ela eles elas fazer faz
+        tem têm pode podem foi ser está cada outro outra coisa coisas
+        semana""".split()
+    ),
+    "fr": frozenset(
+        """le les la des de du une et est sont dans pour par avec sans sur
+        sous ce cette ces qui que quoi pas ne très tres vous nous je il elle
+        ils elles mon ma mes ton ta tes sa ses mais comme aussi bien être etre
+        avoir fait faire tout tous toute toutes votre notre vos nos cela ça
+        voici voilà chaque chose semaine gratuit""".split()
+    ),
+    "de": frozenset(
+        """der die das und nicht mit ist sind ein eine einen einem einer für
+        auf aus dem den von zu im ich du er sie wir ihr es auch noch schon
+        aber oder wenn wie wird werden kann können koennen haben sein sehr
+        mehr diese dieser dieses beim durch über ueber gegen nur bei jetzt
+        heute woche kostenlos""".split()
+    ),
+    "it": frozenset(
+        """il lo la gli le un uno una che di da su tra fra è sono non più piu
+        questo questa questi queste quello quella anche molto tutto tutti
+        della delle dello degli nel nella sul sulla ho hai io tu lui lei noi
+        voi loro mio mia fare può puo essere ci si se perché quando dove ogni
+        cosa cose settimana gratis adesso""".split()
+    ),
+}
+
+# 언어 특유 문자 신호(케이스폴드 후 카운트). 1자 = 기능어 1히트로 합산.
+#   ¿ ¡ ñ → 스페인어 / ã õ → 포르투갈어 / ç → 포르투갈어·프랑스어 / ß ü → 독일어
+_LATIN_LANG_CHAR_SIGNALS: dict[str, str] = {
+    "es": "¿¡ñ",
+    "pt": "ãõç",
+    "fr": "ç",
+    "de": "ßü",
+}
+
+# 비영어 분류 최소 기능어 히트 수. 미만이면 판단 보류=영어 취급(precision 우선).
+# 3이면 영어 글의 외국어 차용구("de facto", "c'est la vie" 1~2회)는 안 걸린다.
+_LATIN_FOREIGN_MIN_HITS = 3
+
+# 라틴 단어 토큰(악센트 라틴 확장 포함). 아포스트로피는 분리("c'est"→"c","est").
+_LATIN_WORD_RE = re.compile(r"[a-zà-öø-ÿāăēĕīĭōŏūŭ]+")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 내부 헬퍼
@@ -222,6 +303,40 @@ def guess_language_by_script(text: str) -> str | None:
     if latin >= 10 and latin > foreign:
         return "en"
     return None
+
+
+def _refine_latin_language(text: str) -> str:
+    """라틴 우세 텍스트를 기능어 빈도로 세분한다: "en" 또는 es/pt/fr/de/it.
+
+    precision 우선 — 비영어 판정은 (히트 >= _LATIN_FOREIGN_MIN_HITS) AND
+    (> 영어 기능어 히트)일 때만. 애매/짧음 → "en"(통과 방향).
+    """
+    folded = text.casefold()
+    tokens = _LATIN_WORD_RE.findall(folded)
+    en_hits = sum(1 for t in tokens if t in _EN_FUNCTION_WORDS)
+
+    best_lang, best_hits = "en", 0
+    for lang, words in _LATIN_LANG_FUNCTION_WORDS.items():
+        hits = sum(1 for t in tokens if t in words)
+        hits += sum(folded.count(ch) for ch in _LATIN_LANG_CHAR_SIGNALS.get(lang, ""))
+        if hits > best_hits:
+            best_lang, best_hits = lang, hits
+
+    if best_hits >= _LATIN_FOREIGN_MIN_HITS and best_hits > en_hits:
+        return best_lang
+    return "en"
+
+
+def detect_language(text: str) -> str | None:
+    """스크립트 1차(guess_language_by_script) + 라틴이면 기능어 2차 세분.
+
+    반환: "ko" / "en" / "es"·"pt"·"fr"·"de"·"it"(라틴계 비영어) / None(판별 불가).
+    x_crawler의 language 폴백과 QC 게이트 언어 검사가 공유한다(HIVE-50).
+    """
+    base = guess_language_by_script(text)
+    if base == "en":
+        return _refine_latin_language(text)
+    return base
 
 
 def _is_nsfw(title: str, body: str) -> bool:
@@ -292,8 +407,8 @@ def qc_gate(
                                               (추출 실패 시 통과 — precision 우선)
         6. reddit 답 없는 질문(comments==0)  → "unanswered_qa"
         7. x 본문 < 100자                    → "too_short"
-        8. x 외국 스크립트 우세               → "language_not_supported"
-                                              (혼합/애매 시 통과 — precision 우선)
+        8. x 외국 스크립트 우세 또는           → "language_not_supported"
+           라틴계 비영어(es/pt/fr/de/it) 명백    (혼합/애매 시 통과 — precision 우선)
         9. x 짧은 편(<200자) AND 반응 전무    → "zero_engagement_short"
         10. 배치 내 중복 URL                 → "duplicate_url"
     """
@@ -365,9 +480,15 @@ def qc_gate(
             if body_len < X_MIN_BODY_CHARS:
                 _reject(source, "too_short")
                 continue
-            # 8. 언어 — record["language"]는 불신('und' 다수). 라틴/한글이면 통과,
-            #    다른 스크립트가 명백히 우세할 때만 거부. 실측 컷 0/327(전부 영어).
-            if _is_foreign_script_dominant(f"{title}\n{body}"):
+            # 8. 언어 — record["language"]는 불신('und' 다수). 2단계 판정:
+            #    (a) 외국 스크립트(가나·한자·키릴 등) 명백 우세 → 거부.
+            #    (b) 라틴 우세면 기능어 2차 세분 — es/pt/fr/de/it 명백 신호만
+            #        거부, 영어·한국어·애매는 통과(precision 우선).
+            #    실측: 덤프 327건(전부 영어) 컷 0 / trending 215건 스페인어 9건 컷.
+            lang_text = f"{title}\n{body}"
+            if _is_foreign_script_dominant(lang_text) or detect_language(
+                lang_text
+            ) in _LATIN_LANG_FUNCTION_WORDS:
                 _reject(source, "language_not_supported")
                 continue
             # 9. 짧은 편(<200자) AND 반응 전무(likes·comments 0)일 때만 컷 —

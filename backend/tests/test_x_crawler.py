@@ -143,3 +143,18 @@ def test_normalize_language_explicit_value_preserved():
     c = normalize_x_item(_valid_item())  # lang="en" 명시
     assert c is not None
     assert c.language == "en"
+
+
+def test_normalize_language_und_spanish_body_labeled_es():
+    # HIVE-50: 라틴 스크립트라고 전부 'en'으로 라벨하면 안 된다 —
+    # 명백한 스페인어 본문은 기능어 2차 세분으로 'es' 라벨(실측 trending 덤프 유형).
+    item = _valid_item()
+    item["lang"] = "und"
+    item["full_text"] = (
+        "He encontrado una herramienta increíble en GitHub para crear agentes "
+        "de IA. Le das un objetivo y trabaja sola durante horas, y puedes "
+        "usarla gratis esta semana."
+    )
+    c = normalize_x_item(item)
+    assert c is not None
+    assert c.language == "es"

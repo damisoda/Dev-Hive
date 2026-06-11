@@ -8,6 +8,7 @@ from app.crawler.qc_gate import (
     REDDIT_SUBREDDIT_ALLOW,
     X_MIN_BODY_CHARS,
     X_ZERO_ENGAGEMENT_MAX_CHARS,
+    detect_language,
     guess_language_by_script,
     qc_gate,
 )
@@ -572,6 +573,97 @@ def test_guess_language_by_script():
     assert guess_language_by_script(_X_LONG_EN_BODY) == "en"
     assert guess_language_by_script(_X_LONG_KO_BODY) == "ko"
     assert guess_language_by_script("👍🔥💯 12345 !!!") is None  # 판별 불가
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HIVE-50: 라틴 2차 언어 세분 — 스페인어 등 라틴계 비영어 거부 (실데이터 보강)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 실측(/tmp/x_trending_only.json)에서 스크립트 휴리스틱을 통과하던 스페인어
+# 하이프/마케팅 트윗 본뜬 본문 — likes가 커서 zero_engagement도 안 걸리던 케이스.
+_X_ES_BODY = (
+    "He encontrado una herramienta con más de 10.000 creativos en vídeo para "
+    "crear anuncios con IA. Están organizados por categorías y puedes usarlos "
+    "gratis esta semana. Le das un objetivo y trabaja solo durante horas."
+)
+
+_X_PT_BODY = (
+    "Você não vai acreditar nesta ferramenta de IA. Ela cria agentes que "
+    "trabalham sozinhos por horas, e tudo isso de graça. Já testei com uma "
+    "base de código enorme e o resultado foi muito além do que eu esperava."
+)
+
+_X_FR_BODY = (
+    "J'ai trouvé un outil incroyable pour créer des agents IA. Vous lui "
+    "donnez un objectif et il travaille seul pendant des heures, avec une "
+    "mémoire infinie. C'est gratuit cette semaine et le résultat est très "
+    "impressionnant pour les développeurs."
+)
+
+# 영어 본문 + 스페인어 차용구 소량 — precision 우선으로 통과해야 한다.
+_X_EN_WITH_LOANWORDS_BODY = (
+    "Shipped my LLM agent de facto standard eval suite today. The fiesta "
+    "starts now: it runs every benchmark, writes the report, and posts it "
+    "to Slack. No mas manual eval runs for my team. Here is the repo and "
+    "the full writeup of the architecture."
+)
+
+
+def test_x_spanish_tweet_rejected():
+    rec = _x_rec(
+        title=_X_ES_BODY[:120],
+        body=_X_ES_BODY,
+        engagement={"likes": 276293, "comments": 900},  # 하이프 트윗 — likes로 못 거름
+    )
+    passed, report = qc_gate([rec])
+    assert passed == []
+    assert report["by_reason"]["language_not_supported"] == 1
+
+
+def test_x_portuguese_tweet_rejected():
+    rec = _x_rec(title=_X_PT_BODY[:120], body=_X_PT_BODY)
+    passed, report = qc_gate([rec])
+    assert passed == []
+    assert report["by_reason"]["language_not_supported"] == 1
+
+
+def test_x_french_tweet_rejected():
+    rec = _x_rec(title=_X_FR_BODY[:120], body=_X_FR_BODY)
+    passed, report = qc_gate([rec])
+    assert passed == []
+    assert report["by_reason"]["language_not_supported"] == 1
+
+
+def test_x_english_with_spanish_loanwords_passes():
+    # 외국어 기능어 히트가 영어 히트를 못 넘으면 영어 취급(precision 우선).
+    rec = _x_rec(
+        title=_X_EN_WITH_LOANWORDS_BODY[:120], body=_X_EN_WITH_LOANWORDS_BODY
+    )
+    passed, report = qc_gate([rec])
+    assert len(passed) == 1
+    assert report["rejected"] == 0
+
+
+def test_x_korean_tweet_still_passes_after_latin_refinement():
+    # 한글 우세 본문은 라틴 세분을 타지 않고 그대로 통과해야 한다.
+    rec = _x_rec(title=_X_LONG_KO_BODY[:120], body=_X_LONG_KO_BODY)
+    passed, report = qc_gate([rec])
+    assert len(passed) == 1
+    assert report["rejected"] == 0
+
+
+def test_detect_language_refines_latin():
+    assert detect_language(_X_ES_BODY) == "es"
+    assert detect_language(_X_PT_BODY) == "pt"
+    assert detect_language(_X_FR_BODY) == "fr"
+    assert detect_language(_X_LONG_EN_BODY) == "en"
+    assert detect_language(_X_LONG_KO_BODY) == "ko"
+    assert detect_language("👍🔥💯 12345 !!!") is None
+
+
+def test_detect_language_short_ambiguous_treated_as_english():
+    # 짧은 라틴 텍스트(기능어 히트 < 3)는 판단 보류 → "en"(통과 방향).
+    assert detect_language("vamos amigos, gran fiesta tech meetup tonight") == "en"
 
 
 def test_korean_midword_not_false_question():
