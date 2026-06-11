@@ -64,5 +64,10 @@ streamlit run app.py
 피드백 타입 4종(고정): `understood` / `too_hard` / `want_more` / `not_interested`.
 edge `rel`: `belongs_to` / `similar_to` / `precedes`. node `kind`: `topic` / `content`.
 
-## 배포
-Streamlit Community Cloud 또는 Railway. 백엔드 API 주소는 `API_BASE_URL` 환경변수로 주입.
+## 배포 현황 (2026-06-11)
+맥미니 M4 셀프호스팅(docker compose)으로 **임시 Streamlit 공개** 중 — Next.js 전환 전까지의 운영 셸.
+
+- 공개 사이트: https://macmini.tail67859f.ts.net (Streamlit)
+- 백엔드 API: https://macmini.tail67859f.ts.net:8443 (Tailscale Funnel)
+
+백엔드 API 주소는 `API_BASE_URL` 환경변수로 주입. 상세 구성은 `deploy/macmini/README.md` 참조.
