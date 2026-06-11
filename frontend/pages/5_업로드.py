@@ -4,7 +4,7 @@
 기존 노드 편입 또는 새 하위/최상위 노드 생성 결과를 보여준다.
 """
 import streamlit as st
-from lib.ui import style
+from lib.ui import call, style
 
 from lib.api import upload_content
 
@@ -14,7 +14,7 @@ st.title("글 올리기")
 st.caption("올린 글이 태깅·임베딩을 거쳐 지식그래프에 자동 편입됩니다. 새로운 주제면 Auto-HKG가 노드를 새로 만듭니다.")
 
 if "user_id" not in st.session_state:
-    st.warning("먼저 메인 페이지에서 온보딩을 완료해주세요.")
+    st.warning("먼저 메인 페이지에서 온보딩을 완료하세요.")
     st.stop()
 
 with st.form("upload_form"):
@@ -25,13 +25,14 @@ with st.form("upload_form"):
 
 if submitted:
     if not title.strip() or not body.strip():
-        st.warning("제목과 본문을 입력해주세요.")
+        st.warning("제목과 본문을 입력하세요.")
         st.stop()
     with st.spinner("태깅 · 임베딩 · 그래프 편입 중…"):
-        res = upload_content(
-            title.strip(), body.strip(), url.strip() or None, st.session_state["user_id"]
+        res = call(
+            upload_content,
+            title.strip(), body.strip(), url.strip() or None, st.session_state["user_id"],
         )
-    if not res:
+    if not res:               # 연결 실패/오류 — call이 안내와 '다시 시도'를 이미 렌더
         st.stop()
 
     st.success("지식그래프에 편입되었습니다.")

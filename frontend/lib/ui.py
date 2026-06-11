@@ -1,9 +1,35 @@
-"""공통 UI 테마/CSS 주입 (HIVE-49 UI 폴리시).
+"""공통 UI 테마/CSS 주입 + 스트림릿 어댑터 (HIVE-49 UI 폴리시 / HIVE-51 이식성).
 
 Streamlit 기본 티(헤더·메뉴·Deploy·Running 인디케이터)를 줄이고, Pretendard 폰트 +
 라운드 카드 + 일관된 액센트로 '디자인된' 느낌을 준다. 각 페이지가 set_page_config 직후 style()을 호출한다.
+
+call(): 순수 클라이언트(lib/api)의 ApiError를 잡아 친화적으로 렌더하는 가드 헬퍼.
+스트림릿 결합은 이 파일과 components.py·pages에만 — api/viewmodel은 스트림릿 무지.
 """
 import streamlit as st
+
+from lib.api import ApiError
+
+
+def call(fn, *args, retry_key: str | None = None, **kwargs):
+    """API 호출 가드 — ApiError를 st.error로 친화적으로 렌더하고 None 반환.
+
+    연결 실패(백엔드 꺼짐)면 실행 안내 + '다시 시도' 버튼(st.rerun)을 함께 보여준다.
+    retry_key: 같은 페이지에서 같은 함수를 여러 번 가드할 때 버튼 키 충돌 방지용.
+    """
+    try:
+        return fn(*args, **kwargs)
+    except ApiError as e:
+        if e.is_connection:
+            st.error(
+                "백엔드 서버가 꺼져 있습니다. 터미널에서 `uvicorn app.main:app`을 "
+                "실행한 뒤 새로고침하세요."
+            )
+        else:
+            st.error(str(e))
+        if st.button("다시 시도", key=f"retry_{retry_key or fn.__name__}"):
+            st.rerun()
+        return None
 
 _ACCENT = "#5b5bd6"
 

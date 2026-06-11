@@ -1,6 +1,6 @@
 """프로필 - 본인 정보 + 학습 현황(user-state 자연어)."""
 import streamlit as st
-from lib.ui import style
+from lib.ui import call, style
 
 from lib.api import get_profile, get_stats, get_user_state
 from lib.components import render_contribution_heatmap
@@ -10,11 +10,13 @@ style()
 st.title("프로필")
 
 if "user_id" not in st.session_state:
-    st.warning("프로필을 먼저 생성해주세요 (메인 페이지).")
+    st.warning("프로필을 먼저 생성하세요 (메인 페이지).")
     st.stop()
 
 uid = st.session_state["user_id"]
-profile = get_profile(uid)
+profile = call(get_profile, uid)
+if profile is None:       # 연결 실패/오류 — call이 안내와 '다시 시도'를 이미 렌더
+    st.stop()
 stats = get_stats(uid)
 inf = stats.get("influence_score", 0) if stats else 0
 streak = stats.get("streak", 0) if stats else 0

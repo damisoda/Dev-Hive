@@ -5,7 +5,7 @@
 - content 노드: 작게(소속 주제 색 옅게, 호버 시 제목). similar_to 엣지는 기본 off(1200여 개라 빽빽) — 토글.
 """
 import streamlit as st
-from lib.ui import style
+from lib.ui import call, style
 import streamlit.components.v1 as components
 
 from lib.api import get_graph
@@ -20,6 +20,7 @@ st.page_link("pages/5_업로드.py", label="이 그래프에 내 글 더하기 �
 
 # /graph는 similar_to를 매번 pgvector로 재계산해 느리다 → 캐싱.
 # (similar_to 토글은 클라이언트 필터라 데이터 재호출이 필요 없다)
+# 실패(ApiError)는 캐싱되지 않고 호출부의 call()까지 전파된다.
 @st.cache_data(ttl=300, show_spinner="그래프 불러오는 중…")
 def _load_graph():
     return get_graph()
@@ -38,9 +39,14 @@ if _uploaded:
     else:
         st.success(f"방금 올린 글이 '{_uploaded.get('node_name')}'에 편입됐어요.")
 
-data = _load_graph()
-if not data:
-    st.warning("그래프 데이터를 불러오지 못했습니다. 백엔드가 켜져 있는지 확인하세요.")
+data = call(_load_graph)
+if data is None:          # 연결 실패/오류 — call이 안내와 '다시 시도'를 이미 렌더
+    st.stop()
+
+if not data.get("nodes"):
+    # 빈 상태: 아직 그래프에 노드가 없다 — 첫 글 업로드로 유도
+    st.info("아직 그래프에 노드가 없습니다. 첫 글을 올려 지식그래프를 시작하세요.")
+    st.page_link("pages/5_업로드.py", label="글 올리러 가기 →")
     st.stop()
 
 stats = data.get("stats", {})

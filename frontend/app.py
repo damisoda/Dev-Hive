@@ -6,7 +6,7 @@ POST /auth/profile로 프로필을 생성하면서 초기 레벨을 설정한다
 """
 
 import streamlit as st
-from lib.ui import style
+from lib.ui import call, style
 
 from lib.api import create_profile, get_profile
 
@@ -57,9 +57,9 @@ st.caption("커뮤니티의 경험이 곧 다른 사람의 학습이 되는 플�
 with st.sidebar:
     st.header("내 프로필")
     if "user_id" not in st.session_state:
-        st.info("온보딩을 완료해주세요.")
+        st.info("온보딩을 완료하세요.")
     else:
-        profile = get_profile(st.session_state["user_id"])
+        profile = call(get_profile, st.session_state["user_id"], retry_key="sidebar_profile")
         if profile:
             st.success(f"{profile['display_name']} ({profile['persona']})")
             st.caption(f"현재 레벨: {profile.get('current_level', '입문')}")
@@ -86,9 +86,9 @@ if "user_id" not in st.session_state:
 
     if st.button("시작하기", type="primary"):
         if not name.strip():
-            st.warning("이름을 입력해주세요.")
+            st.warning("이름을 입력하세요.")
         else:
-            profile = create_profile(name.strip(), persona, answers)
+            profile = call(create_profile, name.strip(), persona, answers)
             if profile:
                 st.session_state["user_id"] = profile["user_id"]
                 st.session_state["display_name"] = profile["display_name"]
