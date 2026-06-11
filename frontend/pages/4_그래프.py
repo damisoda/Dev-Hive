@@ -4,15 +4,18 @@
 - topic 노드(대주제 + Auto-HKG 하위노드): 색으로 구분, 크게. Auto-HKG 생성 노드는 금색 강조.
 - content 노드: 작게(소속 주제 색 옅게, 호버 시 제목). similar_to 엣지는 기본 off(1200여 개라 빽빽) — 토글.
 """
+import html
+
 import streamlit as st
-from lib.ui import call, style
+from lib.ui import call, header, style
 import streamlit.components.v1 as components
 
 from lib.api import get_graph
-from lib.graph_viz import build_network
+from lib.graph_viz import AUTO_COLOR, PALETTE, build_network
 
 st.set_page_config(page_title="지식그래프 · Dev-Hive", layout="wide")
 style()
+header()
 st.title("지식그래프")
 st.caption("커뮤니티 콘텐츠가 대주제로 뭉치고, Auto-HKG가 새 하위노드를 키운다. 노드를 드래그·줌·호버해 보세요.")
 st.page_link("pages/5_업로드.py", label="이 그래프에 내 글 더하기 →")
@@ -63,13 +66,28 @@ st.sidebar.markdown(
     "- 금색 = Auto-HKG가 생성한 하위주제"
 )
 
+# 범례 — 대주제 7개 색 chip + 금색 Auto. 색 배정은 graph_viz와 동일(topic 순서 → PALETTE).
+_roots = [n for n in data["nodes"] if n.get("kind") == "topic" and not n.get("auto")]
+_legend = [
+    f"<span class='dh-legend-chip'><span class='dot' style='background:{PALETTE[i % len(PALETTE)]}'>"
+    f"</span>{html.escape(n.get('label') or '?')}</span>"
+    for i, n in enumerate(_roots)
+] + [
+    f"<span class='dh-legend-chip'><span class='dot' style='background:{AUTO_COLOR}'></span>"
+    "Auto-HKG 하위주제</span>"
+]
+st.markdown(f"<div class='dh-legend'>{''.join(_legend)}</div>", unsafe_allow_html=True)
+
+
 # 레이아웃(spring) 계산이 무거워 HTML을 캐싱 — 데이터/토글이 바뀔 때만 1회 계산, rerun엔 즉시.
 @st.cache_data(ttl=300, show_spinner="그래프 그리는 중…")
 def _render_graph_html(nodes, edges, show_similar):
     return build_network(nodes, edges, show_similar).generate_html(notebook=False)
 
 
-components.html(
-    _render_graph_html(data["nodes"], data["edges"], show_similar),
-    height=780, scrolling=False,
-)
+# 다크 viz를 라운드 카드 프레임으로 감싼다 (iframe 모서리는 ui.py CSS에서 라운드 처리)
+with st.container(border=True):
+    components.html(
+        _render_graph_html(data["nodes"], data["edges"], show_similar),
+        height=780, scrolling=False,
+    )

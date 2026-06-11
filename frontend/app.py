@@ -6,12 +6,13 @@ POST /auth/profile로 프로필을 생성하면서 초기 레벨을 설정한다
 """
 
 import streamlit as st
-from lib.ui import call, style
+from lib.ui import call, header, style
 
 from lib.api import create_profile, get_profile
 
 st.set_page_config(page_title="Dev-Hive", layout="wide", page_icon=":bee:")
 style()
+header()
 
 # 페르소나별 온보딩 문항 (HIVE-36). 직군마다 문항 세트가 다르다.
 # 현재 개발자만. 직군 추가 시 이 딕셔너리에 키만 추가하면 된다 (백엔드 레벨 로직 공통).
@@ -50,8 +51,17 @@ PERSONA_QUESTIONS = {
 # 직군 선택지. 현재 개발자만 노출, 직군 추가 시 여기에 더한다.
 PERSONA_OPTIONS = ["개발자"]
 
-st.title("Dev-Hive")
-st.caption("커뮤니티의 경험이 곧 다른 사람의 학습이 되는 플랫폼")
+# 서비스 소개 히어로 — 한 블록, 과하지 않게
+st.markdown(
+    """
+    <div class='dh-hero'>
+      <p class='quote'>다른 사람의 <em>경험</em>이 곧 나의 <em>커리큘럼</em>이 된다</p>
+      <p class='sub'>Dev-Hive는 커뮤니티의 경험 글을 지식그래프로 엮어,
+      내 숙련도에 맞는 다음 학습을 추천하는 자가복제형 기술 커뮤니티입니다.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # 사이드바: 프로필 표시 또는 안내
 with st.sidebar:

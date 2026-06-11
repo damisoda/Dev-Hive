@@ -13,6 +13,7 @@ from pyvis.network import Network
 
 # 대주제별 색 팔레트 (어두운 배경에서 구분, 금색과 겹치지 않게). 토픽 순서대로 배정.
 _PALETTE = ["#7c9cff", "#ff9c6b", "#6bd47e", "#e87cc4", "#b29cff", "#5fc8e8", "#ff6b6b"]
+PALETTE = _PALETTE            # 페이지 범례(컬러 chip)와 공유하는 공개 별칭
 AUTO_COLOR = "#ffd166"        # Auto-HKG 생성 노드 강조 (금색)
 _EDGE_COLOR = {
     "belongs_to": "rgba(150,165,215,0.17)",   # 옅게 → 색 클러스터가 주인공, 중앙 엉킴↓

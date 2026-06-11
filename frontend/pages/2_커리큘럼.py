@@ -4,7 +4,7 @@ A. 내 학습 경로: 노드별 mastery를 약한 것부터(다음에 배울 것
 B. 다음에 읽을 추천: GraphRAG 추천 + 자연어 근거(reason) 강조.
 """
 import streamlit as st
-from lib.ui import call, style
+from lib.ui import call, header, style
 
 from lib.api import get_graph, get_mastery, list_feedback, recommend
 from lib.components import recommendation_card
@@ -12,6 +12,7 @@ from lib.viewmodel import curriculum_rows
 
 st.set_page_config(page_title="커리큘럼 · Dev-Hive", layout="wide")
 style()
+header()
 st.title("내 커리큘럼")
 st.caption("내 숙련도 기반 학습 경로와, 다음에 읽을 개인화 추천")
 
@@ -39,8 +40,18 @@ mastery = get_mastery(uid) or {}
 if not topics:
     st.caption("그래프가 비어 있어 경로를 표시할 수 없습니다.")
 else:
-    for r in curriculum_rows(topics, mastery):   # 약한 개념 먼저 (viewmodel)
-        st.progress(r["m"], text=f"{r['name']} · {r['label']} {r['m']:.0%}")
+    # 토픽별 미니 카드 그리드 (3열) — 약한 개념 먼저, 가장 약한 토픽엔 '다음 추천 학습' 뱃지
+    rows = curriculum_rows(topics, mastery)      # 정렬·next 플래그는 viewmodel
+    N_COLS = 3
+    for start in range(0, len(rows), N_COLS):
+        cols = st.columns(N_COLS)
+        for col, r in zip(cols, rows[start:start + N_COLS]):
+            with col, st.container(border=True):
+                if r["next"]:
+                    st.markdown("<span class='dh-next-badge'>다음 추천 학습</span>",
+                                unsafe_allow_html=True)
+                st.markdown(f"**{r['name']}**")
+                st.progress(r["m"], text=f"{r['label']} · {r['m']:.0%}")
 
 st.divider()
 

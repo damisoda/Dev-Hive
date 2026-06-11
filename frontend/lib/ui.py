@@ -6,6 +6,8 @@ Streamlit 기본 티(헤더·메뉴·Deploy·Running 인디케이터)를 줄이�
 call(): 순수 클라이언트(lib/api)의 ApiError를 잡아 친화적으로 렌더하는 가드 헬퍼.
 스트림릿 결합은 이 파일과 components.py·pages에만 — api/viewmodel은 스트림릿 무지.
 """
+import html
+
 import streamlit as st
 
 from lib.api import ApiError
@@ -37,7 +39,13 @@ _CSS = """
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
 
-:root { --dh-accent:#5b5bd6; --dh-accent-soft:#ececfb; --dh-border:#ececf3; }
+:root {
+  --dh-accent:#5b5bd6; --dh-accent-soft:#ececfb; --dh-border:#ececf3;
+  --dh-bg:#f7f8fc; --dh-card:#ffffff; --dh-ink:#23243a; --dh-ink-soft:#5a5e72;
+}
+
+/* 라이트 커뮤니티 톤 — 본문은 옅은 블루그레이, 카드는 흰색 */
+.stApp { background: var(--dh-bg); }
 
 /* Pretendard 전역 적용 */
 html, body, [class*="css"], .stApp, button, input, textarea, select {
@@ -115,6 +123,96 @@ blockquote {
   padding: 0.5rem 0.95rem; margin: 0.4rem 0;
   border-radius: 0 8px 8px 0;
 }
+
+/* ── HIVE-51 리디자인: 브랜드 헤더 / pill·chip / 순위 뱃지 / 폼 카드 / 히어로 ── */
+
+/* 브랜드 헤더 — 모든 페이지 상단 공통 (ui.header()) */
+.dh-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-bottom: .85rem; margin-bottom: 1.1rem;
+  border-bottom: 1px solid var(--dh-border);
+}
+.dh-logo { font-size: 1.22rem; font-weight: 800; letter-spacing: -0.02em; color: var(--dh-ink); }
+.dh-logo em { font-style: normal; color: var(--dh-accent); }
+.dh-user-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--dh-card); border: 1px solid var(--dh-border); border-radius: 999px;
+  padding: 4px 13px; font-size: .85rem; font-weight: 600; color: #3c3e54;
+  box-shadow: 0 1px 2px rgba(20,20,50,.05);
+}
+.dh-user-chip .lvl {
+  background: var(--dh-accent-soft); color: var(--dh-accent);
+  border-radius: 999px; padding: 1px 8px; font-size: .76rem; font-weight: 700;
+}
+
+/* pill(알약 뱃지) — 난이도·타입·source. 색은 viewmodel 토큰에서 인라인 주입 */
+.dh-pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 2px 0 6px 0; }
+.dh-pill {
+  display: inline-flex; align-items: center; border-radius: 999px;
+  padding: 2px 11px; font-size: .78rem; font-weight: 600; line-height: 1.55;
+  white-space: nowrap;
+}
+
+/* 태그 chip */
+.dh-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 4px 0; }
+.dh-chip {
+  display: inline-flex; border-radius: 7px; padding: 1px 9px;
+  font-size: .76rem; font-weight: 500;
+  background: var(--dh-accent-soft); color: #4a4ac0;
+}
+
+/* 추천 순위 원형 뱃지 */
+.dh-rank {
+  display: inline-flex; width: 36px; height: 36px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--dh-accent), #8e7bff); color: #fff;
+  font-weight: 800; font-size: 1.02rem;
+  align-items: center; justify-content: center;
+  box-shadow: 0 3px 10px rgba(91,91,214,.30);
+}
+/* '매치 87%' 강조 */
+.dh-match { color: var(--dh-accent); font-weight: 700; font-size: .85rem; }
+
+/* '다음 추천 학습' 강조 뱃지 (커리큘럼 미니 카드) */
+.dh-next-badge {
+  display: inline-flex; border-radius: 999px; padding: 2px 10px;
+  font-size: .74rem; font-weight: 700;
+  background: var(--dh-accent); color: #fff;
+  box-shadow: 0 2px 8px rgba(91,91,214,.28);
+}
+
+/* st.form도 카드로 (업로드 폼) */
+[data-testid="stForm"] {
+  background: var(--dh-card); border: 1px solid var(--dh-border) !important;
+  border-radius: 16px !important; padding: 1.4rem 1.5rem;
+  box-shadow: 0 1px 2px rgba(20,20,50,.04);
+}
+
+/* 홈 히어로 블록 */
+.dh-hero {
+  background: linear-gradient(135deg, #ececfb 0%, #f9f9ff 55%, #f7f8fc 100%);
+  border: 1px solid var(--dh-border); border-radius: 20px;
+  padding: 2.1rem 2.3rem; margin-bottom: 1.5rem;
+}
+.dh-hero .quote { font-size: 1.55rem; font-weight: 800; letter-spacing: -0.03em;
+  color: var(--dh-ink); margin: 0 0 .55rem 0; }
+.dh-hero .quote em { font-style: normal; color: var(--dh-accent); }
+.dh-hero .sub { color: var(--dh-ink-soft); font-size: .98rem; margin: 0; }
+
+/* 그래프 범례 컬러 chip */
+.dh-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px 0; }
+.dh-legend-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--dh-card); border: 1px solid var(--dh-border); border-radius: 999px;
+  padding: 3px 11px; font-size: .8rem; font-weight: 600; color: #3c3e54;
+}
+.dh-legend-chip .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+/* iframe(그래프 등)도 라운드 */
+iframe { border-radius: 12px; }
+
+/* 통계 카드 안 metric 중앙 정돈 */
+[data-testid="stMetric"] { padding: .1rem .2rem; }
+[data-testid="stMetricLabel"] p { color: var(--dh-ink-soft); font-size: .85rem; }
 </style>
 """
 
@@ -122,3 +220,21 @@ blockquote {
 def style() -> None:
     """전 페이지 공통 테마/CSS 주입. set_page_config 직후 호출."""
     st.markdown(_CSS, unsafe_allow_html=True)
+
+
+def header() -> None:
+    """공통 브랜드 헤더 — 좌측 로고타입 + 우측 현재 유저 칩(세션에 있으면).
+
+    각 페이지에서 style() 다음에 호출한다. 유저 칩은 session_state의
+    display_name/current_level이 있을 때만(없으면 로고만) 표시.
+    """
+    name = st.session_state.get("display_name")
+    level = st.session_state.get("current_level")
+    chip = ""
+    if name:
+        lvl = f"<span class='lvl'>{html.escape(str(level))}</span>" if level else ""
+        chip = f"<span class='dh-user-chip'>🐝 {html.escape(str(name))} {lvl}</span>"
+    st.markdown(
+        f"<div class='dh-header'><span class='dh-logo'>🐝 Dev-<em>Hive</em></span>{chip}</div>",
+        unsafe_allow_html=True,
+    )
