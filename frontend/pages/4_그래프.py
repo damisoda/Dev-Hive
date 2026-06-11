@@ -29,9 +29,13 @@ def _load_graph():
     return get_graph()
 
 
-if st.sidebar.button("새로고침", help="Auto-HKG 실행 후 등 최신 그래프 다시 받기"):
-    st.cache_data.clear()
-    st.rerun()
+# 사이드바 없음(상단 네비) — 컨트롤은 본문 툴바 행으로
+_tb_refresh, _tb_similar, _tb_stats = st.columns([1.1, 2.2, 3.7])
+with _tb_refresh:
+    if st.button("그래프 새로고침", help="Auto-HKG 실행 후 등 최신 그래프 다시 받기",
+                 use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
 # 업로드 직후 진입(5_업로드에서 핸드오프): 캐시를 비워 방금 글의 노드를 즉시 반영 + 배너
 _uploaded = st.session_state.pop("just_uploaded", None)
@@ -53,18 +57,14 @@ if not data.get("nodes"):
     st.stop()
 
 stats = data.get("stats", {})
-show_similar = st.sidebar.checkbox("similar_to 엣지 표시 (빽빽함)", value=False)
-st.sidebar.markdown(
-    f"**노드** · topic {stats.get('topics', 0)} / content {stats.get('content', 0)}\n\n"
-    f"**엣지** · belongs_to {stats.get('belongs_to', 0)} / "
-    f"similar_to {stats.get('similar_to', 0)} / precedes {stats.get('precedes', 0)}"
-)
-st.sidebar.markdown(
-    "---\n**범례**\n\n"
-    "- 큰 색 노드 = 대주제 (색마다 다른 주제)\n"
-    "- 작은 점 = 콘텐츠 (소속 주제 색 상속)\n"
-    "- 금색 = Auto-HKG가 생성한 하위주제"
-)
+with _tb_similar:
+    show_similar = st.checkbox("similar_to 엣지 표시 (빽빽함)", value=False)
+with _tb_stats:
+    st.caption(
+        f"노드 topic {stats.get('topics', 0)} · content {stats.get('content', 0)}  |  "
+        f"엣지 belongs_to {stats.get('belongs_to', 0)} · "
+        f"similar_to {stats.get('similar_to', 0)} · precedes {stats.get('precedes', 0)}"
+    )
 
 # 범례 — 대주제 7개 색 chip + 금색 Auto. 색 배정은 graph_viz와 동일(topic 순서 → PALETTE).
 _roots = [n for n in data["nodes"] if n.get("kind") == "topic" and not n.get("auto")]

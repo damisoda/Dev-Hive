@@ -57,8 +57,8 @@ header[data-testid="stHeader"] { background: transparent; height: 0; }
 #MainMenu, [data-testid="stToolbar"], [data-testid="stDeployButton"],
 [data-testid="stStatusWidget"], footer { display: none !important; }
 
-/* 본문 폭/여백 — 좌우 넉넉히, 사이드바와 붙지 않게 */
-.block-container { padding: 2.4rem 3.5rem 3rem 3.5rem; max-width: 1120px; }
+/* 본문 폭/여백 — 전체 화면 사용(상단 네비 웹 레이아웃), 좌우는 비율 패딩만 */
+.block-container { padding: 1.6rem 4vw 3rem 4vw; max-width: 100%; }
 @media (max-width: 900px) { .block-container { padding-left: 1.2rem; padding-right: 1.2rem; } }
 
 /* 타이포 */
@@ -99,8 +99,24 @@ h2, h3 { font-weight: 700; letter-spacing: -0.015em; }
   border-radius: 10px !important;
 }
 
-/* 사이드바 */
-[data-testid="stSidebar"] { background: #fafaff; border-right: 1px solid var(--dh-border); }
+/* 사이드바 숨김 — 네비게이션은 상단 바(ui.header)로. 웹사이트형 레이아웃 */
+[data-testid="stSidebar"], [data-testid="collapsedControl"],
+[data-testid="stSidebarCollapsedControl"], [data-testid="stSidebarCollapseButton"] {
+  display: none !important;
+}
+
+/* 상단 네비게이션 링크(st.page_link) — 알약 메뉴. 현재 페이지는 액센트 강조 */
+[data-testid="stPageLink"] a, [data-testid="stPageLink"] span[aria-disabled] {
+  border-radius: 999px; padding: .28rem 1.05rem; font-weight: 600;
+  color: #3d3f56; justify-content: center; width: 100%;
+}
+[data-testid="stPageLink"] a:hover {
+  background: var(--dh-accent-soft); color: var(--dh-accent); text-decoration: none;
+}
+[data-testid="stPageLink"] a[aria-current="page"],
+[data-testid="stPageLink"] a[aria-current="page"] p {
+  background: var(--dh-accent-soft); color: var(--dh-accent) !important; font-weight: 700;
+}
 
 /* 링크 */
 a { color: var(--dh-accent); text-decoration: none; }
@@ -222,11 +238,23 @@ def style() -> None:
     st.markdown(_CSS, unsafe_allow_html=True)
 
 
-def header() -> None:
-    """공통 브랜드 헤더 — 좌측 로고타입 + 우측 현재 유저 칩(세션에 있으면).
+# 상단 네비게이션 메뉴 (사이드바 대체). 경로는 메인 스크립트(app.py) 기준.
+_NAV_PAGES = [
+    ("app.py", "홈"),
+    ("pages/1_피드.py", "피드"),
+    ("pages/2_커리큘럼.py", "커리큘럼"),
+    ("pages/4_그래프.py", "지식그래프"),
+    ("pages/3_프로필.py", "프로필"),
+    ("pages/5_업로드.py", "업로드"),
+]
 
-    각 페이지에서 style() 다음에 호출한다. 유저 칩은 session_state의
-    display_name/current_level이 있을 때만(없으면 로고만) 표시.
+
+def header() -> None:
+    """공통 브랜드 헤더 + 상단 네비게이션 — 웹사이트형 레이아웃(사이드바 없음).
+
+    각 페이지에서 style() 다음에 호출한다. 1행: 로고 + 유저 칩(세션에 있으면),
+    2행: 가로 메뉴(st.page_link — 세션 유지 SPA 전환. HTML 앵커는 전체 리로드로
+    session_state가 날아가므로 금지).
     """
     name = st.session_state.get("display_name")
     level = st.session_state.get("current_level")
@@ -238,3 +266,7 @@ def header() -> None:
         f"<div class='dh-header'><span class='dh-logo'>🐝 Dev-<em>Hive</em></span>{chip}</div>",
         unsafe_allow_html=True,
     )
+    nav_cols = st.columns([1, 1, 1.2, 1.2, 1, 1, 6])   # 마지막 칸 = 우측 여백(전체폭에서 메뉴 컴팩트 유지)
+    for col, (path, label) in zip(nav_cols, _NAV_PAGES):
+        with col:
+            st.page_link(path, label=label, use_container_width=True)
