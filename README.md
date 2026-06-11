@@ -7,6 +7,15 @@
 
 ---
 
+## 현황 (2026-06-11, Layer 2 완료)
+
+- **배포**: 맥미니 M4 셀프호스팅 — 공개 사이트 https://macmini.tail67859f.ts.net (Streamlit 임시), API https://macmini.tail67859f.ts.net:8443 (Tailscale Funnel). 상세는 [`deploy/macmini/README.md`](deploy/macmini/README.md)
+- **데이터**: 통합본 994건 (velog 311 / github_trending 300 / huggingface 221 / reddit 91 / x 64 / 기타)
+- **그래프**: Auto-HKG v2(2패스)로 자동노드 26개 · orphan 0, GraphSAGE 256차원 임베딩 994/994건 적재 (val link-AUC 0.768)
+- **평가 실측**: modularity 0.512 / tag_purity_topic 0.7745 (baseline 0.4143) / V-measure_topic 0.4238 (baseline 0.1481) / coverage 0.214 / e2e 연결점검 11/12
+
+---
+
 ## 1. 문제 의식
 
 AI 기술의 발전 속도가 너무 빠르다. 개인이 혼자 이 흐름을 따라가기는 벅차다.
@@ -33,17 +42,23 @@ AI 기술의 발전 속도가 너무 빠르다. 개인이 혼자 이 흐름을 �
 주니어 개발자들이 AI 툴을 써보고 공유하면, AI가 그 경험을 학습 콘텐츠로 변환하여 커리큘럼에 자동 삽입한다.
 
 ```
-유저 업로드 / 멀티소스 크롤링
+유저 업로드 / 멀티소스 크롤링 (velog · tistory · reddit · github_trending · huggingface · x)
     ↓
-AI 태깅 (토픽 / 난이도 / 직군 / 퀄리티 / 언어)
+QC 게이트 (소스 허용목록 · star/서브레딧 큐레이션 · NSFW · 중복 — LLM 비용 전 휴리스틱)
     ↓
-Auto-HKG (그래프 자기조직화 — 노드 자동 생성 및 편입)
+AI 태깅 (Claude Haiku — 토픽 / 난이도 / 퀄리티 / content_type / 언어)
     ↓
-GraphSAGE 임베딩 + LLM Knowledge Tracing
+가공 synthesis (content_type 5종 카드 — 임베딩은 원문 고정, 가공본은 별도 JSONB)
     ↓
-GraphRAG 추천 (벡터 검색 + LLM rerank + 자연어 근거 생성)
+임베딩 (OpenAI text-embedding-3-small 1536d)
     ↓
-개인화된 학습 경로 + 작성자 영향력 점수
+Auto-HKG v2 (그래프 자기조직화 — 2패스 흡수·클러스터링으로 노드 자동 생성 및 편입)
+    ↓
+GraphSAGE 임베딩 (256d) + LLM Knowledge Tracing
+    ↓
+GraphRAG 추천 (mean-centering 벡터 검색 + 4성분 스코어링 + Haiku 자연어 근거)
+    ↓
+개인화된 학습 경로 + 피드백 루프 + 레벨업 + 영향력 점수
 ```
 
 콘텐츠 생산자가 멈춰도 커뮤니티 그래프는 계속 진화한다. 이는 *Agentic Deep Graph Reasoning Yields Self-Organizing Knowledge Networks* (arXiv:2502.13025)의 자기조직화 명제와 일치한다.
@@ -71,27 +86,29 @@ GraphRAG 추천 (벡터 검색 + LLM rerank + 자연어 근거 생성)
 
 ```
 ┌────────────────────────────────────────────────────┐
-│ Presentation Layer            (Next.js / Vercel)    │
+│ Presentation Layer   (Streamlit 임시 — Next.js 전환  │
+│   예정. api/viewmodel/렌더 3층 분리 완료)             │
 ├────────────────────────────────────────────────────┤
-│ API Layer                     (FastAPI / Railway)   │
+│ API Layer            (FastAPI / 맥미니 docker)       │
 ├────────────────────────────────────────────────────┤
 │ Business Logic Layer                                │
-│   온보딩 · 진도 추적 · 영향력 점수                    │
+│   온보딩 · 진도 추적 · 레벨업 · 영향력 점수 · 피드백   │
 ├────────────────────────────────────────────────────┤
 │ AI / ML Layer                                       │
-│   1. Auto-HKG          (LLM 프롬프트)                │
-│   2. LLM Knowledge Tracing (LLM 프롬프트)            │
-│   3. GraphRAG Recommendation (LLM 프롬프트)          │
+│   1. Auto-HKG v2       (2패스 + LLM 네이밍)          │
+│   2. LLM Knowledge Tracing (mastery 추정)            │
+│   3. GraphRAG Recommendation (4성분 + LLM 근거)      │
 │   4. GraphSAGE 노드 임베딩 (자기지도학습 산출물)       │
+│   5. 가공 synthesis    (content_type 5종 카드)       │
 ├────────────────────────────────────────────────────┤
-│ Training Pipeline (off-line 배치, Google Colab)     │
+│ Training Pipeline (off-line 배치, 로컬 CPU 학습)     │
 ├────────────────────────────────────────────────────┤
 │ Data Layer                                          │
 │   Postgres + pgvector                               │
 ├────────────────────────────────────────────────────┤
-│ Ingestion Layer                                     │
-│   자동: Reddit · GitHub Trending · HN · RSS         │
-│   일회성: X · Threads (Apify)                       │
+│ Ingestion Layer  (적재 전 QC 게이트 통과)             │
+│   자동: Velog/Tistory · Reddit · GitHub Trending ·  │
+│         HuggingFace   일회성: X (Apify, 시드유저)    │
 └────────────────────────────────────────────────────┘
 ```
 
@@ -101,41 +118,46 @@ GraphRAG 추천 (벡터 검색 + LLM rerank + 자연어 근거 생성)
 
 ## 5. 멀티소스 구성
 
-총 6개 소스에서 콘텐츠를 수집한다.
+총 6개 소스에서 콘텐츠를 수집한다. 적재 전 QC 게이트(`backend/app/crawler/qc_gate.py`)를 통과해야 한다.
 
-| 소스 | 접근 방법 | 언어 | 운영 방식 | 목표 수집량 |
+| 소스 | 접근 방법 | 언어 | 운영 방식 | 적재량 (994건 기준) |
 |------|---------|------|---------|---------|
-| Reddit | PRAW | 영문 | 자동 (지속) | 600건 |
-| GitHub Trending | 공식 API | 영문 | 자동 (지속) | 300건 |
-| Hacker News | Algolia API | 영문 | 자동 (지속) | 300건 |
-| Velog / Tistory | RSS | 한국어 | 자동 (지속) | 300건 |
-| X (Twitter) | Apify 스크레이퍼 | 영문/한국어 | 일회성 | 500건 |
-| Threads | Apify 스크레이퍼 + 공식 API | 영문/한국어 | 일회성 | 200건 |
+| Velog (+Tistory) | Velog GraphQL 검색 | 한국어 | 자동 (지속) | 311건 |
+| GitHub Trending | GitHub Search API + README 보강 | 영문 | 자동 (지속) | 300건 |
+| HuggingFace | daily papers API | 영문 | 자동 (지속) | 221건 |
+| Reddit | PRAW / Arctic Shift 아카이브 | 영문 | 자동 (지속) | 91건 |
+| X (Twitter) | Apify 스크레이퍼 — 시드유저 14인 전문가 계정 | 영문/한국어 | 일회성 | 64건 |
+| 기타 (유저 업로드 등) | — | — | — | 잔여 |
 
-총 시드 약 2200건. X와 Threads의 자동 파이프라인은 future work로 명시한다.
+Hacker News는 데이터 품질 미달로 폐기했고(QC 게이트가 자동 거부), Threads는 수집하지 않는다.
+X 자동 파이프라인은 future work로 명시한다.
 
 ---
 
 ## 6. 핵심 기술 요소
 
-### 6.1 Auto-HKG (Automatic Hierarchical Knowledge Graph)
+### 6.1 Auto-HKG v2 (Automatic Hierarchical Knowledge Graph)
 
-LLM이 새 콘텐츠의 그래프 적합도를 판단하여, 기존 CurriculumNode에 매칭하거나 새 하위 노드를 자동 생성한다. 수작업 스켈레톤 위에 AI가 그래프를 키워나가는 구조이다.
+수작업 스켈레톤(대주제 7개) 위에 그래프가 스스로 자란다. 콘텐츠 1건씩 그리디 매칭하던 v1이 고아노드를 양산하여(825개 중 94% 고아) 2패스 구조로 재설계했다:
+1패스 — 대주제 centroid 코사인 ≥ 0.70이면 기존 노드로 흡수, 2패스 — 잔여 콘텐츠를 유사도 그래프(≥ 0.65)의 연결요소로 클러스터링(최소 3건)한 뒤 승격 클러스터만 LLM이 네이밍.
+실측(994건): 자동노드 26개 · orphan 0.
 
 ### 6.2 LLM Knowledge Tracing
 
-유저의 읽음 이력과 자가평가 답변을 자연어 텍스트로 직렬화하여 추천 프롬프트의 컨텍스트로 주입한다. 별도 학습 없이 LLM이 직접 mastery 상태를 해석한다.
+유저의 읽음 이력과 자가평가 답변으로 노드별 mastery를 추정(BKT-lite)하고, 자연어 user_state 텍스트로 직렬화하여 추천 근거 생성의 컨텍스트로 주입한다.
 
 ### 6.3 GraphRAG Recommendation
 
-두 단계로 작동한다.
+추천 결정은 알고리즘 4성분 점수(관련성 0.3 · 난이도 0.4 · 경로 0.2 · 다양성 0.1)로 내린다.
 
-- Stage A — Retrieval: pgvector 기반 결합 임베딩(텍스트 + GraphSAGE) 코사인 유사도로 후보 10건 추출 및 룰 필터링
-- Stage B — Reasoning: Haiku 1회 호출로 상위 3건 재정렬 및 1순위 자연어 근거 생성
+- Stage A — Retrieval: profile_vector ↔ 콘텐츠 임베딩 **mean-centering** 코사인 (anisotropy 보정, 실측 분별력 0.031→0.922)
+- Stage B — Reasoning: Haiku 1회 호출로 1순위 자연어 근거 생성 (결정엔 미관여, 실패 시 템플릿 폴백)
+
+피드백 4종(understood / too_hard / want_more / not_interested)이 다음 추천에 즉시 반영되고, GraphRAG 실패 시 rule_based로 자동 폴백한다. 추천 확정 콘텐츠의 가공 카드는 BackgroundTasks로 lazy 생성·캐시한다.
 
 ### 6.4 GraphSAGE 자기지도학습
 
-Content–Author–Tag–CurriculumNode–Source 이종 그래프에서 자기지도학습을 수행한다. 학습 산출물인 노드 임베딩은 텍스트 임베딩과 결합하여 retrieval에 활용된다. Google Colab 무료 티어에서 PyTorch Geometric으로 구현한다.
+topic(커리큘럼 노드)–content 이종 그래프에서 링크 예측 자기지도학습을 수행한다. 타깃은 구조 신호(belongs_to + precedes)만 사용하고 similar_to는 텍스트 파생이라 순환 방지를 위해 제외한다. 학습은 로컬 스크립트(`backend/scripts/train_graphsage_local.py`)로 CPU 약 7초에 끝나며(val link-AUC 0.768), 256차원 임베딩이 994/994건 적재되어 있다. Colab 노트북(`training/`)은 GPU용으로 유지한다.
 
 ---
 
@@ -143,17 +165,17 @@ Content–Author–Tag–CurriculumNode–Source 이종 그래프에서 자기�
 
 | 레이어 | 선택 |
 |--------|------|
-| 크롤러 (자동) | Python — PRAW, requests, feedparser |
-| 크롤러 (일회성) | Apify Actor (Twitter Scraper, Threads Scraper) |
-| 임베딩 (텍스트) | OpenAI text-embedding-3-small |
-| 임베딩 (그래프) | GraphSAGE (PyTorch Geometric) |
+| 크롤러 (자동) | Python — PRAW, requests (Velog GraphQL, GitHub API, HuggingFace API, Arctic Shift) |
+| 크롤러 (일회성) | Apify Actor (X 시드유저 14인) |
+| 임베딩 (텍스트) | OpenAI text-embedding-3-small (1536차원) |
+| 임베딩 (그래프) | GraphSAGE (PyTorch Geometric, 256차원) |
 | 벡터 저장소 | pgvector (Postgres 확장) |
-| 태깅 및 추천 LLM | Anthropic Claude Haiku 4.5 |
+| 태깅·가공·추천 LLM | Anthropic Claude Haiku 4.5 |
 | 백엔드 | FastAPI (Python) |
-| 프론트엔드 | Next.js + Tailwind CSS |
-| 그래프 시각화 | react-force-graph |
-| 학습 환경 | Google Colab 무료 티어 (T4 GPU) |
-| 인프라 | Railway (BE + DB) + Vercel (FE) |
+| 프론트엔드 | Streamlit (임시 — api/viewmodel/렌더 3층 분리, Next.js 마이그레이션 준비 완료) |
+| 그래프 시각화 | pyvis + networkx (Next.js 이행 시 react-force-graph로 대체 예정) |
+| 학습 환경 | 로컬 CPU (`backend/scripts/train_graphsage_local.py`, 약 7초) — Colab 노트북 보조 |
+| 인프라 | 맥미니 M4 셀프호스팅 (docker compose: pgvector + backend + frontend, Tailscale Funnel 공개) |
 
 ---
 
@@ -171,13 +193,13 @@ Content–Author–Tag–CurriculumNode–Source 이종 그래프에서 자기�
 
 ## 9. 프로젝트 로드맵 (레이어 구조)
 
-| Layer | 기간 | 산출물 | 데모 |
+| Layer | 기간 | 산출물 | 상태 |
 |-------|------|--------|------|
-| Layer 1 — Walking Skeleton | 5/25 – 5/31 | Reddit 단일 소스 기반 데이터 흐름 검증 | 1차 데모 5/31 |
-| Layer 2 — Core MVP | 6/1 – 6/6 | 6개 소스 + GraphRAG + LLM KT + GraphSAGE, 개발자 페르소나 | 2차 데모 6/6 |
-| Layer 2 보강 | 6/7 – 6/15 | 자가복제 (Auto-HKG + 업로드) + 그래프 시각화 + 정식 배포 | — |
-| 시험 휴회 | 6/16 – 6/22 | 폴리시, 평가, 문서 한정 | — |
-| Layer 3 — Expansion | 6/23 – 6/28 | 마케터·기획자 페르소나 추가 | 3차 데모 6/28 |
+| Layer 1 — Walking Skeleton | 5/25 – 5/31 | 단일 소스 기반 데이터 흐름 검증 | **완료** (1차 데모 5/31) |
+| Layer 2 — Core MVP | 6/1 – 6/6 | 멀티소스 + GraphRAG + LLM KT + GraphSAGE, 개발자 페르소나 | **완료** (2차 데모 6/6) |
+| Layer 2 보강 | 6/7 – 6/15 | 자가복제(Auto-HKG v2 + 업로드) + QC 게이트 + 가공 + 피드백 루프 + 그래프 시각화 + 맥미니 배포 | **완료** (6/11) |
+| 시험 휴회 | 6/16 – 6/22 | 폴리시, 평가, 문서 한정 | 예정 |
+| Layer 3 — Expansion | 6/23 – 6/28 | precedes 엣지 · quality_score 랭킹 연결 · Next.js 전환 · 직군 확장(마케터·기획자) | 예정 (3차 데모 6/28) |
 | 최종 발표 | 6/29 | — | 발표 심사 |
 
 상세 일정은 [`docs/로드맵.md`](docs/로드맵.md)를 참조한다.
@@ -221,16 +243,16 @@ Content–Author–Tag–CurriculumNode–Source 이종 그래프에서 자기�
 
 ## 11. 비용 추정
 
-MVP 전체 운영 비용은 미화 35달러 이내로 추정한다.
+MVP 전체 운영 비용은 미화 35달러 이내로 추정한다 (기획 시점 추정 — Threads는 폐기, 인프라는 맥미니 셀프호스팅으로 전환되어 실비용은 더 낮다).
 
 | 항목 | 비용 |
 |------|------|
-| Apify 스크레이퍼 (X 500건 + Threads 200건) | 약 $15 |
-| LLM 태깅 및 Auto-HKG (Haiku × 2200건) | 약 $1 |
-| 텍스트 임베딩 (text-embedding-3-small × 2200건) | $0.02 |
-| GraphSAGE 학습 (Colab 무료 티어) | $0 |
-| 추천 호출 (Haiku rerank + 근거 생성) | 호출당 약 $0.0005 |
-| 인프라 (Railway + Vercel, 2개월) | 약 $10 |
+| Apify 스크레이퍼 (X 시드유저 크롤) | 약 $15 이내 |
+| LLM 태깅·가공 및 Auto-HKG (Haiku, 배치 50% 할인) | 약 $1 |
+| 텍스트 임베딩 (text-embedding-3-small) | $0.02 |
+| GraphSAGE 학습 (로컬 CPU 약 7초) | $0 |
+| 추천 호출 (Haiku 근거 생성 1회) | 호출당 약 $0.0005 |
+| 인프라 (맥미니 셀프호스팅 + Tailscale Funnel) | $0 |
 | 개발 및 디버깅 버퍼 | 약 $5 |
 
 ---
@@ -243,7 +265,7 @@ MVP 전체 운영 비용은 미화 35달러 이내로 추정한다.
 ├── .gitignore
 ├── .env.example                       # 환경변수 템플릿 (키 이름만)
 ├── docker-compose.yml                 # 로컬 PostgreSQL + pgvector
-├── railway.json                       # Railway 배포 설정
+├── railway.json                       # Railway 배포 설정 (현재 운영은 맥미니)
 ├── .github/
 │   └── PULL_REQUEST_TEMPLATE.md
 ├── docs/                              # 기획 + 협업 문서
@@ -254,26 +276,32 @@ MVP 전체 운영 비용은 미화 35달러 이내로 추정한다.
 │   ├── PR_가이드.md / PR_템플릿.md
 │   └── Jira_가이드.md / Jira-GitHub_연동가이드.md
 ├── db/                               # DB 스키마
-│   ├── schema.sql                     # 테이블 6종 + pgvector
+│   ├── schema.sql                     # 테이블 7종 + pgvector
 │   └── seed.sql                       # 대주제 7개 시드
+├── deploy/
+│   └── macmini/                       # 맥미니 운영 배포 (compose.prod + setup)
 ├── backend/                          # FastAPI 백엔드
 │   ├── app/
-│   │   ├── main.py                    # 엔트리포인트
+│   │   ├── main.py                    # 엔트리포인트 (ENABLE_SCHEDULER opt-in)
 │   │   ├── config.py                  # 환경변수 로딩
 │   │   ├── database.py                # DB 연결
 │   │   ├── models/                    # SQLAlchemy 모델
-│   │   ├── api/                       # 엔드포인트 (파이프라인 4)
-│   │   ├── crawler/                   # 크롤링 (6개 소스)
-│   │   ├── tagging/                   # 태깅 + 임베딩 (파이프라인 1)
-│   │   ├── graph/                     # 그래프 + GraphSAGE (파이프라인 2)
-│   │   └── recommend/                 # 추천 엔진 (파이프라인 3)
+│   │   ├── api/                       # 엔드포인트 (auth/content/recommend/progress/feedback/graph/stats)
+│   │   ├── crawler/                   # 크롤링 (6개 소스) + QC 게이트 + 스케줄러
+│   │   ├── tagging/                   # 태깅 + 가공(synthesis) + 임베딩 + 적재
+│   │   ├── graph/                     # 그래프 빌더 + Auto-HKG v2 + GraphSAGE export/적재 + 지표
+│   │   ├── recommend/                 # GraphRAG (메인) + rule_based (폴백)
+│   │   └── services/                  # KT·레벨업·영향력·profile_vector·업로드·피드백 신호·lazy synthesis
+│   ├── scripts/                       # 파이프라인 CLI (태깅·Auto-HKG·GraphSAGE 학습·평가·e2e)
 │   ├── requirements.txt
 │   └── Dockerfile
-├── frontend/                         # Streamlit
+├── frontend/                         # Streamlit (api/viewmodel/렌더 3층 분리)
 │   ├── app.py
+│   ├── lib/                           # api.py · viewmodel.py · ui.py · components.py · graph_viz.py
+│   ├── pages/                         # 피드 · 커리큘럼 · 프로필 · 그래프 · 업로드
 │   └── requirements.txt
-└── training/                         # GraphSAGE 학습 (Colab)
-    └── README.md
+└── training/                         # GraphSAGE 학습 (Colab 노트북 — 기본 경로는 backend/scripts/train_graphsage_local.py)
+    └── graphsage_train.ipynb
 ```
 
 ---
@@ -307,9 +335,13 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-### 배포
-- 백엔드 + DB: Railway (`railway.json` 기반 Dockerfile 배포)
-- 프론트엔드: Streamlit Community Cloud 또는 Railway
+### 배포 (2026-06-11 운영 중)
+맥미니 M4 셀프호스팅 — docker compose(pgvector + backend + frontend), `ENABLE_SCHEDULER=false`(재크롤 수동 트리거), launchd 자동시작.
+
+- 공개 사이트: https://macmini.tail67859f.ts.net (Streamlit 임시)
+- API: https://macmini.tail67859f.ts.net:8443 (Tailscale Funnel)
+
+상세 절차는 [`deploy/macmini/README.md`](deploy/macmini/README.md) 참조. (`railway.json`은 이전 배포 경로 잔재.)
 
 ---
 
@@ -326,10 +358,13 @@ streamlit run app.py
 
 ---
 
-## 15. 향후 확장 (Future Work)
+## 15. 향후 확장 (Layer 3 / 백로그)
 
+- precedes 엣지 생성 (선행 학습 연결) — GraphRAG 경로 성분 활성화
+- quality_score → 추천 랭킹 연결
+- Next.js / Vercel 프론트엔드 전환 (3층 분리로 마이그레이션 준비 완료)
+- X 재적재 (likes 정상화 반영)
+- 직군 확장 (마케터·기획자 페르소나)
 - 유저 상호작용 데이터 누적 시 GraphSAGE 임베딩의 supervised fine-tuning
-- X / Threads의 자동 파이프라인 확장 (X API Basic 구독 또는 우회 경로)
 - Generative Recommendation (TIGER, Semantic IDs) 로의 확장
-- LLM 태깅을 KoBERT 등 소형 모델로 distillation 하여 추론 비용 절감
-- 추가 페르소나 (디자이너, 데이터 분석가 등) 지원
+- LLM 태깅을 소형 로컬 모델로 distillation 하여 추론 비용 절감

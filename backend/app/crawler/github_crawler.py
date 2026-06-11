@@ -129,7 +129,6 @@ def _keyword_to_regex(keyword: str) -> re.Pattern[str]:
     joined = r"[\s_\-./]*".join(pieces)
     return re.compile(rf"(?<![a-z0-9]){joined}(?![a-z0-9])", re.IGNORECASE)
 
-
 _COMPILED_PATTERNS = tuple(
     pattern
     for keywords in CATEGORY_KEYWORDS.values()
@@ -160,16 +159,13 @@ def _github_queries() -> list[str]:
     return queries
 
 
-def _headers() -> dict[str, str]:
+def _headers(token: str | None = None) -> dict[str, str]:
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-
-    token = os.getenv("GITHUB_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
-
     return headers
 
 
@@ -225,7 +221,6 @@ def _fetch_search_page(
 
 
 def _fetch_readme(client: httpx.Client, full_name: str) -> str:
-    """레포 README 원문을 가져온다(raw 텍스트). 없거나(404) 실패하면 ''를 반환한다."""
     if not full_name:
         return ""
     try:
@@ -258,11 +253,12 @@ def _normalize_repo(repo: dict[str, Any], readme: str = "") -> ContentSchema | N
     if not _matches_ai_keyword(name, description):
         return None
 
-    # README가 있으면 설명 + README를 본문으로 합쳐 깊이를 보강한다(없으면 설명만).
-    if readme:
-        body = f"{description}\n\n{readme}".strip() if description else readme
-    else:
-        body = description
+    repo_name = name.split("/")[-1].casefold()
+    if "awesome" in repo_name:
+        return None
+
+    # README 우선, 없으면 about(description) 폴백
+    body = readme if readme else description
 
     return normalize(
         source="github_trending",
@@ -282,7 +278,7 @@ def collect_github(target_total: int = GITHUB_TARGET_ITEMS) -> list[ContentSchem
     seen_urls: set[str] = set()
     search_count = 0
 
-    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, headers=_headers()) as client:
+    with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, headers=_headers(token)) as client:
         for query in _github_queries():
             if len(results) >= target_total or search_count >= max_searches:
                 break
@@ -315,14 +311,13 @@ def collect_github(target_total: int = GITHUB_TARGET_ITEMS) -> list[ContentSchem
                     # README는 적재 후보(미중복·AI키워드 매칭)에 한해서만 조회해 불필요한 콜을 줄인다.
                     name = repo.get("full_name") or repo.get("name") or ""
                     description = repo.get("description") or ""
-                    if not _matches_ai_keyword(name, description):
+                    # README API 호출 전 early-exit — 불필요한 네트워크 콜 방지.
+                    # _normalize_repo 내부에서도 동일 조건을 재확인한다.
+                    repo_name = name.split("/")[-1].casefold()
+                    if not _matches_ai_keyword(name, description) or "awesome" in repo_name:
                         continue
 
-                    readme = (
-                        _fetch_readme(client, name)
-                        if (GITHUB_FETCH_README and token)
-                        else ""
-                    )
+                    readme = _fetch_readme(client, name) if GITHUB_FETCH_README else ""
 
                     item = _normalize_repo(repo, readme)
                     if item is None:
@@ -342,3 +337,4 @@ def collect_github(target_total: int = GITHUB_TARGET_ITEMS) -> list[ContentSchem
         search_count,
     )
     return results
+

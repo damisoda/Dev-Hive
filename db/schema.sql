@@ -28,9 +28,10 @@ CREATE TABLE IF NOT EXISTS content (
     language            VARCHAR(5) DEFAULT 'en',     -- en / ko
     difficulty          VARCHAR(10),                 -- 입문 / 중급 / 고급
     quality_score       FLOAT,                       -- 0.0 ~ 1.0
-    content_type        VARCHAR(20),                 -- tutorial / experience / news / paper / discussion
+    content_type        VARCHAR(20),                 -- experience / tutorial / concept / tool / discussion
     tags                JSONB DEFAULT '[]',          -- ["Cursor", "Claude Code", ...]
-    text_embedding      vector(1536),                -- OpenAI text-embedding-3-small
+    synthesis           JSONB,                       -- HIVE-41 가공 카드(synthesized_card). NULL이면 원문 링크 폴백
+    text_embedding      vector(1536),                -- OpenAI text-embedding-3-small (원문 고정, 가공본 임베딩 X)
     graph_embedding     vector(256),                 -- GraphSAGE 산출물 (Layer 2, NULL 가능)
     engagement_likes    INT DEFAULT 0,
     engagement_comments INT DEFAULT 0,
@@ -64,6 +65,17 @@ CREATE TABLE IF NOT EXISTS user_read_events (
     content_id INT REFERENCES content(id) ON DELETE CASCADE,
     read_at    TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- 6b. 유저 콘텐츠 피드백 (HIVE-37) — (user, content)당 1행, 최신값 upsert
+CREATE TABLE IF NOT EXISTS user_content_feedback (
+    user_id    INT REFERENCES users(id) ON DELETE CASCADE,
+    content_id INT REFERENCES content(id) ON DELETE CASCADE,
+    feedback   VARCHAR(20) NOT NULL,  -- understood / too_hard / want_more / not_interested
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, content_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ucf_user ON user_content_feedback(user_id);
 
 -- 6. 노드 간 소프트 링크 (Layer 2부터 활용)
 CREATE TABLE IF NOT EXISTS node_links (

@@ -1,8 +1,11 @@
 """
-태깅 파이프라인 (Anthropic Message Batches 버전).
+태깅 파이프라인 CLI (Anthropic Message Batches 버전).
 
-JSON 콘텐츠를 읽어 → Anthropic Message Batches로 일괄 태깅(모든 토큰 50% 할인, 비동기)
-→ quality 사전 필터 → OpenAI 임베딩(건별) → DB 적재(건별 트랜잭션).
+JSON 콘텐츠를 읽어 → QC 게이트 → Anthropic Message Batches로 일괄 태깅(모든 토큰 50% 할인,
+비동기) → quality 사전 필터 → OpenAI 임베딩(건별) → DB 적재(건별 트랜잭션).
+
+코어 로직은 `app.tagging.ingest.ingest_items`로 분리되어 있고, 이 스크립트는 얇은 CLI 래퍼다.
+(스케줄 크롤 파이프라인도 같은 `ingest_items`를 import해 적재한다 — 자가복제 일관성.)
 
 설계 메모:
 - 태깅만 배치로 보낸다(비싼 단계). 임베딩/적재는 배치 결과 수거 후 건별 동기 처리.
@@ -22,10 +25,9 @@ JSON 콘텐츠를 읽어 → Anthropic Message Batches로 일괄 태깅(모든 �
 """
 import argparse
 import json
+import logging
 import os
-import re
 import sys
-import time
 from pathlib import Path
 
 import anthropic
@@ -38,89 +40,10 @@ load_dotenv(ROOT / ".env")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.tagging.tagger import MODEL, _SYSTEM_PROMPT
-from app.tagging.embedder import embed_content
-from app.tagging.loader import load_content, QUALITY_THRESHOLD
+from app.tagging.ingest import ingest_items
 
-POLL_INTERVAL = 30  # 배치 상태 폴링 간격(초)
-TRANSIENT = (anthropic.APIConnectionError, anthropic.APIStatusError)  # 재시도 대상 일시 오류
-COLLECT_RETRIES = 5  # 결과 수거 재시도 횟수
-
-
-def _parse_tags(text: str) -> dict:
-    """Haiku 응답 텍스트에서 코드블록을 제거하고 JSON으로 파싱한다."""
-    raw = re.sub(r"^```json\s*", "", text.strip())
-    raw = re.sub(r"\s*```$", "", raw)
-    return json.loads(raw)
-
-
-def _submit_batch(client: anthropic.Anthropic, items: list[dict]):
-    """items를 태깅 요청 배치로 제출한다. custom_id는 'item-<index>'."""
-    requests = [
-        {
-            "custom_id": f"item-{i}",
-            "params": {
-                "model": MODEL,
-                "max_tokens": 512,
-                "system": _SYSTEM_PROMPT,
-                "messages": [
-                    {"role": "user", "content": json.dumps(item, ensure_ascii=False)}
-                ],
-            },
-        }
-        for i, item in enumerate(items)
-    ]
-    batch = client.beta.messages.batches.create(requests=requests)
-    print(f"배치 제출 완료: {batch.id} ({len(requests)}건) — 50% 할인 적용")
-    return batch.id
-
-
-def _wait_for_batch(client: anthropic.Anthropic, batch_id: str) -> None:
-    """배치가 끝날 때까지(ended) 폴링한다. 일시적 연결오류는 재시도한다."""
-    while True:
-        try:
-            batch = client.beta.messages.batches.retrieve(batch_id)
-        except TRANSIENT as e:
-            print(f"  폴링 일시 오류({type(e).__name__}) — {POLL_INTERVAL}s 후 재시도")
-            time.sleep(POLL_INTERVAL)
-            continue
-        c = batch.request_counts
-        print(
-            f"  상태={batch.processing_status} "
-            f"(처리중 {c.processing} / 성공 {c.succeeded} / 오류 {c.errored} / 취소 {c.canceled} / 만료 {c.expired})"
-        )
-        if batch.processing_status == "ended":
-            return
-        time.sleep(POLL_INTERVAL)
-
-
-def _collect_tags(client: anthropic.Anthropic, batch_id: str) -> tuple[dict[int, dict], int]:
-    """배치 결과에서 custom_id별 태그 dict를 수거한다. 일시 오류 시 전체 재시도."""
-    for attempt in range(1, COLLECT_RETRIES + 1):
-        tags_by_idx: dict[int, dict] = {}
-        failed = 0
-        try:
-            for result in client.beta.messages.batches.results(batch_id):
-                try:
-                    idx = int(result.custom_id.split("-", 1)[1])
-                except (ValueError, IndexError):
-                    failed += 1
-                    continue
-                if result.result.type == "succeeded":
-                    try:
-                        text = result.result.message.content[0].text
-                        tags_by_idx[idx] = _parse_tags(text)
-                    except Exception as e:
-                        print(f"[{idx:03d}] 태그 파싱 실패: {e}")
-                        failed += 1
-                else:
-                    print(f"[{idx:03d}] 태깅 실패: {result.result.type}")
-                    failed += 1
-            return tags_by_idx, failed
-        except TRANSIENT as e:
-            print(f"  결과 수거 일시 오류({type(e).__name__}) — 재시도 {attempt}/{COLLECT_RETRIES}")
-            time.sleep(POLL_INTERVAL)
-    raise RuntimeError("결과 수거 실패: 일시 오류 재시도 한도 초과")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -155,54 +78,24 @@ def main() -> None:
     openai_client = OpenAI(api_key=openai_key)
     engine = create_engine(db_url)
 
-    # 1. 태깅 배치 — 신규 제출 또는 기존 배치 재접속
-    if args.batch_id:
-        batch_id = args.batch_id
-        print(f"기존 배치 재접속: {batch_id} (대상 {len(items)}건, 재태깅 없음)\n")
-    else:
-        print(f"처리 대상: {len(items)}건 (Message Batches, 50% 할인)\n")
-        batch_id = _submit_batch(anthropic_client, items)
+    # QC 게이트는 ingest_items 안에서 동일하게 적용된다(결정적 → --batch-id 정렬 보존).
+    # limit은 이미 위에서 잘라 넘기므로 ingest_items에는 전달하지 않는다(이중 적용 방지).
+    stats = ingest_items(
+        items,
+        anthropic_client,
+        openai_client,
+        engine,
+        batch_id=args.batch_id,
+    )
 
-    _wait_for_batch(anthropic_client, batch_id)
-
-    # 2. 결과 수거 (index -> tags)
-    tags_by_idx, tag_failed = _collect_tags(anthropic_client, batch_id)
-
-    # 3. 임베딩 + 적재 (건별 트랜잭션 — 한 건 실패가 배치 전체를 롤백하지 않음)
-    inserted = skipped_quality = skipped_dup = load_failed = 0
-    for i, item in enumerate(items):
-        title = str(item.get("title", ""))[:60]
-        tags = tags_by_idx.get(i)
-        if tags is None:
-            continue  # 태깅 실패분은 _collect_tags에서 카운트됨
-
-        try:
-            quality = tags.get("quality_score", 0.0)
-            if not isinstance(quality, (int, float)) or quality < QUALITY_THRESHOLD:
-                print(f"[{i:03d}] SKIP(quality)  {title}")
-                skipped_quality += 1
-                continue
-
-            embedding = embed_content(item, openai_client)
-
-            with engine.begin() as conn:
-                content_id = load_content(item, tags, embedding, conn)
-
-            if content_id is None:
-                print(f"[{i:03d}] SKIP(dup url)  {title}")
-                skipped_dup += 1
-            else:
-                print(f"[{i:03d}] OK  id={content_id}  q={quality:.2f}  {title}")
-                inserted += 1
-
-        except Exception as e:
-            print(f"[{i:03d}] ERROR  {title}\n      {e}")
-            load_failed += 1
+    if stats["qc_passed"] == 0:
+        sys.exit("QC 게이트 통과 항목이 없습니다.")
 
     print(
         f"\n--- 완료 ---\n"
-        f"적재: {inserted}건 / quality 필터: {skipped_quality}건 / URL 중복: {skipped_dup}건 / "
-        f"태깅 실패: {tag_failed}건 / 적재 오류: {load_failed}건"
+        f"적재: {stats['inserted']}건 / quality 필터: {stats['skipped_quality']}건 / "
+        f"URL 중복: {stats['skipped_dup']}건 / "
+        f"태깅 실패: {stats['tag_failed']}건 / 적재 오류: {stats['load_failed']}건"
     )
 
 

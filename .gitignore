@@ -8,6 +8,10 @@
 secrets/
 credentials.json
 service-account.json
+# Google 서비스 계정 키 (HIVE-35) — 실제 키 파일명(google_service_account.json) 및 변형 차단
+google_service_account.json
+*service_account*.json
+*service-account*.json
 
 # Python
 __pycache__/
@@ -68,3 +72,9 @@ logs/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# GraphSAGE 학습 산출물 (DB에서 재생산 가능 — git에 올리지 않음)
+backend/data/*.npz
+
+# 맥미니 배포 시크릿
+deploy/macmini/.env

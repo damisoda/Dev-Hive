@@ -5,20 +5,10 @@ relevance >= 0.5인 대주제를 content_node_mapping에 매핑한다.
 
 quality_score < 0.5인 콘텐츠는 적재하지 않는다.
 """
+import json
+
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
-
-# demo_seed.sql 기준 node_id 고정 매핑
-# curriculum_nodes 시드: id 1~7이 대주제 순서대로 들어가 있음
-NODE_ID_MAP: dict[str, int] = {
-    "프롬프트 엔지니어링": 1,
-    "Agentic AI": 2,
-    "멀티모달 AI": 3,
-    "RAG & 지식 관리": 4,
-    "오픈소스 AI": 5,
-    "AI 워크플로우 & 자동화": 6,
-    "AI 엔지니어링": 7,
-}
 
 RELEVANCE_THRESHOLD = 0.5
 QUALITY_THRESHOLD = 0.5
@@ -29,31 +19,49 @@ def load_content(
     tags: dict,
     embedding: list[float],
     conn: Connection,
+    min_quality: float = QUALITY_THRESHOLD,
+    synthesis: dict | None = None,
 ) -> int | None:
     """
     content 테이블에 INSERT하고 content_node_mapping을 추가한다.
 
+    min_quality: 적재 최소 품질 점수(기본 0.5, 크롤 경로 유지).
+                 사용자 업로드(HIVE-33)는 더 낮은 값(예: 0.3)을 넘겨 기준을 완화한다.
+    synthesis:   HIVE-41 가공 카드(synthesized_card). None이면 synthesis 컬럼 NULL로 적재한다.
+                 임베딩은 원문 고정이며 가공본은 표시/근거용으로 이 컬럼에만 저장한다.
+
     Returns:
-        삽입된 content.id. quality_score < 0.5이거나 URL 중복이면 None 반환.
+        신규 삽입된 content.id. quality_score < min_quality이거나 기존 URL(중복 upsert)이면 None 반환.
     """
     quality_score = tags.get("quality_score", 0.0)
-    if quality_score < QUALITY_THRESHOLD:
+    if quality_score < min_quality:
         return None
 
-    # content INSERT (URL 중복 시 스킵)
+    # engagement: 정규 경로는 중첩 dict({"likes","comments"}, ContentSchema.to_dict).
+    # HIVE-50: 구버전 X 평탄 덤프(likes가 top-level 키)가 0으로 뭉개져 적재되던 문제
+    # (DB 실측 62/64건 likes=0) 방지 — dict가 없으면 최상위 키로 폴백한다.
+    engagement = item.get("engagement")
+    if not isinstance(engagement, dict):
+        engagement = item
+
+    # content INSERT.
+    # URL 중복 시 body/text_embedding은 건드리지 않고 engagement만 최신 수치로 갱신한다.
     row = conn.execute(
         text("""
             INSERT INTO content (
                 title, body, url, source, author_name,
                 language, difficulty, quality_score, content_type,
-                text_embedding, engagement_likes, engagement_comments, published_at
+                synthesis, text_embedding, engagement_likes, engagement_comments, published_at
             ) VALUES (
                 :title, :body, :url, :source, :author_name,
                 :language, :difficulty, :quality_score, :content_type,
-                (:embedding)::vector, :likes, :comments, :published_at
+                (:synthesis)::jsonb, (:embedding)::vector, :likes, :comments, :published_at
             )
-            ON CONFLICT (url) DO NOTHING
-            RETURNING id
+            ON CONFLICT (url) DO UPDATE SET
+                engagement_likes = EXCLUDED.engagement_likes,
+                engagement_comments = EXCLUDED.engagement_comments,
+                crawled_at = NOW()
+            RETURNING id, (xmax = 0) AS inserted
         """),
         {
             "title": item.get("title", ""),
@@ -65,32 +73,51 @@ def load_content(
             "difficulty": tags.get("difficulty"),
             "quality_score": quality_score,
             "content_type": tags.get("content_type"),
+            "synthesis": json.dumps(synthesis, ensure_ascii=False) if synthesis is not None else None,
             "embedding": str(embedding),
-            "likes": item.get("engagement", {}).get("likes", 0),
-            "comments": item.get("engagement", {}).get("comments", 0),
+            "likes": engagement.get("likes") or 0,
+            "comments": engagement.get("comments") or 0,
             "published_at": item.get("published_at"),
         },
     ).fetchone()
 
     if row is None:
-        return None  # URL 중복으로 스킵됨
+        return None
+
+    if not row.inserted:
+        return None  # 기존 콘텐츠는 engagement만 갱신하고 재매핑/본문 재삽입은 하지 않음
 
     content_id = row.id
 
     # content_node_mapping INSERT (relevance >= 0.5인 노드만)
+    # 대주제 id를 name으로 동적 조회한다 — 하드코딩(1~7) 제거.
+    # → Auto-HKG(HIVE-21)가 추가한 새 노드(하위/최상위)에도 매핑되고,
+    #   재시드로 id 순서가 바뀌어도 안전하다.
     relevance = tags.get("relevance", {})
-    for topic, score in relevance.items():
-        if score >= RELEVANCE_THRESHOLD:
-            node_id = NODE_ID_MAP.get(topic)
-            if node_id is None:
-                continue
-            conn.execute(
-                text("""
-                    INSERT INTO content_node_mapping (content_id, node_id, relevance_score)
-                    VALUES (:content_id, :node_id, :score)
-                    ON CONFLICT DO NOTHING
-                """),
-                {"content_id": content_id, "node_id": node_id, "score": score},
-            )
+    relevant_topics = [
+        topic
+        for topic, score in relevance.items()
+        if isinstance(score, (int, float)) and score >= RELEVANCE_THRESHOLD
+    ]
+    if not relevant_topics:
+        return content_id
+
+    node_rows = conn.execute(
+        text("SELECT id, name FROM curriculum_nodes")
+    ).fetchall()
+    name_to_id = {r.name: r.id for r in node_rows}
+
+    for topic in relevant_topics:
+        node_id = name_to_id.get(topic)
+        if node_id is None:
+            continue  # 아직 그래프에 없는 주제(태거 enum 밖 등) — 스킵
+        conn.execute(
+            text("""
+                INSERT INTO content_node_mapping (content_id, node_id, relevance_score)
+                VALUES (:content_id, :node_id, :score)
+                ON CONFLICT DO NOTHING
+            """),
+            {"content_id": content_id, "node_id": node_id, "score": relevance[topic]},
+        )
 
     return content_id

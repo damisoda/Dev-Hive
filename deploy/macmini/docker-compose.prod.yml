@@ -1,0 +1,53 @@
+# HIVE-52: 맥미니 운영 스택 — pgvector + FastAPI 백엔드.
+# 프런트(Next.js)는 Vercel에서 서빙하고 이 스택의 API를 터널 도메인으로 호출한다.
+#
+# 실행: cd deploy/macmini && docker compose -f docker-compose.prod.yml up -d --build
+# 환경: 같은 디렉토리의 .env (deploy/macmini/.env.example 참고 — git에 올리지 말 것)
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: devhive
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?deploy/macmini/.env에 설정}
+      POSTGRES_DB: devhive
+    volumes:
+      - devhive_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devhive -d devhive"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # 호스트 노출 불필요(백엔드가 내부 네트워크로 접속). 복원/점검은 docker exec 사용.
+
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://devhive:${POSTGRES_PASSWORD}@db:5432/devhive
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?}
+      ENABLE_SCHEDULER: "false"   # 결정사항: 끄고 시작 — 재크롤은 수동 트리거
+    ports:
+      - "127.0.0.1:8000:8000"     # 외부 노출은 터널(cloudflared/tailscale)로만
+
+  # 임시 공개 프런트(Streamlit) — Next.js/Vercel 전환 전까지. Funnel 443 → 8501.
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      API_BASE_URL: http://backend:8000   # 같은 compose 네트워크 — 서버사이드 호출
+    ports:
+      - "127.0.0.1:8501:8501"
+
+volumes:
+  devhive_pgdata:

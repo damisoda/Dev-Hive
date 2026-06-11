@@ -1,40 +1,87 @@
-"""개인화 커리큘럼 - 추천 엔진이 선정한 다음 콘텐츠."""
+"""개인화 커리큘럼 - 학습 경로(mastery 진척) + 다음 추천(GraphRAG).
 
+A. 내 학습 경로: 노드별 mastery를 약한 것부터(다음에 배울 것) 진척 막대로.
+B. 다음에 읽을 추천: GraphRAG 추천 + 자연어 근거(reason) 강조.
+"""
 import streamlit as st
+from lib.ui import call, header, style
 
-from lib.api import recommend, mark_read
+from lib.api import get_graph, get_mastery, list_feedback, recommend
+from lib.components import recommendation_card
+from lib.viewmodel import curriculum_rows
 
 st.set_page_config(page_title="커리큘럼 · Dev-Hive", layout="wide")
+style()
+header()
 st.title("내 커리큘럼")
-st.caption("당신에게 맞는 다음 콘텐츠 5건")
+st.caption("내 숙련도 기반 학습 경로와, 다음에 읽을 개인화 추천")
 
 if "user_id" not in st.session_state:
-    st.warning("프로필을 먼저 생성해주세요 (메인 페이지).")
+    st.warning("프로필을 먼저 생성하세요 (메인 페이지).")
     st.stop()
 
-top_n = st.slider("추천 개수", 3, 10, 5)
-data = recommend(st.session_state["user_id"], top_n=top_n)
+uid = st.session_state["user_id"]
 
-if not data or not data.get("recommendations"):
-    st.info(
-        "아직 추천할 콘텐츠가 충분하지 않습니다. "
-        "피드에서 몇 개를 읽으면 추천이 시작됩니다."
-    )
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _topic_nodes():
+    # 노드 이름 조회용(무거운 /graph는 캐싱). mastery는 매번 신선하게 따로 조회.
+    # 실패(ApiError)는 캐싱되지 않고 호출부의 call()까지 전파된다.
+    return [n for n in get_graph().get("nodes", []) if n.get("kind") == "topic"]
+
+
+# ── A. 내 학습 경로 ───────────────────────────────────────────────
+st.subheader("내 학습 경로")
+st.caption("약한 개념이 위 — 다음에 배우면 좋아요")
+topics = call(_topic_nodes, retry_key="curri_graph")
+if topics is None:        # 연결 실패/오류 — call이 안내와 '다시 시도'를 이미 렌더
+    st.stop()
+mastery = get_mastery(uid) or {}
+if not topics:
+    st.caption("그래프가 비어 있어 경로를 표시할 수 없습니다.")
 else:
+    # 토픽별 미니 카드 그리드 (3열) — 약한 개념 먼저, 가장 약한 토픽엔 '다음 추천 학습' 뱃지
+    rows = curriculum_rows(topics, mastery)      # 정렬·next 플래그는 viewmodel
+    N_COLS = 3
+    for start in range(0, len(rows), N_COLS):
+        cols = st.columns(N_COLS)
+        for col, r in zip(cols, rows[start:start + N_COLS]):
+            with col, st.container(border=True):
+                if r["next"]:
+                    st.markdown("<span class='dh-next-badge'>다음 추천 학습</span>",
+                                unsafe_allow_html=True)
+                st.markdown(f"**{r['name']}**")
+                st.progress(r["m"], text=f"{r['label']} · {r['m']:.0%}")
+
+st.divider()
+
+# ── B. 다음에 읽을 추천 ───────────────────────────────────────────
+st.subheader("다음에 읽을 추천")
+top_n = st.slider("추천 개수", 3, 10, 5)
+
+# GraphRAG 추천은 LLM 경유라 수 초 걸린다(실측 ~12s). 읽음/피드백 클릭의 rerun마다
+# 재계산하면 버튼 하나가 십수 초가 되므로, 결과를 세션에 고정하고 '추천 새로고침'
+# 버튼으로만 다시 계산한다 — 피드백·읽음 반영과 'AI 요약 준비 중' 채움도 이 시점에.
+_rec_key = f"recs_{uid}_{top_n}"
+btn_col, hint_col = st.columns([1, 4])
+with btn_col:
+    if st.button("추천 새로고침", use_container_width=True):
+        st.session_state.pop(_rec_key, None)
+with hint_col:
+    st.caption("읽음·피드백을 반영해 다시 추천받으려면 새로고침하세요.")
+
+if _rec_key not in st.session_state:
+    with st.spinner("개인화 추천을 계산하고 있어요… (몇 초 걸립니다)"):
+        data = call(recommend, uid, top_n=top_n, retry_key="curri_rec")
+    if data is None:
+        st.stop()
+    st.session_state[_rec_key] = data
+data = st.session_state[_rec_key]
+if not data.get("recommendations"):
+    # 빈 상태: 온보딩/읽음 데이터가 부족하면 추천이 비어 있을 수 있다 — 피드로 유도
+    st.info("아직 추천할 데이터가 부족합니다. 피드에서 콘텐츠를 몇 개 읽고 다시 방문하세요.")
+    st.page_link("pages/1_피드.py", label="피드에서 콘텐츠 둘러보기 →")
+else:
+    feedback_map = list_feedback(uid)   # 추천 카드에 피드백 버튼(HIVE-49) — want_more/too_hard가 추천에 반영
     for i, rec in enumerate(data["recommendations"], 1):
-        with st.container(border=True):
-            cols = st.columns([1, 9])
-            with cols[0]:
-                st.markdown(f"# {i}")
-            with cols[1]:
-                st.markdown(f"### {rec['title']}")
-                if rec.get("score") is not None:
-                    st.caption(f"점수 {rec['score']:.2f}")
-                if rec.get("reason"):
-                    st.markdown(f"> {rec['reason']}")
-                else:
-                    st.caption("추천 근거는 Layer 2(GraphRAG)에서 자연어로 생성됩니다.")
-                if st.button("읽음 처리", key=f"recread_{rec['content_id']}"):
-                    if mark_read(st.session_state["user_id"], rec["content_id"]):
-                        st.toast("읽음 처리됨. 다음 추천을 갱신합니다.")
-                        st.rerun()
+        recommendation_card(rec, uid, i, feedback_map=feedback_map)
