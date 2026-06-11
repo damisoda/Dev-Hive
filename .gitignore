@@ -72,3 +72,4 @@ logs/
 
 # Streamlit
 .streamlit/secrets.toml
+deploy/macmini/.env
