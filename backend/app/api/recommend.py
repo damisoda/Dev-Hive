@@ -7,17 +7,32 @@ import logging
 from typing import Optional
 
 import anthropic
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.recommend.graphrag import recommend_next as _graphrag_recommend
 from app.recommend.rule_based import recommend_next as _rule_based_recommend
 from app.services.knowledge_tracing import build_user_state, estimate_mastery
 from app.services.lazy_synthesis import ensure_synthesis
+
+
+def _synthesize_in_background(content_ids: list[int], api_key: str) -> None:
+    """추천 응답 후 백그라운드로 가공 생성·캐시(HIVE-49). 독립 세션/클라이언트 사용.
+
+    동기로 하면 top-N LLM 호출이 추천 응답을 수초 블로킹해 프론트 타임아웃을 넘긴다.
+    그래서 추천은 캐시된 요약만 즉시 반환하고, 미캐시분은 여기서 만들어 다음 로드에 노출한다.
+    """
+    client = anthropic.Anthropic(api_key=api_key)
+    db = SessionLocal()
+    try:
+        for cid in content_ids:
+            ensure_synthesis(cid, db, client)
+    finally:
+        db.close()
 
 router = APIRouter(prefix="/recommend", tags=["recommend"])
 logger = logging.getLogger(__name__)
@@ -86,6 +101,7 @@ def get_mastery(
 @router.get("", response_model=RecommendResponse)
 def recommend(
     user_id: int,
+    background_tasks: BackgroundTasks,
     top_n: int = Query(5, ge=1, le=50),
     db: Session = Depends(get_db),
 ) -> RecommendResponse:
@@ -96,12 +112,9 @@ def recommend(
         logger.exception("graphrag 추천 실패 → rule_based 폴백")
         result = _rule_based_recommend(user_id, top_n, db)
 
-    # HIVE-49: 추천이 확정된 지금 표시 메타(url/난이도/타입)를 붙이고, lazy 가공(+캐시)으로
-    # one_liner 요약을 만든다. 키 없거나 미지원 타입이면 summary=None(추천 자체는 정상).
-    client = (
-        anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        if settings.anthropic_api_key else None
-    )
+    # HIVE-49: 표시 메타(url/난이도/타입) + 가공 요약. 응답은 **캐시된 가공만** 즉시 반환하고
+    # (client=None으로 ensure_synthesis 호출 = 생성 안 함), 미캐시분은 백그라운드에서 생성·캐시한다.
+    # 동기 생성은 top-N LLM 호출로 프론트 타임아웃을 넘기므로 다음 로드에 요약이 채워지는 방식.
     ids = [r["content_id"] for r in result]
     meta = {}
     if ids:
@@ -113,9 +126,12 @@ def recommend(
             )
         }
     recs: list[Recommendation] = []
+    uncached: list[int] = []
     for r in result:
         m = meta.get(r["content_id"])
-        card = ensure_synthesis(r["content_id"], db, client)
+        card = ensure_synthesis(r["content_id"], db, None)  # 캐시 조회만(생성 X)
+        if card is None:
+            uncached.append(r["content_id"])
         recs.append(Recommendation(
             content_id=r["content_id"],
             title=r["title"],
@@ -126,4 +142,9 @@ def recommend(
             content_type=(m.content_type if m else None),
             summary=(card.get("one_liner") if isinstance(card, dict) else None),
         ))
+
+    # 미캐시 가공은 응답 후 백그라운드로(다음 추천/새로고침 시 요약 노출). 키 있을 때만.
+    if uncached and settings.anthropic_api_key:
+        background_tasks.add_task(_synthesize_in_background, uncached, settings.anthropic_api_key)
+
     return RecommendResponse(recommendations=recs)

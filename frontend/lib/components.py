@@ -1,13 +1,38 @@
 """HIVE-34: 페이지 공통 UI 컴포넌트.
 
 피드/커리큘럼/프로필에서 재사용하는 카드. 인라인 마크업 중복 제거.
+표시 구조(배지·버튼 정의·필드 정리)는 lib/viewmodel이 만들고, 여기선 st.* 렌더만.
 (비주얼 디자인 시스템은 Layer 3 — 여기선 구조/기능만)
 """
+import html
 from datetime import date, timedelta
 
 import streamlit as st
 
 from lib.api import clear_feedback, mark_read, set_feedback
+from lib.ui import call
+from lib.viewmodel import (
+    FEEDBACK_BUTTONS,
+    content_meta,
+    content_pills,
+    recommendation_view,
+)
+
+
+def pills_html(pills: list[dict]) -> str:
+    """viewmodel pill 목록 [{'text','fg','bg'}] → 알약 뱃지 행 HTML."""
+    spans = "".join(
+        f"<span class='dh-pill' style='color:{p['fg']};background:{p['bg']}'>"
+        f"{html.escape(p['text'])}</span>"
+        for p in pills
+    )
+    return f"<div class='dh-pills'>{spans}</div>"
+
+
+def chips_html(tags: list[str]) -> str:
+    """태그 목록 → chip 행 HTML."""
+    spans = "".join(f"<span class='dh-chip'>{html.escape(str(t))}</span>" for t in tags)
+    return f"<div class='dh-chips'>{spans}</div>"
 
 
 def render_contribution_heatmap(heatmap: dict, *, weeks: int = 26) -> None:
@@ -59,19 +84,10 @@ def render_contribution_heatmap(heatmap: dict, *, weeks: int = 26) -> None:
     )
     st.markdown(grid, unsafe_allow_html=True)
 
-# 피드백 버튼 (라벨, 내부 키). HIVE-37
-_FEEDBACK_BUTTONS = [
-    ("이해했어요", "understood"),
-    ("어려워요", "too_hard"),
-    ("더 보고 싶어요", "want_more"),
-    ("관심없어요", "not_interested"),
-]
-
-
 def _feedback_row(content_id: int, user_id: int, current: str | None, key_prefix: str) -> None:
-    """콘텐츠 피드백 버튼 4종. 이미 누른 버튼을 다시 누르면 해제(토글)."""
-    cols = st.columns(len(_FEEDBACK_BUTTONS))
-    for col, (label, fb) in zip(cols, _FEEDBACK_BUTTONS):
+    """콘텐츠 피드백 버튼 4종(정의는 viewmodel.FEEDBACK_BUTTONS). 재클릭 시 해제(토글)."""
+    cols = st.columns(len(FEEDBACK_BUTTONS))
+    for col, (label, fb) in zip(cols, FEEDBACK_BUTTONS):
         active = current == fb
         with col:
             if st.button(
@@ -81,9 +97,14 @@ def _feedback_row(content_id: int, user_id: int, current: str | None, key_prefix
                 use_container_width=True,
             ):
                 if active:
-                    clear_feedback(user_id, content_id)   # 같은 버튼 재클릭 → 해제
+                    # 같은 버튼 재클릭 → 해제. 실패 시 call이 안내 렌더 → rerun 생략(상태 유지)
+                    if call(clear_feedback, user_id, content_id,
+                            retry_key=f"fb_clear_{content_id}") is None:
+                        return
                 else:
-                    set_feedback(user_id, content_id, fb)
+                    if call(set_feedback, user_id, content_id, fb,
+                            retry_key=f"fb_set_{content_id}") is None:
+                        return
                 st.rerun()
 
 
@@ -114,31 +135,21 @@ def content_card(
     """
     with st.container(border=True):
         st.markdown(f"### [{item['title']}]({item.get('url') or '#'})")
-        badges = []
-        if item.get("source"):
-            badges.append(f"`{item['source']}`")
-        if item.get("author_name"):
-            badges.append(item["author_name"])
-        if item.get("difficulty"):
-            badges.append(f"`{item['difficulty']}`")
-        if item.get("content_type"):
-            badges.append(f"`{item['content_type']}`")
-        if item.get("quality_score") is not None:
-            badges.append(f"품질 {item['quality_score']:.2f}")
-        if badges:
-            st.markdown(" · ".join(badges))
+        pills = content_pills(item)            # source / 난이도 / 타입 알약 뱃지 (viewmodel)
+        if pills:
+            st.markdown(pills_html(pills), unsafe_allow_html=True)
         if item.get("tags"):
-            st.markdown(" ".join(f":blue-background[{t}]" for t in item["tags"]))
+            st.markdown(chips_html(item["tags"]), unsafe_allow_html=True)
         cols = st.columns([1, 3])
         with cols[0]:
             if st.button("읽음 처리", key=f"{key_prefix}_read_{item['id']}"):
-                if _handle_read_result(mark_read(user_id, item["id"])):
+                resp = call(mark_read, user_id, item["id"], retry_key=f"read_{item['id']}")
+                if _handle_read_result(resp):
                     st.rerun()
         with cols[1]:
-            if item.get("engagement_likes") is not None:
-                st.caption(
-                    f"추천 {item['engagement_likes']} · 댓글 {item.get('engagement_comments', 0)}"
-                )
+            meta = content_meta(item)          # 작성자 · 추천/댓글 · 품질 (viewmodel)
+            if meta:
+                st.caption(meta)
         if feedback_map is not None:
             _feedback_row(item["id"], user_id, feedback_map.get(item["id"]), key_prefix)
 
@@ -150,30 +161,39 @@ def recommendation_card(
 
     feedback_map: {content_id: feedback}. None이면 피드백 버튼 미표시.
     """
+    vm = recommendation_view(rec)
     with st.container(border=True):
-        cols = st.columns([1, 9])
+        cols = st.columns([1, 11])
         with cols[0]:
-            st.markdown(f"# {idx}")
+            # 순위 = 원형 뱃지
+            st.markdown(f"<div class='dh-rank'>{idx}</div>", unsafe_allow_html=True)
         with cols[1]:
             # 제목 = 원문 링크(HIVE-49). url 없으면 비활성('#').
-            st.markdown(f"### [{rec['title']}]({rec.get('url') or '#'})")
-            if rec.get("summary"):
-                st.markdown(rec["summary"])             # 추천 확정 시 lazy 가공된 요약(one_liner)
-            badges = []
-            if rec.get("difficulty"):
-                badges.append(f"`{rec['difficulty']}`")
-            if rec.get("content_type"):
-                badges.append(f"`{rec['content_type']}`")
-            if badges:
-                st.caption(" · ".join(badges))
-            if rec.get("reason"):
-                st.markdown(f"> {rec['reason']}")          # GraphRAG 근거 = 차별점, 강조
+            st.markdown(f"### [{vm['title']}]({vm['url'] or '#'})")
+            if vm["summary_pending"]:
+                # 요약은 백그라운드 lazy 가공(HIVE-49) — 첫 로드엔 비어 있을 수 있다.
+                st.caption("*AI 요약 준비 중 — 잠시 후 새로고침하면 표시됩니다.*")
+            else:
+                st.markdown(vm["summary"])              # 추천 확정 시 lazy 가공된 요약(one_liner)
+            badge_bits = []
+            if vm["pills"]:
+                badge_bits.append(pills_html(vm["pills"]))
+            if vm["match"] is not None:                 # 적합도 → '매치 87%'
+                badge_bits.append(f"<span class='dh-match'>매치 {vm['match']}%</span>")
+            if badge_bits:
+                st.markdown(
+                    "<div style='display:flex;align-items:center;gap:10px'>"
+                    + "".join(badge_bits) + "</div>",
+                    unsafe_allow_html=True,
+                )
+            if vm["reason"]:
+                st.markdown(f"> {vm['reason']}")           # GraphRAG 근거 = 차별점, 강조
             else:
                 st.caption("추천 근거(GraphRAG)는 API 키 설정 시 자연어로 생성됩니다.")
-            if rec.get("score") is not None:
-                st.caption(f"적합도 {rec['score']:.2f}")
-            if st.button("읽음 처리", key=f"rec_read_{rec['content_id']}"):
-                if _handle_read_result(mark_read(user_id, rec["content_id"])):
+            if st.button("읽음 처리", key=f"rec_read_{vm['content_id']}"):
+                resp = call(mark_read, user_id, vm["content_id"],
+                            retry_key=f"rec_read_{vm['content_id']}")
+                if _handle_read_result(resp):
                     st.rerun()
             if feedback_map is not None:
-                _feedback_row(rec["content_id"], user_id, feedback_map.get(rec["content_id"]), "rec")
+                _feedback_row(vm["content_id"], user_id, feedback_map.get(vm["content_id"]), "rec")

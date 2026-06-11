@@ -1,15 +1,18 @@
 """Dev-Hive Streamlit 진입점.
 
-좌측 사이드바에 현재 프로필 정보와 페이지 목록을 표시한다.
+상단 네비게이션 바(ui.header) 기반 웹사이트형 레이아웃 — 사이드바 없음.
 프로필이 없으면 메인 영역에서 온보딩(이름 + 직군 선택 + 직군별 문항)을 진행하고,
 POST /auth/profile로 프로필을 생성하면서 초기 레벨을 설정한다.
 """
 
 import streamlit as st
+from lib.ui import call, header, style
 
 from lib.api import create_profile, get_profile
 
 st.set_page_config(page_title="Dev-Hive", layout="wide", page_icon=":bee:")
+style()
+header()
 
 # 페르소나별 온보딩 문항 (HIVE-36). 직군마다 문항 세트가 다르다.
 # 현재 개발자만. 직군 추가 시 이 딕셔너리에 키만 추가하면 된다 (백엔드 레벨 로직 공통).
@@ -48,23 +51,33 @@ PERSONA_QUESTIONS = {
 # 직군 선택지. 현재 개발자만 노출, 직군 추가 시 여기에 더한다.
 PERSONA_OPTIONS = ["개발자"]
 
-st.title("Dev-Hive")
-st.caption("커뮤니티의 경험이 곧 다른 사람의 학습이 되는 플랫폼")
+# 서비스 소개 히어로 — 한 블록, 과하지 않게
+st.markdown(
+    """
+    <div class='dh-hero'>
+      <p class='quote'>다른 사람의 <em>경험</em>이 곧 나의 <em>커리큘럼</em>이 된다</p>
+      <p class='sub'>Dev-Hive는 커뮤니티의 경험 글을 지식그래프로 엮어,
+      내 숙련도에 맞는 다음 학습을 추천하는 자가복제형 기술 커뮤니티입니다.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-# 사이드바: 프로필 표시 또는 안내
-with st.sidebar:
-    st.header("내 프로필")
-    if "user_id" not in st.session_state:
-        st.info("온보딩을 완료해주세요.")
-    else:
-        profile = get_profile(st.session_state["user_id"])
-        if profile:
-            st.success(f"{profile['display_name']} ({profile['persona']})")
-            st.caption(f"현재 레벨: {profile.get('current_level', '입문')}")
-            if st.button("프로필 재설정"):
-                for k in ["user_id", "display_name", "persona", "current_level"]:
-                    st.session_state.pop(k, None)
-                st.rerun()
+# 로그인 상태 카드 — 사이드바 없음(상단 네비), 본문에 표시
+if "user_id" in st.session_state:
+    profile = call(get_profile, st.session_state["user_id"], retry_key="home_profile")
+    if profile:
+        with st.container(border=True):
+            c1, c2 = st.columns([4, 1])
+            with c1:
+                st.markdown(f"**{profile['display_name']}** · {profile['persona']}")
+                st.caption(f"현재 레벨: {profile.get('current_level', '입문')} — "
+                           "상단 메뉴에서 피드·커리큘럼으로 이동하세요.")
+            with c2:
+                if st.button("프로필 재설정", use_container_width=True):
+                    for k in ["user_id", "display_name", "persona", "current_level"]:
+                        st.session_state.pop(k, None)
+                    st.rerun()
 
 # 메인 영역
 if "user_id" not in st.session_state:
@@ -84,9 +97,9 @@ if "user_id" not in st.session_state:
 
     if st.button("시작하기", type="primary"):
         if not name.strip():
-            st.warning("이름을 입력해주세요.")
+            st.warning("이름을 입력하세요.")
         else:
-            profile = create_profile(name.strip(), persona, answers)
+            profile = call(create_profile, name.strip(), persona, answers)
             if profile:
                 st.session_state["user_id"] = profile["user_id"]
                 st.session_state["display_name"] = profile["display_name"]

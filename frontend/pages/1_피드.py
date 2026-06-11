@@ -5,28 +5,36 @@
 import math
 
 import streamlit as st
+from lib.ui import call, header, style
 
 from lib.api import list_content, list_feedback
 from lib.components import content_card
+from lib.viewmodel import source_badge
 
 st.set_page_config(page_title="피드 · Dev-Hive", layout="wide")
+style()
+header()
 st.title("피드")
 st.caption("전체 콘텐츠를 출처·난이도로 탐색하세요. (개인화 추천은 ‘커리큘럼’)")
 
 if "user_id" not in st.session_state:
-    st.warning("프로필을 먼저 생성해주세요 (메인 페이지).")
+    st.warning("프로필을 먼저 생성하세요 (메인 페이지).")
     st.stop()
 
 SOURCES = ["전체", "reddit", "hn", "github_trending", "huggingface", "velog", "tistory", "user"]
 DIFFICULTIES = ["전체", "입문", "중급", "고급"]
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    src = st.selectbox("출처", SOURCES)
-with col2:
-    diff = st.selectbox("난이도", DIFFICULTIES)
-with col3:
-    page_size = st.selectbox("표시 개수", [10, 20, 50], index=1)
+# 필터 툴바 — 가로 한 줄 카드
+with st.container(border=True):
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        # 값은 원본(source) 그대로, 표시만 이모지+라벨(viewmodel.source_badge)
+        src = st.selectbox("출처", SOURCES, key="feed_src",
+                           format_func=lambda s: s if s == "전체" else source_badge(s))
+    with col2:
+        diff = st.selectbox("난이도", DIFFICULTIES, key="feed_diff")
+    with col3:
+        page_size = st.selectbox("표시 개수", [10, 20, 50], index=1, key="feed_size")
 
 # 필터가 바뀌면 페이지를 1로 리셋(안 하면 빈 페이지로 점프)
 filter_key = (src, diff, page_size)
@@ -41,9 +49,17 @@ if src != "전체":
 if diff != "전체":
     filters["difficulty"] = diff
 
-data = list_content(**filters)
-if not data or not data.get("items"):
-    st.info("표시할 콘텐츠가 없습니다. 필터를 완화해보세요.")
+data = call(list_content, **filters)
+if data is None:          # 연결 실패/오류 — call이 안내와 '다시 시도'를 이미 렌더
+    st.stop()
+
+if not data.get("items"):
+    # 빈 상태: 필터 조건 결과 0건 — 초기화 안내
+    st.info("조건에 맞는 콘텐츠가 없습니다. 필터를 완화하거나 초기화해보세요.")
+    if st.button("필터 초기화"):
+        for k in ("feed_src", "feed_diff", "feed_size", "feed_filter", "feed_page"):
+            st.session_state.pop(k, None)
+        st.rerun()
     st.stop()
 
 total = data.get("total", 0)
