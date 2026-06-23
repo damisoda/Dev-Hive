@@ -1,0 +1,196 @@
+/* Dev-Hive 1차 프런트 디자인 토큰 — 라이트 · 무채색 zinc · 앰버 액센트.
+   Pretendard(웹폰트)는 layout.tsx에서 CDN으로 로드. */
+
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --border: #e7e7ea;
+  --border-strong: #d4d4d8;
+  --text: #18181b; /* zinc-900 */
+  --text-muted: #52525b; /* zinc-600 */
+  --text-subtle: #a1a1aa; /* zinc-400 */
+  --accent: #d97706; /* amber-600 */
+  --accent-weak: #fef3c7; /* amber-100 */
+  --radius: 14px;
+  --radius-sm: 9px;
+  --shadow: 0 1px 2px rgba(24, 24, 27, 0.04), 0 1px 3px rgba(24, 24, 27, 0.06);
+  --maxw: 760px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.55;
+  font-size: 15px;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ── 상단 네비 ── */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(250, 250, 250, 0.82);
+  backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-inner {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.brand {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-size: 17px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.brand .dot {
+  color: var(--accent);
+}
+.nav-links {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.nav-link {
+  padding: 6px 11px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+.nav-link.active {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+/* ── 레이아웃 ── */
+.container {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 28px 20px 80px;
+}
+.page-head {
+  margin-bottom: 22px;
+}
+.page-head h1 {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+}
+.page-head p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.feed-count {
+  color: var(--text-subtle);
+  font-size: 13px;
+  margin: 0 0 14px;
+}
+
+/* ── 콘텐츠 카드 ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 18px 16px;
+  margin-bottom: 14px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.card:hover {
+  border-color: var(--border-strong);
+}
+.card-title {
+  font-size: 16.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 10px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.card-title:hover {
+  color: var(--accent);
+}
+.card-title .ext {
+  color: var(--text-subtle);
+  font-size: 13px;
+  font-weight: 500;
+}
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 11px;
+}
+.pill {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.card-summary {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin: 0 0 11px;
+}
+.card-meta {
+  color: var(--text-subtle);
+  font-size: 12.5px;
+}
+
+/* ── 빈/에러 상태 ── */
+.state {
+  text-align: center;
+  padding: 56px 20px;
+  color: var(--text-muted);
+}
+.state .emoji {
+  font-size: 34px;
+  display: block;
+  margin-bottom: 12px;
+}
+.state h2 {
+  font-size: 17px;
+  margin: 0 0 6px;
+  color: var(--text);
+}
+.state p {
+  margin: 0;
+  font-size: 14px;
+}
+.state code {
+  background: var(--accent-weak);
+  color: #92400e;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+}
