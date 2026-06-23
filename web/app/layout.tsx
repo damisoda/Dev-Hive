@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Nav } from "@/components/Nav";
+import { LeftRail } from "@/components/LeftRail";
+import { TopBar } from "@/components/TopBar";
 
 export const metadata: Metadata = {
   title: "Dev-Hive",
@@ -18,8 +19,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <Nav />
-        {children}
+        <div className="app-shell">
+          <LeftRail />
+          <div className="app-main">
+            <TopBar />
+            {children}
+          </div>
+        </div>
       </body>
     </html>
   );

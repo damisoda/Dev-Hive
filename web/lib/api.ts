@@ -1,7 +1,12 @@
 // 백엔드 API 순수 fetch 클라이언트 — frontend/lib/api.py 의 TS 이식(1:1 변환 목표).
 // 서버 컴포넌트에서만 호출(서버→백엔드 직결이라 CORS 불필요). 실패는 ApiError(한국어)로 통일.
 
-import type { ContentListResponse, RecommendResponse } from "./types";
+import type {
+  ContentListResponse,
+  RecommendResponse,
+  GraphResponse,
+  MasteryResponse,
+} from "./types";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
 
@@ -80,5 +85,17 @@ export function recommend(userId: number, topN = 5): Promise<RecommendResponse> 
   return request<RecommendResponse>("/recommend", {
     params: { user_id: userId, top_n: topN },
     timeoutMs: 60_000,
+  });
+}
+
+export function getGraph(): Promise<GraphResponse> {
+  // /graph는 similar_to를 매 호출 계산해 다소 느릴 수 있어 넉넉한 타임아웃.
+  return request<GraphResponse>("/graph", { timeoutMs: 30_000 });
+}
+
+export function getMastery(userId: number): Promise<MasteryResponse> {
+  return request<MasteryResponse>("/recommend/mastery", {
+    params: { user_id: userId },
+    timeoutMs: 15_000,
   });
 }

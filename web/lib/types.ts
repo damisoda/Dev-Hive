@@ -37,3 +37,28 @@ export interface Recommendation {
 export interface RecommendResponse {
   recommendations: Recommendation[];
 }
+
+// /graph — 지식그래프
+export interface GraphNode {
+  id: string; // "topic:1" | "content:12" | "auto:..."
+  kind: string; // topic | content | ...
+  label: string;
+  auto: boolean;
+}
+export interface GraphEdge {
+  source: string;
+  target: string;
+  rel: string; // belongs_to | similar_to | precedes
+  weight: number;
+}
+export interface GraphResponse {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  stats: Record<string, number>;
+}
+
+// /recommend/mastery
+export interface MasteryResponse {
+  user_id: number;
+  mastery: Record<string, number>; // nodeId(문자열) → 0~1
+}
