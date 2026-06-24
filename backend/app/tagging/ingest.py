@@ -197,6 +197,12 @@ def ingest_items(
         if tags is None:
             continue  # 태깅 실패분은 collect_tags에서 카운트됨
 
+        # github_trending = repo/도구 → content_type을 tool로 강제(HIVE-79). 태거가
+        # repo를 tutorial/news/paper로 오분류하는 걸 교정 → 재가공본이 사용법(무엇/언제/사용법/
+        # 준비물/주의) 프레이밍으로 나온다.
+        if item.get("source") == "github_trending":
+            tags["content_type"] = "tool"
+
         try:
             quality = tags.get("quality_score", 0.0)
             if not isinstance(quality, (int, float)) or quality < QUALITY_THRESHOLD:
