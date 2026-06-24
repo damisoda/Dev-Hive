@@ -3,7 +3,17 @@ from __future__ import annotations
 import logging
 from threading import Lock
 
-from app.crawler.run_crawler import crawl_github, crawl_reddit, crawl_velog, run_pipeline
+from app.crawler.run_crawler import (
+    crawl_github,
+    crawl_github_discussions,
+    crawl_huggingface,
+    crawl_reddit,
+    crawl_reddit_public,
+    crawl_velog,
+    crawl_velog_beginner,
+    crawl_x,
+    run_pipeline,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +43,26 @@ def run_reddit_job() -> None:
 
 def run_velog_job() -> None:
     _run_named_pipeline("velog_24h", crawl_velog)
+
+
+def run_reddit_public_job() -> None:
+    _run_named_pipeline("reddit_public_24h", crawl_reddit_public)
+
+
+def run_github_discussions_job() -> None:
+    _run_named_pipeline("github_discussions_12h", crawl_github_discussions)
+
+
+def run_x_job() -> None:
+    _run_named_pipeline("x_24h", crawl_x)
+
+
+def run_velog_beginner_job() -> None:
+    _run_named_pipeline("velog_beginner_24h", crawl_velog_beginner)
+
+
+def run_huggingface_job() -> None:
+    _run_named_pipeline("huggingface_24h", crawl_huggingface)
 
 
 def start_scheduler():
@@ -69,6 +99,56 @@ def start_scheduler():
                 trigger="interval",
                 hours=24,
                 id="velog_24h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("reddit_public_24h"):
+            _scheduler.add_job(
+                run_reddit_public_job,
+                trigger="interval",
+                hours=24,
+                id="reddit_public_24h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("github_discussions_12h"):
+            _scheduler.add_job(
+                run_github_discussions_job,
+                trigger="interval",
+                hours=12,
+                id="github_discussions_12h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("x_24h"):
+            _scheduler.add_job(
+                run_x_job,
+                trigger="interval",
+                hours=24,
+                id="x_24h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("velog_beginner_24h"):
+            _scheduler.add_job(
+                run_velog_beginner_job,
+                trigger="interval",
+                hours=24,
+                id="velog_beginner_24h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("huggingface_24h"):
+            _scheduler.add_job(
+                run_huggingface_job,
+                trigger="interval",
+                hours=24,
+                id="huggingface_24h",
                 max_instances=1,
                 coalesce=True,
                 replace_existing=True,
