@@ -8,13 +8,16 @@ import logging
 from datetime import datetime
 from typing import Optional
 
+import anthropic
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, defer
 
+from app.config import settings
 from app.database import get_db
 from app.models.content import Content
 from app.models.mapping import ContentNodeMapping
+from app.services.lazy_synthesis import ensure_synthesis
 from app.services.upload import UploadError, upload_user_content
 
 router = APIRouter(prefix="/content", tags=["content"])
@@ -39,6 +42,8 @@ class ContentItem(BaseModel):
     engagement_comments: Optional[int] = None
     published_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
+    # 요약본 = 캐시된 synthesis.one_liner(있을 때만). 카드 기본 노출용. 미생성이면 null.
+    summary: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -127,3 +132,28 @@ def upload_content(payload: ContentUpload, db: Session = Depends(get_db)) -> Upl
             detail="업로드 처리 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
         )
     return UploadResult(**result)
+
+
+class SynthesisResponse(BaseModel):
+    content_id: int
+    content_type: Optional[str] = None
+    synthesis: Optional[dict] = None     # {one_liner, key_takeaways[], ...타입별 바디}
+
+
+@router.get("/{content_id}/synthesis", response_model=SynthesisResponse)
+def get_synthesis(content_id: int, db: Session = Depends(get_db)) -> SynthesisResponse:
+    """재가공본(synthesis) 조회 — '읽기' 시 노출. 캐시 우선(ensure_synthesis):
+    DB에 있으면 그대로 반환(Haiku 호출 없음), 없으면 1회 생성·저장. 키 없으면 null(graceful).
+    """
+    row = (
+        db.query(Content.id, Content.content_type)
+        .filter(Content.id == content_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="콘텐츠를 찾을 수 없습니다.")
+
+    key = settings.anthropic_api_key
+    client = anthropic.Anthropic(api_key=key) if key else None
+    card = ensure_synthesis(content_id, db, client)
+    return SynthesisResponse(content_id=content_id, content_type=row.content_type, synthesis=card)
