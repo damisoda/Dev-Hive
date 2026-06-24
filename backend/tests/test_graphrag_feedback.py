@@ -186,6 +186,48 @@ def test_understood_topic_prefers_harder(monkeypatch):
     assert hard_und > hard_normal
 
 
+# ── HIVE-60: node_id=None 다양성 페널티 버그 ──────────────────────────
+
+def test_node_id_none_no_mutual_diversity_penalty(monkeypatch):
+    """node_id=None 콘텐츠 2건이 서로 다양성 페널티를 주지 않는다.
+
+    버그 시: A 선택 후 node_count[None]=1 → B div=0.5, C(node_id=10) div=1.0 → C가 B보다 먼저 선택.
+    수정 후: A 선택 후 B div=1.0, C div=1.0 → 동점, 입력 순서 유지 → B가 C보다 먼저 선택.
+    """
+    _no_llm(monkeypatch)
+    cands = [
+        (1, "A", "입문", 0.9, "[0.0,0.0]", None),
+        (2, "B", "입문", 0.9, "[0.0,0.0]", None),
+        (3, "C", "입문", 0.9, "[0.0,0.0]", 10),
+    ]
+    out = recommend_next(
+        1, 3,
+        _Session(profile=None, candidates=cands, centroid="[0.0,0.0]"),
+    )
+    ids = _ids(out)
+    assert ids[0] == 1           # A는 항상 1위
+    assert ids[1] == 2           # 버그 시 C(3)가 나옴 — 수정 후 B(2)
+
+
+def test_node_id_none_does_not_affect_node_id_diversity(monkeypatch):
+    """node_id 보유 콘텐츠의 다양성 페널티 로직은 영향받지 않는다."""
+    _no_llm(monkeypatch)
+    # 노드 10에서 2건: 두 번째 선택 시 div=0.5 페널티 정상 적용 확인.
+    cands = [
+        (1, "X", "입문", 0.9, "[0.0,0.0]", 10),
+        (2, "Y", "입문", 0.9, "[0.0,0.0]", 10),
+        (3, "Z", "입문", 0.9, "[0.0,0.0]", 20),
+    ]
+    out = recommend_next(
+        1, 3,
+        _Session(profile=None, candidates=cands, centroid="[0.0,0.0]"),
+    )
+    ids = _ids(out)
+    assert ids[0] == 1           # X 먼저
+    # X 선택 후 node_count[10]=1 → Y div=0.5, Z div=1.0 → Z가 Y보다 우선(다양성 의도)
+    assert ids[1] == 3           # 다른 노드(Z)가 같은 노드(Y)보다 앞
+
+
 # ── 콜드스타트: profile NULL + mastery 빈 → 에러 없이 입문 추천 ───────
 
 def test_cold_start_no_profile_no_mastery(monkeypatch):

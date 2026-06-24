@@ -47,6 +47,16 @@ _NEUTRAL_PATH = 0.5          # prerequisite 데이터 부재 시 중립(순위 �
 _HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
 
+def _div_key(c: dict) -> object:
+    """다양성 카운트 키. node_id=None이면 content_id로 독립 처리.
+
+    node_id=None 콘텐츠가 단일 키(None)를 공유하면 서로 다양성 페널티를 누적시킨다.
+    content_id는 콘텐츠마다 고유하므로 None인 경우 각자 독립 카운트된다.
+    """
+    nid = c["node_id"]
+    return nid if nid is not None else ("_", c["content_id"])
+
+
 def _parse_vec(raw) -> np.ndarray | None:
     """pgvector 반환(str "[...]" 또는 list)을 np.ndarray로."""
     if raw is None:
@@ -200,12 +210,12 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
     while cands and len(selected) < top_n:
         best, best_score = None, -1.0
         for c in cands:
-            div = 1.0 / (1.0 + node_count.get(c["node_id"], 0))
+            div = 1.0 / (1.0 + node_count.get(_div_key(c), 0))
             s = c["base"] + W_DIV * div
             if s > best_score:
                 best, best_score = c, s
         selected.append({**best, "score": round(best_score, 4)})
-        node_count[best["node_id"]] = node_count.get(best["node_id"], 0) + 1
+        node_count[_div_key(best)] = node_count.get(_div_key(best), 0) + 1
         cands.remove(best)
 
     # top-1만 LLM 근거(1회), 나머지는 템플릿
