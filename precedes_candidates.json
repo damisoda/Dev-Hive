@@ -1,0 +1,56 @@
+[
+  {
+    "source": 1,
+    "target": 2,
+    "source_name": "프롬프트 엔지니어링",
+    "target_name": "Agentic AI",
+    "rationale": "에이전트를 효과적으로 제어하려면 프롬프트 엔지니어링의 기초가 필요하다.",
+    "confidence": 0.85,
+    "approved": true
+  },
+  {
+    "source": 1,
+    "target": 4,
+    "source_name": "프롬프트 엔지니어링",
+    "target_name": "RAG & 지식 관리",
+    "rationale": "RAG 시스템에서 쿼리와 컨텍스트를 효과적으로 다루려면 프롬프트 엔지니어링의 개념이 필수이다.",
+    "confidence": 0.8,
+    "approved": true
+  },
+  {
+    "source": 1,
+    "target": 6,
+    "source_name": "프롬프트 엔지니어링",
+    "target_name": "AI 워크플로우 & 자동화",
+    "rationale": "AI 워크플로우에서 각 스텝의 입출력을 관리하려면 프롬프트 엔지니어링의 기본기가 필요하다.",
+    "confidence": 0.75,
+    "approved": true
+  },
+  {
+    "source": 4,
+    "target": 2,
+    "source_name": "RAG & 지식 관리",
+    "target_name": "Agentic AI",
+    "rationale": "최신 에이전트 시스템들은 외부 지식을 활용하는 RAG 기법을 기본적으로 포함한다.",
+    "confidence": 0.7,
+    "approved": true
+  },
+  {
+    "source": 4,
+    "target": 6,
+    "source_name": "RAG & 지식 관리",
+    "target_name": "AI 워크플로우 & 자동화",
+    "rationale": "자동화된 워크플로우에서 정보를 관리하고 검색하려면 RAG 원리에 대한 이해가 도움이 된다.",
+    "confidence": 0.65,
+    "approved": false
+  },
+  {
+    "source": 1,
+    "target": 7,
+    "source_name": "프롬프트 엔지니어링",
+    "target_name": "AI 엔지니어링",
+    "rationale": "AI 엔지니어링의 실제 구현 단계에서 모델과의 상호작용을 위해 프롬프트 엔지니어링 기초가 필요하다.",
+    "confidence": 0.7,
+    "approved": true
+  }
+]
