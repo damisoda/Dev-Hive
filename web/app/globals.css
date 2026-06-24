@@ -250,6 +250,16 @@ a.rec-title:hover { color: var(--accent-ink); }
 .user-state { white-space: pre-wrap; font-size: 14px; line-height: 1.7; color: var(--text); margin: 0; padding: 16px 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
 @media (max-width: 640px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
 
+/* 피드 필터 + 페이지네이션 */
+.filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.filter-sel { font-family: inherit; font-size: 13.5px; font-weight: 500; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; cursor: pointer; }
+.filter-sel:focus { outline: none; border-color: var(--accent); }
+.pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 24px; }
+.pager-btn { font-size: 13.5px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 8px 16px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.pager-btn:hover { border-color: var(--accent); }
+.pager-btn.disabled { color: var(--text-subtle); cursor: default; opacity: 0.5; }
+.pager-info { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
 /* ───────── 상태 ───────── */
 .state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
 .state .emoji { font-size: 32px; display: block; margin-bottom: 12px; }

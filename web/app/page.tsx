@@ -3,6 +3,8 @@
 import { listContent, listFeedback, ApiError } from "@/lib/api";
 import type { ContentItem } from "@/lib/types";
 import { ContentCard } from "@/components/ContentCard";
+import { FilterBar } from "@/components/FilterBar";
+import { Pagination } from "@/components/Pagination";
 import { StateView } from "@/components/StateView";
 import { getSession } from "@/lib/session";
 
@@ -13,20 +15,30 @@ const PAGE_SIZE = 20;
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ source?: string; difficulty?: string }>;
+  searchParams: Promise<{ source?: string; difficulty?: string; page?: string }>;
 }) {
-  const { source, difficulty } = await searchParams;
+  const { source, difficulty, page: pageParam } = await searchParams;
+  const page = Math.max(1, Number(pageParam) || 1);
   const session = await getSession();
 
   let items: ContentItem[] = [];
+  let total = 0;
   let error: ApiError | null = null;
 
   try {
-    const data = await listContent({ limit: PAGE_SIZE, source, difficulty });
+    const data = await listContent({
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
+      source,
+      difficulty,
+    });
     items = data.items;
+    total = data.total;
   } catch (e) {
     error = e instanceof ApiError ? e : new ApiError("알 수 없는 오류가 발생했습니다.");
   }
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // 로그인 시 현재 피드백 상태 1회 조회(X-User-Id) — 버튼 활성 표시용.
   const feedbackMap = session ? await listFeedback(session.userId) : {};
@@ -42,6 +54,8 @@ export default async function HomePage({
           🐝
         </span>
       </section>
+
+      <FilterBar />
 
       {error ? (
         <StateView emoji={error.isConnection ? "🔌" : "⚠️"} title="콘텐츠를 불러오지 못했어요">
@@ -59,14 +73,17 @@ export default async function HomePage({
           크롤·업로드로 글이 쌓이면 출처별로 여기 모입니다.
         </StateView>
       ) : (
-        items.map((item) => (
-          <ContentCard
-            key={item.id}
-            item={item}
-            loggedIn={Boolean(session)}
-            feedback={feedbackMap[item.id] ?? null}
-          />
-        ))
+        <>
+          {items.map((item) => (
+            <ContentCard
+              key={item.id}
+              item={item}
+              loggedIn={Boolean(session)}
+              feedback={feedbackMap[item.id] ?? null}
+            />
+          ))}
+          {totalPages > 1 && <Pagination page={page} totalPages={totalPages} />}
+        </>
       )}
     </main>
   );
