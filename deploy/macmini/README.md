@@ -38,7 +38,37 @@ ssh damisoda@100.73.27.46 'export PATH=$HOME/bin:$PATH; cd ~/Dev-Hive/deploy/mac
 - 전제(1회, 관리콘솔): Serve/Funnel 노드 승인 + DNS 설정에서 HTTPS Certificates 활성화
 - Funnel은 재부팅 후에도 유지된다(serve 설정 영속). 안 살아 있으면 위 켜기 명령 재실행.
 
-## 프런트 (예정)
+## 프런트 (Next.js, HIVE-71)
 
-Next.js → Vercel. API는 위 Funnel URL 사용. CORS 허용 도메인에 Vercel 도메인 추가 필요
-(`backend/app/main.py` CORS 설정 확인).
+공개 프런트는 compose의 **`web` 서비스(Next.js standalone, 127.0.0.1:3000)**. 서버 컴포넌트와
+BFF(`/api/auth/profile`, `/api/feedback`)가 `http://backend:8000`을 **내부망으로** 호출하므로
+**브라우저 CORS가 발생하지 않는다**(backend는 외부 미노출 유지). 세션 쿠키(`dh_uid`)는 web과
+같은 오리진에서 set/read → 별도 도메인 설정 불필요.
+
+### 배포(맥북에서, 코드 반영 + web 추가)
+
+```bash
+# 1) 코드 동기화(develop 기준)
+rsync -az --exclude .git --exclude '*venv*' --exclude __pycache__ \
+  --exclude 'web/node_modules' --exclude 'web/.next' \
+  ~/code/Dev-Hive/ damisoda@100.73.27.46:~/Dev-Hive/
+# 2) backend + web 재빌드·기동 (DB/볼륨은 유지)
+ssh damisoda@100.73.27.46 'export PATH=$HOME/bin:$PATH; cd ~/Dev-Hive/deploy/macmini && \
+  docker compose -f docker-compose.prod.yml up -d --build backend web'
+# 3) Funnel을 web(3000)으로 전환 (기존 8000/8501 Funnel은 끄고)
+ssh damisoda@100.73.27.46 '/Applications/Tailscale.app/Contents/MacOS/Tailscale funnel --bg 3000'
+```
+
+### 데이터 위생(선택, 한 번)
+
+새 프런트의 피드/타입 칩이 깔끔해지려면 폐기타입(paper) 재태깅:
+```bash
+ssh ... 'cd ~/Dev-Hive/backend && python scripts/migrate_retag_deprecated_types.py --dry-run'  # 먼저 예정 확인
+# 이상 없으면 --dry-run 빼고 실행 (ANTHROPIC_API_KEY 필요)
+```
+
+### 검증
+
+- `https://macmini.tail67859f.ts.net/` → 새 RocketPunch 홈(Streamlit 아님)
+- `/onboarding` 가입 → 홈 피드백 4종·커리큘럼·`/graph` 동작
+- Streamlit(`frontend`, 8501)은 레거시로 남겨둠 — 안정화 후 compose에서 제거
