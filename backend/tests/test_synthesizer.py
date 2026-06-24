@@ -58,6 +58,14 @@ def _client_returning(card: dict, **kw) -> _FakeAnthropic:
     return _FakeAnthropic(reply_text=json.dumps(card, ensure_ascii=False), **kw)
 
 
+# --- HIVE-62: 시스템 프롬프트 한국어 출력 단언 --------------------------------
+
+def test_system_prompt_instructs_korean_output():
+    client = _client_returning({"one_liner": "x", "key_takeaways": []})
+    synthesize(_ITEM, {"content_type": "experience"}, client)
+    assert "한국어" in client.captured_system
+
+
 # --- HIVE-45: 출력 토큰 상한 + 잘림 로깅 -----------------------------------
 
 def test_synthesize_uses_3072_max_tokens():
