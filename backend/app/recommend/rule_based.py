@@ -83,6 +83,7 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
                          + {wm_bonus} - {too_hard_penalty} AS score
                 FROM content c
                 WHERE c.text_embedding IS NOT NULL
+                  AND c.content_type NOT IN ('paper', 'news')
                   AND (c.difficulty IS NULL OR c.difficulty IN ({allowed_sql}))
                   AND {excl_clause}
                 ORDER BY score DESC
@@ -107,7 +108,8 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
                 f"""
                 SELECT c.id, c.title, c.quality_score
                 FROM content c
-                WHERE (c.difficulty IS NULL OR c.difficulty IN ({allowed_sql}))
+                WHERE c.content_type NOT IN ('paper', 'news')
+                  AND (c.difficulty IS NULL OR c.difficulty IN ({allowed_sql}))
                   AND {excl_clause}
                 ORDER BY c.quality_score DESC NULLS LAST, c.id DESC
                 LIMIT :n

@@ -25,8 +25,8 @@ import anthropic
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
-ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(ROOT / ".env")
+ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(ROOT / ".env", encoding="utf-8-sig")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.tagging.tagger import tag_content
