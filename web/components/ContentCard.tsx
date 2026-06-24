@@ -7,6 +7,7 @@ import {
   contentTags,
 } from "@/lib/viewmodel";
 import { FeedbackButtons } from "./FeedbackButtons";
+import { ReadMore } from "./ReadMore";
 
 const Upvote = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -72,6 +73,8 @@ export function ContentCard({
         <h2 className="post-title">{item.title}</h2>
       )}
 
+      {item.summary && <p className="post-summary">{item.summary}</p>}
+
       {tags.length > 0 && (
         <div className="tag-row">
           {tags.map((t, i) => (
@@ -98,6 +101,8 @@ export function ContentCard({
           </a>
         )}
       </div>
+
+      <ReadMore contentId={item.id} loggedIn={loggedIn} />
 
       {loggedIn && <FeedbackButtons contentId={item.id} current={feedback} />}
     </article>

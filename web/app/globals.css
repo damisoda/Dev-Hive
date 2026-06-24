@@ -168,6 +168,35 @@ a.post-title:hover { color: var(--accent-ink); }
 .fb-btn.active { border-color: var(--accent); background: var(--accent-wash); color: var(--accent-ink); font-weight: 700; }
 .fb-btn:disabled { opacity: 0.6; cursor: default; }
 
+/* 요약본(카드 기본) + 읽기(재가공본 펼침) */
+.post-summary {
+  margin: -2px 0 11px; font-size: 14px; line-height: 1.6; color: var(--text-muted);
+}
+.read-wrap { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.read-btn {
+  font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+  padding: 6px 14px; border-radius: 8px; color: var(--accent-ink);
+  border: 1px solid var(--accent); background: var(--accent-wash);
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+.read-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-wash) 70%, var(--accent) 30%); }
+.read-btn:disabled { opacity: 0.6; cursor: default; }
+.level-up { font-size: 12.5px; font-weight: 700; color: #b45309; }
+.synth {
+  flex-basis: 100%; margin-top: 4px; padding: 16px 18px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2, #fafafa);
+}
+.synth-block { margin-bottom: 14px; }
+.synth-block:last-child { margin-bottom: 0; }
+.synth-block h4 {
+  margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.02em;
+  text-transform: none; color: var(--accent-ink);
+}
+.synth-block p { margin: 0; font-size: 14px; line-height: 1.65; color: var(--text); }
+.synth-block ul { margin: 0; padding-left: 18px; }
+.synth-block li { font-size: 14px; line-height: 1.6; color: var(--text); margin-bottom: 3px; }
+.synth-err { margin: 0; font-size: 13.5px; color: var(--text-muted); }
+
 /* ───────── 상태 ───────── */
 .state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
 .state .emoji { font-size: 32px; display: block; margin-bottom: 12px; }

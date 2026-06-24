@@ -11,6 +11,21 @@ export const FEEDBACK_BUTTONS: { key: string; label: string }[] = [
   { key: "not_interested", label: "관심없어요" },
 ];
 
+// 재가공본(synthesis) 바디 키 → 한글 라벨. content_type별 키가 다르므로 전 타입 합집합.
+// (synthesizer.py _BODY_SPECS와 일치)
+export const SYNTH_BODY_LABELS: Record<string, string> = {
+  // experience
+  context: "상황", findings: "발견", pitfalls: "겪은 함정", numbers: "수치", verdict: "결론",
+  // tool
+  what: "무엇", when_to_use: "언제 쓰나", how: "사용법", requirements: "준비물", gotchas: "주의할 점",
+  // concept
+  definition: "정의", mechanism: "작동 원리", comparisons: "비교", when_matters: "왜 중요한가",
+  // tutorial
+  goal: "목표", steps: "단계", result: "결과물", notes: "노트",
+  // discussion
+  claim: "핵심 주장", arguments: "논거", counterpoints: "반론", conclusion: "결론",
+};
+
 // source 내부 값 → 표시 라벨
 export const SOURCE_LABELS: Record<string, string> = {
   reddit: "Reddit",
