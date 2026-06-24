@@ -52,7 +52,9 @@ def upload_user_content(
         "source": "user",
         "author_name": None,
         "engagement": {"likes": 0, "comments": 0},
-        "published_at": datetime.now(timezone.utc),
+        # 크롤 경로와 동일하게 ISO 문자열로 — item은 tagger에서 json.dumps되므로
+        # datetime 객체면 직렬화 실패한다. loader는 문자열을 그대로 TIMESTAMP에 적재.
+        "published_at": datetime.now(timezone.utc).isoformat(),
     }
 
     # QC 게이트(태깅·임베딩 비용 전). 유저 경로는 NSFW·빈본문만 적용(소스/별/서브레딧 우회).

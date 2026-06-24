@@ -215,6 +215,26 @@ a.rec-title:hover { color: var(--accent-ink); }
 .skel-line.w40 { width: 40%; }
 .skel-line.w80 { width: 80%; }
 
+/* 글 올리기 */
+.up-form { display: flex; flex-direction: column; gap: 16px; }
+.up-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.up-opt { font-weight: 400; color: var(--text-subtle); }
+.up-input, .up-textarea { font-family: inherit; font-size: 14.5px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; transition: border-color 0.12s ease; }
+.up-input:focus, .up-textarea:focus { outline: none; border-color: var(--accent); }
+.up-textarea { resize: vertical; line-height: 1.6; }
+.up-err { margin: 0; font-size: 13.5px; color: #b42318; }
+.up-submit { align-self: flex-start; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; padding: 11px 22px; border-radius: 10px; color: #fff; background: var(--accent); border: none; transition: opacity 0.12s ease; }
+.up-submit:hover:not(:disabled) { opacity: 0.9; }
+.up-submit:disabled { opacity: 0.6; cursor: default; }
+.up-result { padding: 22px; border: 1px solid var(--accent); border-radius: 14px; background: var(--accent-wash); }
+.up-result-badge { font-size: 12px; font-weight: 800; color: var(--accent-ink); letter-spacing: 0.02em; }
+.up-result-main { margin: 10px 0 4px; font-size: 16px; line-height: 1.5; color: var(--text); }
+.up-gold { color: #b8860b; font-weight: 600; }
+.up-result-meta { margin: 0; font-size: 13px; color: var(--text-muted); }
+.up-result-actions { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
+.up-again { font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; padding: 6px 14px; border-radius: 8px; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); }
+.up-again:hover { color: var(--text); border-color: var(--border-strong); }
+
 /* ───────── 상태 ───────── */
 .state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
 .state .emoji { font-size: 32px; display: block; margin-bottom: 12px; }
