@@ -260,6 +260,35 @@ a.rec-title:hover { color: var(--accent-ink); }
 .pager-btn.disabled { color: var(--text-subtle); cursor: default; opacity: 0.5; }
 .pager-info { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
+/* 읽기 모달(오버레이 카드) — 페이지 이동 없이 재가공본을 띄움 */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(22, 24, 33, 0.46); backdrop-filter: blur(2px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 56px 20px; overflow-y: auto;
+  animation: modal-fade 0.14s ease;
+}
+.modal-card {
+  position: relative; width: 100%; max-width: 640px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+  padding: 30px 32px 26px; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
+  animation: modal-pop 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.modal-close {
+  position: absolute; top: 16px; right: 18px; width: 30px; height: 30px;
+  border: none; background: transparent; border-radius: 8px;
+  font-size: 16px; color: var(--text-muted); cursor: pointer; line-height: 1;
+}
+.modal-close:hover { background: var(--accent-wash); color: var(--text); }
+.modal-title { margin: 0 32px 16px 0; font-size: 19px; font-weight: 800; line-height: 1.4; letter-spacing: -0.015em; color: var(--text); }
+.modal-lead { margin: 0 0 18px; font-size: 14.5px; line-height: 1.65; color: var(--text-muted); padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.modal-body { display: flex; flex-direction: column; gap: 2px; }
+.modal-origin { display: inline-block; margin-top: 20px; font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; }
+.modal-origin:hover { text-decoration: underline; }
+@keyframes modal-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modal-pop { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .modal-overlay, .modal-card { animation: none; } }
+
 /* ───────── 상태 ───────── */
 .state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
 .state .emoji { font-size: 32px; display: block; margin-bottom: 12px; }
