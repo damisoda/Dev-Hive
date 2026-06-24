@@ -78,11 +78,22 @@ a { color: inherit; text-decoration: none; }
   display: flex; align-items: center; padding: 0 28px;
 }
 .topbar h1 { font-size: 19px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .avatar {
-  margin-left: auto; width: 34px; height: 34px; border-radius: 9px;
+  width: 34px; height: 34px; border-radius: 9px;
   background: #9A5B3D; color: #fff; display: grid; place-items: center;
   font-size: 14px; font-weight: 700;
 }
+.link-btn {
+  background: none; border: 0; cursor: pointer; padding: 0;
+  font-size: 13px; font-weight: 600; color: var(--text-muted); font-family: inherit;
+}
+.link-btn:hover { color: var(--accent-ink); }
+.topbar-cta {
+  padding: 8px 15px; border-radius: 999px;
+  background: var(--accent); color: #fff; font-size: 13.5px; font-weight: 600;
+}
+.topbar-cta:hover { background: var(--accent-ink); }
 
 /* 피드 컬럼 */
 .feed {
@@ -203,6 +214,34 @@ a.post-title:hover { color: var(--accent-ink); }
   background: var(--surface); overflow: hidden;
 }
 .graph-foot { margin: 10px 2px 0; font-size: 12.5px; color: var(--text-subtle); }
+
+/* ───────── 온보딩(회원가입) ───────── */
+.onboard-page { max-width: 540px; }
+.onboard { display: flex; flex-direction: column; gap: 20px; }
+.ob-field { display: flex; flex-direction: column; gap: 9px; }
+.ob-field > label { font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.ob-input {
+  height: 44px; padding: 0 14px; font-size: 15px; font-family: inherit;
+  border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); color: var(--text);
+}
+.ob-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+.ob-input::placeholder { color: var(--text-subtle); }
+.ob-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.ob-opt {
+  padding: 9px 13px; border-radius: 10px; font-size: 13.5px; font-weight: 500; font-family: inherit;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.ob-opt:hover { border-color: var(--border-strong); color: var(--text); }
+.ob-opt.active { border-color: var(--accent); background: var(--accent-wash); color: var(--accent-ink); font-weight: 700; }
+.ob-error { margin: 0; font-size: 13.5px; color: #C81E1E; font-weight: 600; }
+.ob-submit {
+  height: 48px; border: 0; border-radius: 12px; font-family: inherit;
+  background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+}
+.ob-submit:hover:not(:disabled) { background: var(--accent-ink); }
+.ob-submit:disabled { opacity: 0.6; cursor: default; }
+.ob-note { margin: -6px 0 0; font-size: 12.5px; color: var(--text-subtle); }
 
 /* ───────── 반응형 ───────── */
 @media (max-width: 640px) {
