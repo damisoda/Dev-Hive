@@ -3,6 +3,14 @@
 
 import type { ContentItem, Recommendation } from "./types";
 
+// 피드백 버튼 (라벨, 내부 키) — 백엔드 /feedback 타입 4종과 일치(HIVE-37).
+export const FEEDBACK_BUTTONS: { key: string; label: string }[] = [
+  { key: "understood", label: "이해했어요" },
+  { key: "too_hard", label: "어려워요" },
+  { key: "want_more", label: "더 보고 싶어요" },
+  { key: "not_interested", label: "관심없어요" },
+];
+
 // source 내부 값 → 표시 라벨
 export const SOURCE_LABELS: Record<string, string> = {
   reddit: "Reddit",

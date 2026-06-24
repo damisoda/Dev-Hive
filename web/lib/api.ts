@@ -24,9 +24,10 @@ export class ApiError extends Error {
 interface RequestOpts {
   params?: Record<string, string | number | undefined>;
   timeoutMs?: number;
+  headers?: Record<string, string>; // 개인화 요청용 X-User-Id 등
 }
 
-async function request<T>(path: string, { params, timeoutMs = 10_000 }: RequestOpts = {}): Promise<T> {
+async function request<T>(path: string, { params, timeoutMs = 10_000, headers }: RequestOpts = {}): Promise<T> {
   const url = new URL(`${API_BASE_URL}${path}`);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
@@ -39,7 +40,7 @@ async function request<T>(path: string, { params, timeoutMs = 10_000 }: RequestO
   let res: Response;
   try {
     // 추천 등 데이터는 매 로드 신선해야 하므로 캐시 비활성.
-    res = await fetch(url, { signal: controller.signal, cache: "no-store" });
+    res = await fetch(url, { signal: controller.signal, cache: "no-store", headers });
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") {
       throw new ApiError("백엔드 응답이 늦어지고 있습니다. 잠시 후 다시 시도하세요.");
@@ -98,4 +99,19 @@ export function getMastery(userId: number): Promise<MasteryResponse> {
     params: { user_id: userId },
     timeoutMs: 15_000,
   });
+}
+
+// 유저 피드백 {content_id: feedback} — HIVE-59 백엔드는 X-User-Id 헤더로 본인 식별.
+// 없음/오류면 빈 객체(조용히 — 신규/비로그인 정상 경로).
+export async function listFeedback(userId: number): Promise<Record<number, string>> {
+  try {
+    const data = await request<Record<string, string>>("/feedback", {
+      headers: { "X-User-Id": String(userId) },
+    });
+    const out: Record<number, string> = {};
+    for (const [k, v] of Object.entries(data ?? {})) out[Number(k)] = v;
+    return out;
+  } catch {
+    return {};
+  }
 }
