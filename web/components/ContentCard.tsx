@@ -6,6 +6,7 @@ import {
   difficultyPill,
   contentTags,
 } from "@/lib/viewmodel";
+import { FeedbackButtons } from "./FeedbackButtons";
 
 const Upvote = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -19,7 +20,15 @@ const Comment = () => (
   </svg>
 );
 
-export function ContentCard({ item }: { item: ContentItem }) {
+export function ContentCard({
+  item,
+  loggedIn = false,
+  feedback = null,
+}: {
+  item: ContentItem;
+  loggedIn?: boolean;
+  feedback?: string | null;
+}) {
   const glyph = SOURCE_EMOJI[item.source] ?? "📄";
   const src = sourceLabel(item.source);
   const tags = contentTags(item).slice(0, 5);
@@ -89,6 +98,8 @@ export function ContentCard({ item }: { item: ContentItem }) {
           </a>
         )}
       </div>
+
+      {loggedIn && <FeedbackButtons contentId={item.id} current={feedback} />}
     </article>
   );
 }

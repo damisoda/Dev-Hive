@@ -156,6 +156,18 @@ a.post-title:hover { color: var(--accent-ink); }
 .engage svg { width: 17px; height: 17px; }
 .engage .origin { margin-left: auto; color: var(--accent-ink); font-weight: 600; }
 
+/* 피드백 토글 4종 (로그인 시) */
+.fb-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.fb-btn {
+  font-size: 12.5px; font-weight: 500; font-family: inherit;
+  padding: 5px 11px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-muted);
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.fb-btn:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
+.fb-btn.active { border-color: var(--accent); background: var(--accent-wash); color: var(--accent-ink); font-weight: 700; }
+.fb-btn:disabled { opacity: 0.6; cursor: default; }
+
 /* ───────── 상태 ───────── */
 .state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
 .state .emoji { font-size: 32px; display: block; margin-bottom: 12px; }

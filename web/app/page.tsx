@@ -1,9 +1,10 @@
 // 홈 피드 — 인디고 히어로(테제) + 출처별 콘텐츠 포스트. 서버 컴포넌트에서 백엔드 직접 fetch.
 
-import { listContent, ApiError } from "@/lib/api";
+import { listContent, listFeedback, ApiError } from "@/lib/api";
 import type { ContentItem } from "@/lib/types";
 import { ContentCard } from "@/components/ContentCard";
 import { StateView } from "@/components/StateView";
+import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ export default async function HomePage({
   searchParams: Promise<{ source?: string; difficulty?: string }>;
 }) {
   const { source, difficulty } = await searchParams;
+  const session = await getSession();
 
   let items: ContentItem[] = [];
   let error: ApiError | null = null;
@@ -25,6 +27,9 @@ export default async function HomePage({
   } catch (e) {
     error = e instanceof ApiError ? e : new ApiError("알 수 없는 오류가 발생했습니다.");
   }
+
+  // 로그인 시 현재 피드백 상태 1회 조회(X-User-Id) — 버튼 활성 표시용.
+  const feedbackMap = session ? await listFeedback(session.userId) : {};
 
   return (
     <main className="feed">
@@ -54,7 +59,14 @@ export default async function HomePage({
           크롤·업로드로 글이 쌓이면 출처별로 여기 모입니다.
         </StateView>
       ) : (
-        items.map((item) => <ContentCard key={item.id} item={item} />)
+        items.map((item) => (
+          <ContentCard
+            key={item.id}
+            item={item}
+            loggedIn={Boolean(session)}
+            feedback={feedbackMap[item.id] ?? null}
+          />
+        ))
       )}
     </main>
   );
