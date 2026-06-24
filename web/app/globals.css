@@ -333,6 +333,57 @@ a.rec-title:hover { color: var(--accent-ink); }
 .cur-bar { height: 7px; border-radius: 999px; background: var(--surface-sunken); overflow: hidden; }
 .cur-fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); min-width: 2px; }
 
+/* ───────── 학습 경로 스테퍼 (HIVE-65) ───────── */
+/* 섹션 제목 크게(학습 경로 h2와 동일 톤) — '다음 학습 자료'·'주제별 숙련도'에 사용 */
+.sec-sub-lg {
+  font-size: 20px; font-weight: 800; letter-spacing: -0.02em;
+  color: var(--text); margin: 32px 4px 5px;
+}
+/* 보조 섹션 제목('다음 학습 자료') — 큰 제목보다 한 단계 작고 연한 회색(설명문보단 크게) */
+.sec-sub-soft {
+  font-size: 16px; font-weight: 700; letter-spacing: -0.01em;
+  color: var(--text-subtle); margin: 30px 4px 8px;
+}
+.sec-note { margin: 0 4px 12px; font-size: 13px; color: var(--text-muted); }
+.path-prev { margin: 0 4px 6px; font-size: 12.5px; color: var(--text-subtle); }
+
+.path-head { margin: 0 4px 18px; }
+.path-prog { height: 8px; border-radius: 999px; background: var(--surface-sunken); overflow: hidden; }
+.path-fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); min-width: 2px; }
+.path-next { margin: 8px 0 0; font-size: 13px; color: var(--text-muted); }
+.path-next strong { color: var(--accent-ink); font-weight: 700; }
+
+.path-list { list-style: none; margin: 0; padding: 0 4px; position: relative; }
+/* 노드를 잇는 세로 연결선 — 점(dot) 중심(좌측 11px) 뒤로. 점은 solid bg로 선을 가림 */
+.path-list::before {
+  content: ""; position: absolute; left: 15px; top: 18px; bottom: 18px;
+  width: 2px; transform: translateX(-50%); background: var(--border-strong);
+}
+.path-step {
+  display: grid; grid-template-columns: 22px 1fr; gap: 13px;
+  align-items: start; padding: 9px 0;
+}
+.path-node { display: flex; justify-content: center; padding-top: 1px; }
+.path-dot {
+  width: 22px; height: 22px; border-radius: 999px; z-index: 1;
+  display: grid; place-items: center; font-size: 11px; font-weight: 700;
+  background: var(--bg); border: 2px solid var(--border-strong); color: var(--text-subtle);
+}
+.path-step.is-done .path-dot { background: var(--accent); border-color: var(--accent); color: #fff; }
+.path-step.is-current .path-dot {
+  background: var(--bg); border-color: var(--accent); color: var(--accent-ink);
+  box-shadow: 0 0 0 4px var(--accent-wash);
+}
+.path-name { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+a.path-name:hover { text-decoration: underline; }
+.path-step.is-upcoming .path-name { color: var(--text-muted); font-weight: 600; }
+.path-row { display: flex; align-items: center; gap: 8px; }
+.path-here {
+  font-size: 11px; font-weight: 700; color: var(--accent-ink);
+  background: var(--accent-wash); padding: 2px 8px; border-radius: 999px;
+}
+.path-meta { font-size: 12.5px; color: var(--text-subtle); margin-top: 2px; }
+
 /* ───────── 지식그래프 ───────── */
 .graph-page { padding: 18px 24px 28px; }
 .graph-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
