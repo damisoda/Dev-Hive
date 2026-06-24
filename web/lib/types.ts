@@ -16,6 +16,7 @@ export interface ContentItem {
   engagement_comments?: number | null;
   published_at?: string | null;
   created_at?: string | null;
+  summary?: string | null; // 캐시된 synthesis.one_liner(요약본), 미생성이면 null
 }
 
 export interface ContentListResponse {
