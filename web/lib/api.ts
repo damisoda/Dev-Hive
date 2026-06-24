@@ -6,6 +6,9 @@ import type {
   RecommendResponse,
   GraphResponse,
   MasteryResponse,
+  Profile,
+  Stats,
+  UserStateResponse,
 } from "./types";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
@@ -114,4 +117,19 @@ export async function listFeedback(userId: number): Promise<Record<number, strin
   } catch {
     return {};
   }
+}
+
+export function getProfile(userId: number): Promise<Profile> {
+  return request<Profile>(`/auth/profile/${userId}`);
+}
+
+export function getStats(userId: number): Promise<Stats> {
+  return request<Stats>("/stats", { params: { user_id: userId }, timeoutMs: 15_000 });
+}
+
+export function getUserStateText(userId: number): Promise<UserStateResponse> {
+  return request<UserStateResponse>("/recommend/user-state", {
+    params: { user_id: userId },
+    timeoutMs: 15_000,
+  });
 }

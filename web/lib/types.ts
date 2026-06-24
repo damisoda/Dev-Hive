@@ -63,3 +63,25 @@ export interface MasteryResponse {
   user_id: number;
   mastery: Record<string, number>; // nodeId(문자열) → 0~1
 }
+
+// /auth/profile/{id}
+export interface Profile {
+  user_id: number;
+  display_name: string;
+  persona: string;
+  current_level: string;
+}
+
+// /stats
+export interface Stats {
+  user_id: number;
+  influence_score: number;
+  streak: number;
+  heatmap: Record<string, number>; // YYYY-MM-DD → 읽은 수
+}
+
+// /recommend/user-state
+export interface UserStateResponse {
+  user_id: number;
+  user_state: string;
+}

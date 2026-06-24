@@ -235,6 +235,21 @@ a.rec-title:hover { color: var(--accent-ink); }
 .up-again { font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; padding: 6px 14px; border-radius: 8px; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); }
 .up-again:hover { color: var(--text); border-color: var(--border-strong); }
 
+/* 프로필 — 스탯·학습 잔디·학습 현황 */
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 6px; }
+.stat-card { padding: 16px 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.stat-value { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); font-variant-numeric: tabular-nums; }
+.stat-label { margin-top: 4px; font-size: 12.5px; color: var(--text-muted); }
+.hm { display: flex; gap: 3px; flex-wrap: wrap; }
+.hm-col { display: flex; flex-direction: column; gap: 3px; }
+.hm-cell { width: 11px; height: 11px; border-radius: 3px; background: var(--border); }
+.hm-cell.lv0 { background: color-mix(in srgb, var(--border) 55%, transparent); }
+.hm-cell.lv1 { background: color-mix(in srgb, var(--accent) 35%, #fff); }
+.hm-cell.lv2 { background: color-mix(in srgb, var(--accent) 65%, #fff); }
+.hm-cell.lv3 { background: var(--accent); }
+.user-state { white-space: pre-wrap; font-size: 14px; line-height: 1.7; color: var(--text); margin: 0; padding: 16px 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+@media (max-width: 640px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+
 /* ───────── 상태 ───────── */
 .state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
 .state .emoji { font-size: 32px; display: block; margin-bottom: 12px; }
