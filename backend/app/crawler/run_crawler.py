@@ -250,7 +250,7 @@ def crawl_github_discussions() -> list[Any]:
         logger.info("GitHub Discussions crawl finished. items=%s deduped=%s", len(items), len(deduped))
         return deduped
     except Exception:
-        logger.warning("GitHub Discussions crawl skipped (GITHUB_TOKEN 없음 또는 오류)")
+        logger.warning("GitHub Discussions crawl skipped (GITHUB_TOKEN 없음 또는 오류)", exc_info=True)
         return []
 
 
@@ -261,7 +261,7 @@ def crawl_x() -> list[Any]:
         logger.info("X crawl finished. items=%s deduped=%s", len(items), len(deduped))
         return deduped
     except Exception:
-        logger.warning("X crawl skipped (APIFY_TOKEN 없음 또는 오류)")
+        logger.warning("X crawl skipped (APIFY_TOKEN 없음 또는 오류)", exc_info=True)
         return []
 
 
