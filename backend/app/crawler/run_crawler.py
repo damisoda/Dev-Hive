@@ -14,9 +14,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.crawler.github_crawler import collect_github
+from app.crawler.github_discussions_crawler import collect_github_discussions
 from app.crawler.google_drive_uploader import upload_to_drive
+from app.crawler.huggingface_crawler import crawl_all as _collect_huggingface
 from app.crawler.reddit_crawler import DEFAULT_SUBREDDITS, collect_reddit
+from app.crawler.reddit_public_crawler import collect_reddit_public
+from app.crawler.velog_beginner_crawler import collect_velog_beginner
 from app.crawler.velog_crawler import collect_velog
+from app.crawler.x_crawler import collect_x_seed_users
 
 logging.basicConfig(
     level=logging.INFO,
@@ -238,28 +243,80 @@ def crawl_velog() -> list[Any]:
     return deduped
 
 
+def crawl_github_discussions() -> list[Any]:
+    try:
+        items = collect_github_discussions()
+        deduped = dedupe_by_url(items)
+        logger.info("GitHub Discussions crawl finished. items=%s deduped=%s", len(items), len(deduped))
+        return deduped
+    except Exception:
+        logger.warning("GitHub Discussions crawl skipped (GITHUB_TOKEN 없음 또는 오류)", exc_info=True)
+        return []
+
+
+def crawl_x() -> list[Any]:
+    try:
+        items = collect_x_seed_users()
+        deduped = dedupe_by_url(items)
+        logger.info("X crawl finished. items=%s deduped=%s", len(items), len(deduped))
+        return deduped
+    except Exception:
+        logger.warning("X crawl skipped (APIFY_TOKEN 없음 또는 오류)", exc_info=True)
+        return []
+
+
+def crawl_velog_beginner() -> list[Any]:
+    items = collect_velog_beginner()
+    deduped = dedupe_by_url(items)
+    logger.info("Velog Beginner crawl finished. items=%s deduped=%s", len(items), len(deduped))
+    return deduped
+
+
+def crawl_reddit_public() -> list[Any]:
+    items = collect_reddit_public()
+    deduped = dedupe_by_url(items)
+    logger.info("Reddit(public) crawl finished. items=%s deduped=%s", len(items), len(deduped))
+    return deduped
+
+
+def crawl_huggingface() -> list[Any]:
+    items = _collect_huggingface(days=7)
+    deduped = dedupe_by_url(items)
+    logger.info("HuggingFace crawl finished. items=%s deduped=%s", len(items), len(deduped))
+    return deduped
+
+
 def crawl_all() -> list[Any]:
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        reddit_future = executor.submit(collect_reddit, DEFAULT_SUBREDDITS, 600)
-        github_future = executor.submit(collect_github, 300)
-        velog_future = executor.submit(collect_velog, 300)
+    _CRAWLERS = {
+        "reddit": lambda: collect_reddit(DEFAULT_SUBREDDITS, 600),
+        "reddit_public": crawl_reddit_public,
+        "github": lambda: collect_github(300),
+        "velog": lambda: collect_velog(300),
+        "github_discussions": crawl_github_discussions,
+        "x": crawl_x,
+        "velog_beginner": crawl_velog_beginner,
+        "huggingface": crawl_huggingface,
+    }
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {name: executor.submit(fn) for name, fn in _CRAWLERS.items()}
 
-        reddit_items = reddit_future.result()
-        github_items = github_future.result()
-        velog_items = velog_future.result()
+    results: dict[str, list[Any]] = {}
+    for name, future in futures.items():
+        try:
+            results[name] = future.result()
+        except Exception:
+            logger.exception("크롤 실패: %s", name)
+            results[name] = []
 
-    merged = reddit_items + github_items + velog_items
+    merged = [item for items in results.values() for item in items]
     deduped = dedupe_by_url(merged)
 
     logger.info(
-        "Crawl finished. reddit=%s github=%s velog=%s merged=%s deduped=%s",
-        len(reddit_items),
-        len(github_items),
-        len(velog_items),
+        "Crawl finished. %s merged=%s deduped=%s",
+        " ".join(f"{k}={len(v)}" for k, v in results.items()),
         len(merged),
         len(deduped),
     )
-
     return deduped
 
 
