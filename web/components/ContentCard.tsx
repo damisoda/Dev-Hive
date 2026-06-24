@@ -7,7 +7,7 @@ import {
   contentTags,
 } from "@/lib/viewmodel";
 import { FeedbackButtons } from "./FeedbackButtons";
-import { ReadMore } from "./ReadMore";
+import { ReadModal } from "./ReadModal";
 
 const Upvote = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -102,7 +102,7 @@ export function ContentCard({
         )}
       </div>
 
-      <ReadMore contentId={item.id} loggedIn={loggedIn} />
+      <ReadModal contentId={item.id} title={item.title} url={item.url} loggedIn={loggedIn} />
 
       {loggedIn && <FeedbackButtons contentId={item.id} current={feedback} />}
     </article>
