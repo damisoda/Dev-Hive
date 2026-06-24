@@ -1,12 +1,37 @@
-import { ComingSoon } from "@/components/ComingSoon";
+// 글 올리기 — 올린 글이 태깅·임베딩·Auto-HKG 편입까지. 비로그인은 시작하기 게이트.
 
-export const metadata = { title: "업로드 · Dev-Hive" };
+import { getSession } from "@/lib/session";
+import { UploadForm } from "@/components/UploadForm";
+import { StateView } from "@/components/StateView";
 
-export default function UploadPage() {
+export const metadata = { title: "글 올리기 · Dev-Hive" };
+export const dynamic = "force-dynamic";
+
+export default async function UploadPage() {
+  const session = await getSession();
+  if (!session) {
+    return (
+      <main className="feed coming">
+        <StateView emoji="🐝" title="글을 올리려면 시작하세요">
+          <a href="/onboarding" style={{ color: "var(--accent-ink)", fontWeight: 600 }}>
+            시작하기 →
+          </a>{" "}
+          닉네임만 정하면 바로 올릴 수 있어요.
+        </StateView>
+      </main>
+    );
+  }
+
   return (
-    <ComingSoon
-      title="업로드"
-      desc="내 글을 올리면 태깅·임베딩·지식그래프 편입까지 자동으로. 기여 흐름은 다음 슬라이스에서 붙습니다."
-    />
+    <main className="feed">
+      <header className="sec-head">
+        <h2>글 올리기</h2>
+        <p>
+          올린 글이 태깅·임베딩을 거쳐 지식그래프에 자동 편입됩니다. 새로운 주제면 Auto-HKG가 노드를
+          새로 만들어요.
+        </p>
+      </header>
+      <UploadForm />
+    </main>
   );
 }
