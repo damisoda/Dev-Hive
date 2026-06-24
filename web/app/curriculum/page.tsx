@@ -1,18 +1,29 @@
 // 커리큘럼 — 학습경로. /recommend/mastery + /graph 토픽으로 주제별 숙련도 단계(약한 개념 먼저).
-// auth 전까지 current user는 유저 6(조대흠) 고정 — 붙으면 세션 유저로 교체.
+// current user = 세션 유저(회원가입 시 발급, dh_uid 쿠키). 비로그인은 시작하기 CTA.
 
 import { getGraph, getMastery, ApiError } from "@/lib/api";
 import { curriculumRows } from "@/lib/viewmodel";
 import { StateView } from "@/components/StateView";
+import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "커리큘럼 · Dev-Hive" };
 
-const CURRENT_USER_ID = 6; // 임시(조대흠). auth 붙으면 세션 유저로 교체.
-
 export default async function CurriculumPage() {
+  const session = await getSession();
+  if (!session) {
+    return (
+      <main className="feed coming">
+        <StateView emoji="🐝" title="학습 경로를 보려면 시작하세요">
+          <a href="/onboarding" style={{ color: "var(--accent-ink)", fontWeight: 600 }}>시작하기 →</a>{" "}
+          닉네임과 지금 수준만 알려주면 바로 만들어집니다.
+        </StateView>
+      </main>
+    );
+  }
+
   try {
-    const [g, m] = await Promise.all([getGraph(), getMastery(CURRENT_USER_ID)]);
+    const [g, m] = await Promise.all([getGraph(), getMastery(session.userId)]);
     const topics = g.nodes
       .filter((n) => n.kind === "topic" && !n.auto)
       .map((n) => ({ id: n.id, label: n.label }));
