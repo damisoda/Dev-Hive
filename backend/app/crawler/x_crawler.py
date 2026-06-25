@@ -220,10 +220,13 @@ def _extract_outbound_url(item: dict[str, Any]) -> str | None:
         expanded = url_entity.get("expanded_url") or url_entity.get("expandedUrl") or ""
         if not expanded:
             continue
+        # mailto: 등 비-http 스킴 제외
+        if not expanded.startswith(("http://", "https://")):
+            continue
 
         # 도메인 추출하여 X 내부 도메인인지 확인
         try:
-            domain = expanded.split("//", 1)[-1].split("/", 1)[0].split("?")[0].split(":")[0].lower()
+            domain = expanded.split("//", 1)[1].split("/", 1)[0].split("?")[0].split(":")[0].lower()
             if domain.startswith("www."):
                 domain = domain[4:]
             if domain not in _X_INTERNAL_HOSTS:
@@ -365,18 +368,20 @@ def normalize_x_item(item: dict[str, Any]) -> ContentSchema | None:
 
     title = _title_from_text(raw_text, author_name)
 
-    return normalize(
+    return ContentSchema(
         title=title,
-        source="x",  # 소스 필드 명은 무조건 "x"로 고정
+        source="x",
         url=url,
         published_at=published_at,
         body=body,
         author_name=author_name,
         language=language,
-        likes=engagement["likes"],
-        comments=engagement["comments"],
-        retweets=engagement["retweets"],
-        views=engagement["views"],
+        engagement={
+            "likes": engagement["likes"],
+            "comments": engagement["comments"],
+            "retweets": engagement["retweets"],
+            "views": engagement["views"],
+        },
     )
 
 
@@ -424,19 +429,22 @@ def _build_hybrid_actor_input(users: list[str], keywords: list[str], max_items: 
     kw_parts = [f'"{kw}"' if " " in kw else kw for kw in keywords]
     keywords_query = f'({" OR ".join(kw_parts)})'
 
-    # 기본값으로 최근 9개월 범위 (2025-09-01 ~ 오늘) 설정하여 실행 시간 단축 및 최신 트윗 확보
-    start_date = os.getenv("APIFY_X_START_DATE", "2025-09-01")
-    end_date = os.getenv("APIFY_X_END_DATE", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
-
-    return {
+    # ⚠️ startDate/endDate 지정 시 최근 트윗 접근에 로그인 세션이 필요하여 404 무한 정지.
+    # 날짜 미지정이 유일하게 성공 확인된 조합 — 환경변수로만 선택적으로 활성화.
+    result: dict[str, Any] = {
         "All_of_these_words": keywords_query,
         "From_these_accounts": users_str,
         "maxItems": max_items,
         "language": "en",
-        "startDate": start_date,
-        "endDate": end_date,
         "proxyConfiguration": {"useApifyProxy": True},
     }
+    start_date = os.getenv("APIFY_X_START_DATE")
+    end_date = os.getenv("APIFY_X_END_DATE")
+    if start_date:
+        result["startDate"] = start_date
+    if end_date:
+        result["endDate"] = end_date
+    return result
 
 
 def _actor_input_override() -> dict[str, Any] | None:
@@ -504,16 +512,27 @@ def collect_x(
     print("📡 [2/4] 스크레이퍼 요청 송신...")
     logger.info("Sending run request to Apify actor %s with keywords: %s, accounts: %s", APIFY_X_ACTOR_ID, query_str, accounts_str)
     
-    try:
-        run = client.actor(APIFY_X_ACTOR_ID).start(run_input=run_input)
-        run_dict = _to_dict(run)
-        run_id = run_dict.get("id")
-        dataset_id = run_dict.get("defaultDatasetId") or run_dict.get("default_dataset_id")
-        print(f"   - 액터 실행 시작 (Run ID: {run_id}, Dataset ID: {dataset_id})")
-    except Exception as exc:
-        print(f"   ❌ 액터 호출 실패: {exc}")
-        logger.exception("Failed to start Apify actor")
-        raise
+    last_error: Exception | None = None
+    for attempt in range(1, APIFY_X_REQUEST_RETRIES + 1):
+        try:
+            run = client.actor(APIFY_X_ACTOR_ID).start(run_input=run_input)
+            last_error = None
+            break
+        except Exception as exc:
+            last_error = exc
+            logger.warning("Apify actor start failed attempt=%d/%d: %s", attempt, APIFY_X_REQUEST_RETRIES, exc)
+            if attempt < APIFY_X_REQUEST_RETRIES:
+                time.sleep(APIFY_X_RETRY_SLEEP_SECONDS * attempt)
+    if last_error is not None:
+        print(f"   ❌ 액터 호출 실패 (재시도 {APIFY_X_REQUEST_RETRIES}회): {last_error}")
+        raise RuntimeError(f"Apify actor start failed after retries: {last_error}") from last_error
+
+    run_dict = _to_dict(run)
+    run_id = run_dict.get("id")
+    dataset_id = run_dict.get("defaultDatasetId") or run_dict.get("default_dataset_id")
+    if not run_id or not dataset_id:
+        raise RuntimeError(f"Apify actor start returned no run_id or dataset_id: {run_dict}")
+    print(f"   - 액터 실행 시작 (Run ID: {run_id}, Dataset ID: {dataset_id})")
 
     # 3. 데이터 수집 단계 및 실시간 모니터링/조기 종료 가드
     print("📥 [3/4] 데이터 수집 중 및 모니터링...")
@@ -521,22 +540,29 @@ def collect_x(
     start_time = time.time()
     last_count = 0
     last_change_time = time.time()
-    
+    consecutive_errors = 0
+    MAX_CONSECUTIVE_ERRORS = 5
+
     # 조기 중단 설정
     stagnant_timeout = float(os.getenv("APIFY_X_STAGNANT_TIMEOUT", "90"))
     global_timeout = float(os.getenv("APIFY_X_GLOBAL_TIMEOUT", "1200"))
-    
+
     while True:
         elapsed = time.time() - start_time
-        
+
         try:
             run_status = _to_dict(client.run(run_id).get())
             status = run_status.get("status")
-            
+
             dataset_info = _to_dict(client.dataset(dataset_id).get())
-            current_count = dataset_info.get("item_count") or dataset_info.get("itemCount") or 0
+            current_count = dataset_info.get("itemCount") or dataset_info.get("item_count") or 0
+            consecutive_errors = 0
         except Exception as e:
-            logger.warning("Error during polling Apify status: %s", e)
+            consecutive_errors += 1
+            logger.warning("Polling error #%d: %s", consecutive_errors, e)
+            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                logger.error("연속 %d회 폴링 실패 — 수집 중단", consecutive_errors)
+                break
             status = "RUNNING"
             current_count = last_count
 
@@ -576,7 +602,8 @@ def collect_x(
     # 4. 정규화 및 전처리 단계
     print("🧹 [4/4] 정규화 및 전처리 시작...")
     all_normalized_items: list[ContentSchema] = []
-    
+    raw_items: list = []
+
     try:
         raw_items = list(client.dataset(dataset_id).iterate_items())
         total_raw = len(raw_items)
@@ -660,8 +687,6 @@ def collect_x_by_keywords(
         50, -(-int(target_total * 1.5) // len(kws))
     )
 
-    input_override = _actor_input_override()
-
     logger.info(
         "Starting Apify X keyword-global crawl actor=%s keywords=%d per_keyword=%d target_total=%d",
         APIFY_X_ACTOR_ID,
@@ -676,7 +701,8 @@ def collect_x_by_keywords(
         kw_items: list[ContentSchema] = []
 
         try:
-            run_input = input_override or _build_keyword_actor_input(keyword, per_keyword)
+            # override는 루프마다 재평가 — keyword별로 독립 입력을 보장
+            run_input = _actor_input_override() or _build_keyword_actor_input(keyword, per_keyword)
             query_str = run_input.get("All_of_these_words", "N/A")
 
             print(f"\n[{idx}/{len(kws)}] 키워드 '{keyword}' 크롤링 시작… (query: {query_str}, maxItems: {per_keyword})")
@@ -789,8 +815,8 @@ if __name__ == "__main__":
             print(f"\n✅ 성공적으로 {OUTPUT_PATH} 파일로 저장되었습니다. (총 {len(shared_records)}개)")
 
             # 통계 출력
-            total_likes = sum(r["engagement"]["likes"] for r in shared_records)
-            total_views = sum(r["engagement"]["views"] for r in shared_records)
+            total_likes = sum(r["engagement"].get("likes", 0) for r in shared_records)
+            total_views = sum(r["engagement"].get("views", 0) for r in shared_records)
             authors = set(r["author_name"] for r in shared_records if r.get("author_name"))
             print(f"   📊 총 좋아요: {total_likes:,} | 총 조회수: {total_views:,} | 고유 작성자: {len(authors)}명")
 
