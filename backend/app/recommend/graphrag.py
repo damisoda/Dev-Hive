@@ -164,6 +164,7 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
                     ORDER BY m.relevance_score DESC LIMIT 1) AS node_id
             FROM content c
             WHERE c.text_embedding IS NOT NULL
+              AND c.content_type NOT IN ('paper', 'news')
               AND c.id NOT IN (
                   SELECT content_id FROM user_read_events WHERE user_id = :uid
               )
