@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS content (
     graph_embedding     vector(256),                 -- GraphSAGE 산출물 (Layer 2, NULL 가능)
     engagement_likes    INT DEFAULT 0,
     engagement_comments INT DEFAULT 0,
+    engagement_retweets INT DEFAULT 0,
+    engagement_views    INT DEFAULT 0,
     published_at        TIMESTAMPTZ,
     crawled_at          TIMESTAMPTZ DEFAULT NOW(),
     created_at          TIMESTAMPTZ DEFAULT NOW()

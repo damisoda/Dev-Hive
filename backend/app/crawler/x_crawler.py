@@ -26,7 +26,7 @@ from typing import Any, Iterable
 
 from dotenv import load_dotenv
 
-from app.crawler.normalizer import ContentSchema, normalize
+from app.crawler.normalizer import ContentSchema
 from app.crawler.qc_gate import detect_language
 
 logger = logging.getLogger(__name__)
@@ -495,6 +495,7 @@ def collect_x(
     users = seed_users or SEED_USERS
     kws = keywords or KEYWORDS
     client = _get_apify_client()
+    target_total = max(1, target_total)
 
     # 환경변수 오버라이드 확인
     input_override = _actor_input_override()
@@ -512,6 +513,7 @@ def collect_x(
     print("📡 [2/4] 스크레이퍼 요청 송신...")
     logger.info("Sending run request to Apify actor %s with keywords: %s, accounts: %s", APIFY_X_ACTOR_ID, query_str, accounts_str)
     
+    run = None
     last_error: Exception | None = None
     for attempt in range(1, APIFY_X_REQUEST_RETRIES + 1):
         try:
@@ -523,7 +525,7 @@ def collect_x(
             logger.warning("Apify actor start failed attempt=%d/%d: %s", attempt, APIFY_X_REQUEST_RETRIES, exc)
             if attempt < APIFY_X_REQUEST_RETRIES:
                 time.sleep(APIFY_X_RETRY_SLEEP_SECONDS * attempt)
-    if last_error is not None:
+    if last_error is not None or run is None:
         print(f"   ❌ 액터 호출 실패 (재시도 {APIFY_X_REQUEST_RETRIES}회): {last_error}")
         raise RuntimeError(f"Apify actor start failed after retries: {last_error}") from last_error
 
@@ -562,9 +564,15 @@ def collect_x(
             logger.warning("Polling error #%d: %s", consecutive_errors, e)
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                 logger.error("연속 %d회 폴링 실패 — 수집 중단", consecutive_errors)
+                try:
+                    client.run(run_id).abort()
+                except Exception:
+                    pass
                 break
             status = "RUNNING"
             current_count = last_count
+            time.sleep(10)
+            continue
 
         # [수집 진행률: X / 500 건 완료 (Y%)] 실시간 진척도 출력
         pct = min(100, int((current_count / target_total) * 100))
@@ -707,17 +715,33 @@ def collect_x_by_keywords(
 
             print(f"\n[{idx}/{len(kws)}] 키워드 '{keyword}' 크롤링 시작… (query: {query_str}, maxItems: {per_keyword})")
             
-            # API호출은 단발성으로 처리하되, 호출 로직은 기존 _run_actor_with_retries 사용
-            run = client.actor(APIFY_X_ACTOR_ID).call(
-                run_input=run_input,
-                run_timeout=timedelta(seconds=180),
-                wait_duration=timedelta(seconds=200),
-            )
+            kw_run = None
+            kw_last_error: Exception | None = None
+            for attempt in range(1, APIFY_X_REQUEST_RETRIES + 1):
+                try:
+                    kw_run = client.actor(APIFY_X_ACTOR_ID).call(
+                        run_input=run_input,
+                        run_timeout=timedelta(seconds=180),
+                        wait_duration=timedelta(seconds=200),
+                    )
+                    kw_last_error = None
+                    break
+                except Exception as exc:
+                    kw_last_error = exc
+                    logger.warning(
+                        "Apify keyword actor call failed attempt=%d/%d keyword='%s': %s",
+                        attempt, APIFY_X_REQUEST_RETRIES, keyword, exc,
+                    )
+                    if attempt < APIFY_X_REQUEST_RETRIES:
+                        time.sleep(APIFY_X_RETRY_SLEEP_SECONDS * attempt)
+            if kw_last_error is not None or kw_run is None:
+                logger.error("Apify keyword actor call failed after %d retries for keyword '%s': %s", APIFY_X_REQUEST_RETRIES, keyword, kw_last_error)
+                continue
             run_dict = (
-                run
-                if isinstance(run, dict)
-                else run.model_dump() if hasattr(run, "model_dump")
-                else run.__dict__
+                kw_run
+                if isinstance(kw_run, dict)
+                else kw_run.model_dump() if hasattr(kw_run, "model_dump")
+                else kw_run.__dict__
             )
             dataset_id = run_dict.get("defaultDatasetId") or run_dict.get("default_dataset_id")
             if not dataset_id:
