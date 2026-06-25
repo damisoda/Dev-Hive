@@ -27,8 +27,8 @@ export default async function ProfilePage() {
   // 일부 실패(예: 통계)해도 나머지는 보여준다.
   const [profileR, statsR, stateR] = await Promise.allSettled([
     getProfile(session.userId),
-    getStats(session.userId),
-    getUserStateText(session.userId),
+    getStats(session.token),
+    getUserStateText(session.token),
   ]);
   const profile: Profile | null = profileR.status === "fulfilled" ? profileR.value : null;
   const stats: Stats | null = statsR.status === "fulfilled" ? statsR.value : null;

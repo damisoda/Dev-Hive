@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { UID_COOKIE } from "@/lib/session";
+import { TOKEN_COOKIE } from "@/lib/session";
 
-// 글 올리기 BFF — dh_uid 쿠키로 user_id 주입해 백엔드 POST /content.
+// 글 올리기 BFF — dh_token(JWT)을 Authorization: Bearer로 주입해 백엔드 POST /content.
 // 백엔드는 태깅·임베딩·Auto-HKG 편입까지 동기 처리(수십 초 가능) → 넉넉한 타임아웃.
 
 const API = process.env.API_BASE_URL ?? "http://localhost:8000";
 
 export async function POST(req: Request) {
-  const uid = (await cookies()).get(UID_COOKIE)?.value;
-  if (!uid) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const token = (await cookies()).get(TOKEN_COOKIE)?.value;
+  if (!token) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const b = (await req.json().catch(() => null)) as
     | { title?: string; body?: string; url?: string }
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   try {
     const r = await fetch(`${API}/content`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-User-Id": uid },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         title: b.title.trim(),
         body: b.body.trim(),

@@ -19,7 +19,7 @@ export function TopBar({ session }: { session: Session | null }) {
   const title = TITLES[path] ?? "Dev-Hive";
 
   async function logout() {
-    await fetch("/api/auth/profile", { method: "DELETE" });
+    await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/";
   }
 
