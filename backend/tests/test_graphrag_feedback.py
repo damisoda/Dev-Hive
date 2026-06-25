@@ -49,6 +49,7 @@ class _Session:
         too_hard=None,
         understood=None,
         want_more=None,
+        precedes=None,
     ):
         self._profile = profile
         self._candidates = candidates or []
@@ -60,6 +61,8 @@ class _Session:
         self._too_hard = too_hard or []
         self._understood = understood or []
         self._want_more = want_more
+        # precedes 엣지: [(source_node_id, target_node_id, weight)]. 기본 빈 → path 중립.
+        self._precedes = precedes or []
 
     def execute(self, clause, params=None):
         sql = str(clause)
@@ -90,6 +93,11 @@ class _Session:
                     quality_score=q, emb=emb, node_id=nid,
                 )
                 for cid, title, diff, q, emb, nid in self._candidates
+            ])
+        if "FROM node_links" in sql:
+            return _Result(rows=[
+                SimpleNamespace(source_node_id=s, target_node_id=t, weight=w)
+                for s, t, w in self._precedes
             ])
         if "AVG(text_embedding)::text FROM content" in sql:
             return _Result(scalar=self._centroid)
@@ -226,6 +234,31 @@ def test_node_id_none_does_not_affect_node_id_diversity(monkeypatch):
     assert ids[0] == 1           # X 먼저
     # X 선택 후 node_count[10]=1 → Y div=0.5, Z div=1.0 → Z가 Y보다 우선(다양성 의도)
     assert ids[1] == 3           # 다른 노드(Z)가 같은 노드(Y)보다 앞
+
+
+# ── HIVE-87: precedes 경로 점수가 추천 순서를 바꾼다 ──────────────────
+
+def test_precedes_unlearned_prereq_flips_ranking(monkeypatch):
+    """선행 미학습 시 후보의 경로점수가 떨어져 추천 순서가 뒤집힌다.
+
+    A=node1(루트,선행없음→path 0.5), B=node2(선행=node1). mastery 전부 0.
+    precedes 없을 때: 품질 우위로 B가 1위([2,1]).
+    precedes=[node1→node2] 추가: node1 미학습 → B path 0.0 → B 점수 하락 → A가 1위([1,2]).
+    경로 성분이 실제 랭킹에 반영됨을 증명(빈 데이터면 기존 동작 보존은 다른 테스트가 커버).
+    """
+    _no_llm(monkeypatch)
+    nodes = [(1, "프롬프트"), (2, "Agentic")]
+    cands = [
+        (1, "A", None, 0.50, "[0.0,0.0]", 1),   # 루트 노드
+        (2, "B", None, 0.55, "[0.0,0.0]", 2),   # 품질 약간 우위
+    ]
+    base = dict(profile=None, candidates=cands, centroid="[0.0,0.0]", nodes=nodes)
+
+    out_no = recommend_next(1, 2, _Session(**base))
+    out_pre = recommend_next(1, 2, _Session(**base, precedes=[(1, 2, 1.0)]))
+
+    assert _ids(out_no) == [2, 1]    # precedes 없으면 품질 우위 B 먼저
+    assert _ids(out_pre) == [1, 2]   # 선행 미학습으로 B 강등 → A 먼저 (순서 역전)
 
 
 # ── 콜드스타트: profile NULL + mastery 빈 → 에러 없이 입문 추천 ───────
