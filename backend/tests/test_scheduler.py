@@ -8,7 +8,7 @@ idempotent 패턴(get_job 가드 + max_instances/coalesce/replace_existing)으�
 """
 import app.crawler.scheduler as scheduler
 
-# start_scheduler가 등록하는 크롤러 잡 전체(HIVE-69로 미연결 5종 추가). 크롤러 증감 시 동기화.
+# start_scheduler가 등록하는 잡 전체(크롤러 + Auto-HKG). 잡 증감 시 동기화.
 EXPECTED_CRAWLER_JOBS = {
     "github_12h",
     "reddit_24h",
@@ -18,6 +18,7 @@ EXPECTED_CRAWLER_JOBS = {
     "x_24h",
     "velog_beginner_24h",
     "huggingface_24h",
+    "auto_hkg_48h",          # HIVE-88: Auto-HKG 주기 확장 잡
 }
 
 

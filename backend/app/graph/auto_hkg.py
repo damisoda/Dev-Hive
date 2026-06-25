@@ -28,6 +28,8 @@ from __future__ import annotations
 import json
 import re
 
+import threading
+
 import anthropic
 import networkx as nx
 import numpy as np
@@ -40,6 +42,10 @@ from app.tagging.tagger import MODEL
 DEDUP_THRESHOLD = 0.70   # 1패스: 스켈레톤 흡수 임계 (top 코사인 이 이상이면 기존 노드로)
 GROUP_THRESHOLD = 0.65   # 2패스: 잔여 콘텐츠 간 클러스터링 유사도 임계
 MIN_CLUSTER_SIZE = 3     # 2패스: 노드로 승격할 최소 클러스터 크기 (미만은 고아 → 흡수)
+
+# expand_graph는 동일 DB에 대해 동시에 두 경로(_maybe_ingest + 48h 스케줄)로 호출될 수 있다.
+# 락 없이 동시 실행되면 _create_node(UNIQUE 제약 없음)가 중복 노드를 생성한다.
+_expand_graph_lock = threading.Lock()
 
 # 단건 업로드 경로(expand_one, HIVE-33)용. 배치 크롤(2패스)과 달리 1건씩 편입하며
 # 노드 생성을 허용한다 — 저볼륨 유저 기여라 과파편화 위험이 낮고, "내 글이 그래프에
@@ -239,6 +245,22 @@ def expand_graph(
 
     1패스: 스켈레톤 흡수(top 코사인 >= dedup). 2패스: 잔여 클러스터링 후 노드 승격.
     """
+    with _expand_graph_lock:
+        return _expand_graph_inner(conn, client, limit,
+                                   dedup_threshold=dedup_threshold,
+                                   group_threshold=group_threshold,
+                                   min_cluster_size=min_cluster_size)
+
+
+def _expand_graph_inner(
+    conn: Connection,
+    client: anthropic.Anthropic,
+    limit: int | None = None,
+    *,
+    dedup_threshold: float = DEDUP_THRESHOLD,
+    group_threshold: float = GROUP_THRESHOLD,
+    min_cluster_size: int = MIN_CLUSTER_SIZE,
+) -> dict:
     skeleton = _skeleton_centroids(conn)
     roots = _root_centroids(conn)
 
@@ -292,8 +314,9 @@ def expand_graph(
 
         for members in clusters:
             # 클러스터 centroid로 부모(대주제) 결정
+            members_set = set(members)
             cent = np.mean(
-                [r[1] for r in residuals if r[0] in set(members)], axis=0
+                [r[1] for r in residuals if r[0] in members_set], axis=0
             )
             parent_id, _ = _nearest(cent, roots) if roots else (None, 0.0)
 

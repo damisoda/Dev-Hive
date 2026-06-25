@@ -364,6 +364,21 @@ def _maybe_ingest(new_items: list[Any]) -> None:
             stats["inserted"], stats["skipped_quality"], stats["skipped_dup"],
             stats["tag_failed"], stats["load_failed"],
         )
+
+        # 새 콘텐츠가 실제로 적재됐을 때만 Auto-HKG 확장 실행.
+        # 실패해도 이미 커밋된 적재는 유지된다(독립 try).
+        if stats.get("inserted", 0) > 0:
+            try:
+                from app.graph.auto_hkg import expand_graph
+                with engine.begin() as hkg_conn:
+                    hkg_stats = expand_graph(hkg_conn, anthropic_client)
+                logger.info(
+                    "Auto-HKG 확장 완료 — 흡수:%s / 클러스터:%s / 고아:%s / 신규노드:%s",
+                    hkg_stats["absorbed"], hkg_stats["clustered"],
+                    hkg_stats["orphan_mapped"], hkg_stats["new_nodes"],
+                )
+            except Exception:
+                logger.exception("Auto-HKG 확장 실패 — 적재 결과는 유지")
     except Exception:
         # 적재 실패가 스케줄 크롤을 절대 죽이지 않는다.
         logger.exception("크롤 후 적재 실패 — 크롤/저장/업로드는 유지")

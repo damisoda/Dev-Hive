@@ -66,7 +66,7 @@ def main() -> None:
         summary_and_exit()
 
     check("DB 연결 + content 적재", content_total > 0, f"content={content_total}건, source {sources}종")
-    check("커리큘럼 노드 적재", nodes == 7, f"nodes={nodes} (대주제 7개 기대)")
+    check("커리큘럼 노드 적재", nodes >= 7, f"nodes={nodes} (대주제 7개 이상, Auto-HKG 자동노드 포함)")
     check("content↔임베딩 연결", embedded == content_total, f"{embedded}/{content_total} 임베딩 보유")
     check("content↔노드 매핑 존재", mappings > 0, f"매핑 {mappings}건")
     check("매핑 무결성(orphan 없음)", orphan_map == 0, f"orphan={orphan_map}")
