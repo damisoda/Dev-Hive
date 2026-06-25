@@ -10,6 +10,7 @@
 - **raw 금지·환각 금지**: 원문에 없는 사실은 빈 배열/null. diary 서사가 아니라 구체 발견만.
 - 임베딩은 원문 고정. 가공본은 별도(synthesis JSONB) 저장 → 표시/GraphRAG 근거 전용.
 - graceful: 키 부재·LLM 실패·알 수 없는 content_type → None 반환(적재는 계속).
+- HIVE-90: post-hoc grounding 필터 — LLM 출력 후 원문에 근거 없는 배열 항목 제거.
 
 tagger.py와 동일 패턴(클라이언트 주입, JSON 출력, 코드블록 제거 후 json.loads).
 """
@@ -96,6 +97,80 @@ _ARRAY_BODY_KEYS: dict[str, set[str]] = {
 }
 
 
+# ── HIVE-90: grounding 필터 ──────────────────────────────────────────────────
+# 한글(2자↑) / 영문(3자↑) 의미 토큰 추출 후 스톱워드 제거.
+# 완전 일치가 아닌 body 내 부분문자열 검색 → 조사 변형·어미 변화에 강함.
+
+_KO_STOP = frozenset({
+    "이", "가", "은", "는", "을", "를", "의", "에", "에서", "로", "으로",
+    "와", "과", "하고", "이나", "이고", "도", "만", "까지", "부터", "한",
+    "하다", "있다", "없다", "되다", "이다", "않다", "한다", "됩니다", "있습니다",
+    "것", "수", "등", "및", "또한", "또는", "그리고", "하지만", "그러나",
+    "따라서", "때문에", "위해", "대해", "통해", "위한", "대한", "통한",
+})
+_EN_STOP = frozenset({
+    "the", "and", "for", "with", "that", "this", "from", "are", "was",
+    "were", "been", "being", "have", "has", "had", "not", "but", "its",
+    "can", "will", "may", "also", "into", "when", "then", "more",
+})
+_GROUNDING_THRESHOLD = float(0.25)  # 핵심 토큰 25% 이상 body에 등장해야 근거 있음
+
+
+def _content_tokens(text: str) -> list[str]:
+    words = re.findall(r"[가-힣]{2,}|[a-zA-Z]{3,}", text)
+    return [w.lower() for w in words if w.lower() not in _KO_STOP and w.lower() not in _EN_STOP]
+
+
+def _is_grounded(statement: str, body_lower: str) -> bool:
+    """statement 핵심 토큰의 _GROUNDING_THRESHOLD 이상이 body에 등장하면 근거 있음.
+
+    한글: 형태소 변화를 고려해 부분 문자열 검색.
+    영문: 오탐 방지를 위해 단어 단위(whole-word) 검색.
+    """
+    toks = _content_tokens(statement)
+    if not toks:
+        return True
+    body_en_words = set(re.findall(r"[a-z]+", body_lower))
+
+    def _hit(t: str) -> bool:
+        if re.match(r"^[가-힣]+$", t):
+            return t in body_lower          # 한글: 부분 문자열
+        return t in body_en_words           # 영문: 전체 단어
+
+    matched = sum(1 for t in toks if _hit(t))
+    return matched / len(toks) >= _GROUNDING_THRESHOLD
+
+
+def _apply_grounding(card: dict, body: str) -> dict:
+    """card 배열 필드에서 body에 근거 없는 항목을 제거한다(HIVE-90)."""
+    body_stripped = (body or "").strip()
+    if not body_stripped:
+        return card
+    body_lower = body_stripped.lower()
+    content_type = card.get("content_type", "")
+    array_keys = _ARRAY_BODY_KEYS.get(content_type, set()) | {"key_takeaways"}
+
+    result = dict(card)
+    removed_total = 0
+    for key in array_keys:
+        if key not in result or not isinstance(result[key], list):
+            continue
+        before = result[key]
+        result[key] = [item for item in before if not isinstance(item, str) or _is_grounded(item, body_lower)]
+        removed = len(before) - len(result[key])
+        if removed:
+            removed_total += removed
+            logger.debug("grounding 필터: key=%s %d항목 제거", key, removed)
+    if removed_total:
+        logger.warning(
+            "grounding 필터: 총 %d항목 제거 (content_type=%s) — 원문 미근거 항목",
+            removed_total, content_type,
+        )
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 def _build_system_prompt(content_type: str) -> str:
     """content_type에 맞는 가공 시스템 프롬프트를 만든다."""
     body_spec = _BODY_SPECS[content_type]
@@ -104,7 +179,8 @@ def _build_system_prompt(content_type: str) -> str:
         f"아래 원문을 읽고 content_type='{content_type}'에 맞는 **가공 카드**를 JSON으로 만든다.\n\n"
         "목적: 독자에게 원문(raw)을 그대로 주지 않고, 학습 가치만 뽑아 구조화한다.\n\n"
         "절대 규칙:\n"
-        "- 원문에 실제로 있는 내용만 쓴다. 원문에 없는 사실을 지어내지 않는다(환각 금지).\n"
+        "- 각 항목을 작성하기 전에 원문에서 해당 내용이 실제로 등장하는지 먼저 확인한다.\n"
+        "- 원문에 있는 내용만 쓴다. 원문에 없는 사실·절차·수치를 지어내지 않는다(환각 금지).\n"
         "- 해당 정보가 원문에 없으면 배열은 빈 배열([]), 단일 값은 null로 둔다.\n"
         "- 원문 문장을 그대로 길게 복붙하지 않는다. 핵심만 간결히 재서술한다.\n"
         "- 모든 텍스트는 한국어로 출력한다.\n\n"
@@ -204,4 +280,7 @@ def synthesize(item: dict, tags: dict, client: anthropic.Anthropic) -> dict | No
         # LLM 오류/JSON 파싱 실패/응답 형식 이상 — 모두 graceful None.
         return None
 
-    return _coerce_card(parsed, content_type)
+    card = _coerce_card(parsed, content_type)
+    if card is None:
+        return None
+    return _apply_grounding(card, body)
