@@ -16,6 +16,7 @@ from app.config import settings
 from app.database import SessionLocal, get_db
 from app.recommend.graphrag import recommend_next as _graphrag_recommend
 from app.recommend.rule_based import recommend_next as _rule_based_recommend
+from app.services.content_topic import top_topic_for_contents
 from app.services.knowledge_tracing import build_user_state, estimate_mastery
 from app.services.lazy_synthesis import ensure_synthesis
 
@@ -58,6 +59,7 @@ class Recommendation(BaseModel):
     difficulty: Optional[str] = None
     content_type: Optional[str] = None
     summary: Optional[str] = None
+    topic: Optional[str] = None       # 소속 대주제 (학습경로 단계 메타, HIVE-65)
 
 
 class RecommendResponse(BaseModel):
@@ -125,6 +127,7 @@ def recommend(
                 {"ids": ids},
             )
         }
+    topics = top_topic_for_contents(ids, db)
     recs: list[Recommendation] = []
     uncached: list[int] = []
     for r in result:
@@ -141,6 +144,7 @@ def recommend(
             difficulty=(m.difficulty if m else None),
             content_type=(m.content_type if m else None),
             summary=(card.get("one_liner") if isinstance(card, dict) else None),
+            topic=topics.get(r["content_id"]),
         ))
 
     # 미캐시 가공은 응답 후 백그라운드로(다음 추천/새로고침 시 요약 노출). 키 있을 때만.

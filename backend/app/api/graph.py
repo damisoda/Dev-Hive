@@ -59,7 +59,11 @@ def serialize_graph(g: nx.MultiDiGraph) -> dict:
 
 
 @router.get("", response_model=GraphResponse)
-def get_graph(db: Session = Depends(get_db)):
-    """현재 지식그래프 전체(topic/content 노드 + belongs_to/similar_to/precedes 엣지)."""
-    g = build_graph(db)
+def get_graph(light: bool = False, db: Session = Depends(get_db)):
+    """현재 지식그래프(topic/content 노드 + belongs_to/similar_to/precedes 엣지).
+
+    light=True면 가장 비싼 similar_to(콘텐츠 kNN)를 건너뛴다 — 주제 노드만 필요한
+    화면이 26초짜리 유사도 계산을 기다리지 않도록(HIVE-65 주제별 숙련도용).
+    """
+    g = build_graph(db, include_similar=not light)
     return serialize_graph(g)

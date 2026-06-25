@@ -6,6 +6,7 @@ import type {
   RecommendResponse,
   GraphResponse,
   MasteryResponse,
+  ReadHistoryResponse,
   Profile,
   Stats,
   UserStateResponse,
@@ -92,13 +93,24 @@ export function recommend(userId: number, topN = 5): Promise<RecommendResponse> 
   });
 }
 
-export function getGraph(): Promise<GraphResponse> {
-  // /graph는 similar_to를 매 호출 계산해 다소 느릴 수 있어 넉넉한 타임아웃.
-  return request<GraphResponse>("/graph", { timeoutMs: 30_000 });
+// light=true면 similar_to(콘텐츠 kNN, ~26s) 계산을 건너뛴다 — 주제 노드만 필요할 때.
+export function getGraph(light = false): Promise<GraphResponse> {
+  return request<GraphResponse>("/graph", {
+    params: light ? { light: "true" } : undefined,
+    timeoutMs: light ? 12_000 : 30_000,
+  });
 }
 
 export function getMastery(userId: number): Promise<MasteryResponse> {
   return request<MasteryResponse>("/recommend/mastery", {
+    params: { user_id: userId },
+    timeoutMs: 15_000,
+  });
+}
+
+// 읽은 콘텐츠 이력(읽은 순) — 학습경로 '완료' 구간용 (HIVE-65).
+export function getReadHistory(userId: number): Promise<ReadHistoryResponse> {
+  return request<ReadHistoryResponse>("/progress", {
     params: { user_id: userId },
     timeoutMs: 15_000,
   });
