@@ -1,11 +1,13 @@
-"""데모용 프로필 선택 세션.
+"""HIVE-100: 아이디·비밀번호 회원가입/로그인 + JWT 세션.
 
-정식 인증(JWT/OAuth)을 구현하지 않는다. 유저는 display_name과 persona를 입력하여
-프로필을 생성하고, 이후 요청은 X-User-Id 헤더로 자신을 식별한다.
+회원가입 시 username/password로 계정을 만들고, 로그인하면 서명된 JWT를 받는다.
+이후 요청은 `Authorization: Bearer <jwt>`로 본인을 증명한다 — get_current_user가
+서명을 검증하므로 헤더 위조로 타인을 사칭할 수 없다(IDOR 봉합, HIVE-86 후속).
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -15,8 +17,18 @@ from app.services.constants import (
     PERSONA_ONBOARDING,
 )
 from app.services.profile_vector import build_initial_vector
+from app.services.security import (
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    verify_password,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# 미존재/레거시(해시 NULL) 계정 로그인 시도에도 bcrypt를 1회 수행해, 응답 시간으로
+# 아이디 존재 여부가 새는 것을 막는다(timing 사이드채널 방어). 모듈 로드 시 1회 계산.
+_DUMMY_PASSWORD_HASH = hash_password("dh-dummy-timing-equalizer")
 
 
 def _coerce_score(value) -> int:
@@ -96,6 +108,18 @@ class ProfileCreate(BaseModel):
         return v
 
 
+class SignupRequest(ProfileCreate):
+    """회원가입 = 기존 프로필(display_name·persona·온보딩) + 로그인 자격(아이디·비번)."""
+
+    username: str = Field(min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_.-]+$")
+    password: str = Field(min_length=8, max_length=72)
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=50)
+    password: str = Field(min_length=1, max_length=72)
+
+
 class ProfileResponse(BaseModel):
     user_id: int
     display_name: str
@@ -106,24 +130,67 @@ class ProfileResponse(BaseModel):
         from_attributes = True
 
 
-@router.post("/profile", response_model=ProfileResponse, status_code=status.HTTP_201_CREATED)
-def create_profile(payload: ProfileCreate, db: Session = Depends(get_db)) -> ProfileResponse:
+class AuthResponse(BaseModel):
+    """가입/로그인 성공 시 JWT + 프로필 요약. 클라이언트(BFF)는 토큰을 httpOnly 쿠키로 저장."""
+
+    access_token: str
+    token_type: str = "bearer"
+    user_id: int
+    display_name: str
+    persona: str
+    current_level: str
+
+
+@router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
+def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> AuthResponse:
+    """아이디·비번 + 온보딩으로 계정 생성 후 JWT 발급. 중복 아이디는 409."""
     level = compute_initial_level(payload.onboarding_answers, payload.persona)
     user = User(
+        username=payload.username,
+        password_hash=hash_password(payload.password),
         display_name=payload.display_name,
         persona=payload.persona,
         onboarding_answers=payload.onboarding_answers or None,
         current_level=level,
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # username UNIQUE 위반(동시 가입 레이스 포함) → 409
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username already taken")
     db.refresh(user)
 
     # 온보딩 답변 기반 profile_vector 초기값 설정 (HIVE-30)
     if payload.onboarding_answers:
         build_initial_vector(user.id, payload.onboarding_answers, db)
 
-    return ProfileResponse(
+    return AuthResponse(
+        access_token=create_access_token(user.id),
+        user_id=user.id,
+        display_name=user.display_name,
+        persona=user.persona,
+        current_level=user.current_level,
+    )
+
+
+@router.post("/login", response_model=AuthResponse)
+def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
+    """아이디·비번 검증 후 JWT 발급. 실패 시 401(아이디 존재 여부 노출 안 함)."""
+    user = db.query(User).filter(User.username == payload.username).first()
+    if user is None or not user.password_hash:
+        # 미존재/레거시 계정도 동일한 bcrypt 비용을 치르게 해 timing 차이를 없앤다.
+        verify_password(payload.password, _DUMMY_PASSWORD_HASH)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials"
+        )
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials"
+        )
+    return AuthResponse(
+        access_token=create_access_token(user.id),
         user_id=user.id,
         display_name=user.display_name,
         persona=user.persona,
@@ -145,14 +212,26 @@ def get_profile(user_id: int, db: Session = Depends(get_db)) -> ProfileResponse:
 
 
 def get_current_user(
-    x_user_id: int = Header(..., alias="X-User-Id"),
+    authorization: str | None = Header(None, alias="Authorization"),
     db: Session = Depends(get_db),
 ) -> User:
-    """이후 라우터에서 현재 유저를 주입받기 위한 의존성.
+    """`Authorization: Bearer <jwt>`의 서명을 검증해 현재 유저를 주입한다.
 
-    클라이언트는 모든 인증 필요 요청에 `X-User-Id: {user_id}` 헤더를 포함한다.
+    토큰 누락/만료/위조는 401. secret 없이는 토큰을 만들 수 없으므로 타인 id로
+    토큰을 위조할 수 없다 — 위조 가능한 X-User-Id 신뢰 방식의 IDOR를 봉합한다(HIVE-86 후속).
     """
-    user = db.query(User).filter(User.id == x_user_id).first()
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token"
+        )
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        user_id = decode_access_token(token)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or expired token"
+        )
+    user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid user")
     return user

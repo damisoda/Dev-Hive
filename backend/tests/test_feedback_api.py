@@ -1,13 +1,13 @@
-"""HIVE-59 feedback API IDOR 차단 테스트.
+"""HIVE-100 feedback API 인증/IDOR 테스트.
 
-get_current_user(X-User-Id) Depends 연결 후:
-- X-User-Id 헤더 없음 → 422
-- 존재하지 않는 X-User-Id → 401
+get_current_user(Bearer JWT) 연결 후:
+- Authorization 헤더 없음 → 401
+- 서명은 유효하나 유저 미존재 → 401
 - 정상 e2e: set → list → clear → list
-- IDOR 방어: payload/query에 타인 user_id를 넣어도 본인 ID로만 동작
+- IDOR 방어: payload/query에 타인 user_id를 넣어도 토큰의 본인 ID로만 동작.
 
-위협 모델 알려진 한계: X-User-Id 헤더 자체를 위조하는 공격은
-정식 JWT 인증 도입 전까지 문서화된 한계로 남는다.
+HIVE-100으로 토큰이 서명되어(secret 없이는 발급 불가) 타인 id 위조가 차단된다 —
+기존 X-User-Id 신뢰 방식의 IDOR 한계가 봉합됨.
 """
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -18,9 +18,14 @@ from fastapi.testclient import TestClient
 
 from app.api.feedback import router
 from app.api.auth import get_current_user
+from app.config import settings
 from app.database import get_db
+from app.services.security import create_access_token
 
 from fastapi import FastAPI
+
+# 토큰 발급/검증에 필요한 secret을 테스트용으로 주입
+settings.jwt_secret = "test-secret-hive100"
 
 # 최소 앱 구성 — feedback 라우터만 마운트
 _app = FastAPI()
@@ -52,7 +57,7 @@ def _client_as(uid: int, db=None):
 
 
 def _client_no_auth(db=None):
-    """X-User-Id 헤더 없이 원본 get_current_user를 유지하는 TestClient."""
+    """토큰 없이 원본 get_current_user를 유지하는 TestClient."""
     if db is None:
         db = _make_db()
     _app.dependency_overrides.pop(get_current_user, None)
@@ -60,26 +65,27 @@ def _client_no_auth(db=None):
     return TestClient(_app, raise_server_exceptions=False)
 
 
-# ── 헤더 없음 / 유저 미존재 ──────────────────────────────────────────────
+# ── 토큰 없음 / 유저 미존재 ──────────────────────────────────────────────
 
-def test_set_feedback_requires_header():
+def test_missing_token_returns_401():
     client = _client_no_auth()
-    # X-User-Id 헤더 없이 PUT → FastAPI가 필수 헤더 누락으로 422 반환
+    # Authorization 헤더 없이 PUT → get_current_user가 401(토큰 누락)
     res = client.put("/feedback", json={"content_id": 1, "feedback": "understood"})
-    assert res.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert res.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 def test_invalid_user_returns_401():
-    # get_current_user override 제거 → 실제 로직 실행, DB에서 user 없으면 401
+    # 서명은 유효하나 DB에 없는 user_id 토큰 → 401
     db = _make_db()
     db.query.return_value.filter.return_value.first.return_value = None
     _app.dependency_overrides.pop(get_current_user, None)
     _app.dependency_overrides[get_db] = lambda: db
     client = TestClient(_app, raise_server_exceptions=False)
+    token = create_access_token(99999)
     res = client.put(
         "/feedback",
         json={"content_id": 1, "feedback": "understood"},
-        headers={"X-User-Id": "999"},
+        headers={"Authorization": f"Bearer {token}"},
     )
     assert res.status_code == status.HTTP_401_UNAUTHORIZED
 
