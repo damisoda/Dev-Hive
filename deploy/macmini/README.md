@@ -69,6 +69,6 @@ ssh ... 'cd ~/Dev-Hive/backend && python scripts/migrate_retag_deprecated_types.
 
 ### 검증
 
-- `https://macmini.tail67859f.ts.net/` → 새 RocketPunch 홈(Streamlit 아님)
+- `https://macmini.tail67859f.ts.net/` → 새 RocketPunch 홈(Next.js/web)
 - `/onboarding` 가입 → 홈 피드백 4종·커리큘럼·`/graph` 동작
-- Streamlit(`frontend`, 8501)은 레거시로 남겨둠 — 안정화 후 compose에서 제거
+- 레거시 Streamlit(`frontend/`, 8501)은 HIVE-102에서 제거됨 — 프런트는 web(Next.js)로 일원화
