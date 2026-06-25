@@ -24,7 +24,6 @@ import sys
 from pathlib import Path
 
 import anthropic
-import numpy as np
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
@@ -40,9 +39,7 @@ from app.graph.auto_hkg import (
     _map,
     _name_cluster,
     _parse_emb,
-    _root_centroids,
     _unit,
-    _nearest,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -102,11 +99,9 @@ def split_node(
     clusters, orphans = _cluster_residuals(residuals, group_threshold, min_cluster_size)
     logger.info("  → 클러스터 %d개 / 고아 %d건", len(clusters), len(orphans))
 
-    roots = _root_centroids(conn)
     stats = {"node": name, "contents": len(contents), "new_nodes": 0, "remapped": 0, "llm_calls": 0}
 
     for members in clusters:
-        cent = np.mean([r[1] for r in residuals if r[0] in set(members)], axis=0)
         # 부모는 현재 분할 대상 노드로 고정 (하위 노드로 생성)
         parent_id = nid
 
@@ -163,6 +158,7 @@ def main() -> None:
                 {"id": args.node_id},
             ).fetchone()
             if not row:
+                trans.rollback()
                 sys.exit(f"노드 id={args.node_id} 없음")
             target_nodes = [{"id": row.id, "name": row.name, "degree": row.degree}]
         elif args.node_name:
@@ -171,12 +167,14 @@ def main() -> None:
                 {"pat": f"%{args.node_name}%"},
             ).fetchall()
             if not rows:
+                trans.rollback()
                 sys.exit(f"노드명 '{args.node_name}' 없음")
             target_nodes = [{"id": r.id, "name": r.name, "degree": r.degree} for r in rows]
         else:
             target_nodes = find_catchall_nodes(conn, args.min_degree)
             if not target_nodes:
                 print(f"degree >= {args.min_degree} 인 skeleton 노드 없음")
+                trans.rollback()
                 return
 
         print(f"\n대상 노드 {len(target_nodes)}개{'  (dry-run)' if args.dry_run else ''}:")
