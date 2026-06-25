@@ -33,6 +33,42 @@ def _run_named_pipeline(name: str, crawl_func) -> None:
         logger.exception("Scheduled crawler job failed: %s", name)
 
 
+def run_auto_hkg_job() -> None:
+    """주기적 Auto-HKG 확장 — 미매핑 콘텐츠를 2패스로 그래프에 편입한다.
+
+    크롤→적재 직후 _maybe_ingest에서도 호출되지만, 크롤 실패·일시 오류로
+    누락된 콘텐츠를 48h마다 별도로 처리해 그래프 갱신 누락을 방지한다.
+    """
+    logger.info("Scheduled Auto-HKG job started")
+    engine = None
+    try:
+        import os
+        import anthropic
+        from sqlalchemy import create_engine
+        from app.graph.auto_hkg import expand_graph
+
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        db_url = os.getenv("DATABASE_URL")
+        if not (anthropic_key and db_url):
+            logger.info("Auto-HKG 스킵 — ANTHROPIC_API_KEY 또는 DATABASE_URL 없음")
+            return
+
+        client = anthropic.Anthropic(api_key=anthropic_key)
+        engine = create_engine(db_url)
+        with engine.begin() as conn:
+            stats = expand_graph(conn, client)
+        logger.info(
+            "Scheduled Auto-HKG 완료 — 처리:%s / 흡수:%s / 클러스터:%s / 고아:%s / 신규노드:%s / LLM:%s",
+            stats["total"], stats["absorbed"], stats["clustered"],
+            stats["orphan_mapped"], stats["new_nodes"], stats["llm_calls"],
+        )
+    except Exception:
+        logger.exception("Scheduled Auto-HKG job failed")
+    finally:
+        if engine is not None:
+            engine.dispose()
+
+
 def run_github_job() -> None:
     _run_named_pipeline("github_12h", crawl_github)
 
@@ -149,6 +185,16 @@ def start_scheduler():
                 trigger="interval",
                 hours=24,
                 id="huggingface_24h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("auto_hkg_48h"):
+            _scheduler.add_job(
+                run_auto_hkg_job,
+                trigger="interval",
+                hours=48,
+                id="auto_hkg_48h",
                 max_instances=1,
                 coalesce=True,
                 replace_existing=True,
