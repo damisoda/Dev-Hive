@@ -13,10 +13,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, defer
 
+from app.api.auth import get_current_user
 from app.config import settings
 from app.database import get_db
 from app.models.content import Content
 from app.models.mapping import ContentNodeMapping
+from app.models.user import User
 from app.services.lazy_synthesis import ensure_synthesis
 from app.services.upload import UploadError, upload_user_content
 
@@ -98,7 +100,6 @@ class ContentUpload(BaseModel):
     title: str
     body: str
     url: Optional[str] = None
-    user_id: Optional[int] = None
 
 
 class UploadResult(BaseModel):
@@ -113,14 +114,18 @@ class UploadResult(BaseModel):
 
 
 @router.post("", response_model=UploadResult, status_code=status.HTTP_201_CREATED)
-def upload_content(payload: ContentUpload, db: Session = Depends(get_db)) -> UploadResult:
+def upload_content(
+    payload: ContentUpload,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UploadResult:
     """HIVE-33: 사용자 글 업로드 → 태깅·임베딩·적재·Auto-HKG 편입.
 
     올린 글이 기존 노드에 편입되거나 Auto-HKG가 새 하위/최상위 노드를 생성한다.
     """
     try:
         result = upload_user_content(
-            payload.title, payload.body, payload.url, payload.user_id, db
+            payload.title, payload.body, payload.url, current_user.id, db
         )
     except UploadError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
