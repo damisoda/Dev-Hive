@@ -25,9 +25,9 @@ import anthropic
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
-ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(ROOT / ".env")
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(ROOT / ".env", encoding="utf-8-sig")
+sys.path.insert(0, str(ROOT))
 
 from app.tagging.tagger import tag_content
 
@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 DEPRECATED_TYPES = ("news", "paper")
 VALID_TYPES = frozenset({"experience", "tutorial", "concept", "tool", "discussion"})
+VALID_DIFFICULTIES = frozenset({"입문", "중급", "고급"})
 MAX_RETRIES = 3
 
 
@@ -54,14 +55,19 @@ def print_distribution(conn, label: str) -> None:
         print(f"{r.ct:<15} {r.cnt:>6}{marker}")
 
 
-def retag_with_retry(item: dict, client: anthropic.Anthropic) -> str | None:
-    """Haiku로 재태깅. 유효한 content_type이 나올 때까지 MAX_RETRIES번 재시도."""
+def retag_with_retry(item: dict, client: anthropic.Anthropic) -> tuple[str, str | None] | None:
+    """Haiku로 재태깅. 유효한 content_type이 나올 때까지 MAX_RETRIES번 재시도.
+
+    Returns (content_type, difficulty) or None on failure.
+    difficulty는 유효하지 않아도 None으로 허용(content_type만 필수).
+    """
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             tags = tag_content(item, client)
             ct = tags.get("content_type")
             if ct in VALID_TYPES:
-                return ct
+                diff = tags.get("difficulty")
+                return ct, (diff if diff in VALID_DIFFICULTIES else None)
             logger.warning("유효하지 않은 content_type=%r (시도 %d/%d)", ct, attempt, MAX_RETRIES)
         except Exception as exc:
             logger.warning("태깅 예외 (시도 %d/%d): %s", attempt, MAX_RETRIES, exc)
@@ -116,16 +122,28 @@ def main() -> None:
         success, failed_ids = 0, []
         for row in rows:
             item = {"title": row.title or "", "body": row.body or ""}
-            new_type = retag_with_retry(item, client)
-            if new_type is None:
+            result = retag_with_retry(item, client)
+            if result is None:
                 failed_ids.append(row.id)
                 logger.error("재태깅 최종 실패 id=%s old=%s", row.id, row.content_type)
                 continue
-            conn.execute(
-                text("UPDATE content SET content_type = :ct WHERE id = :id"),
-                {"ct": new_type, "id": row.id},
+            new_type, new_diff = result
+            params: dict = {"ct": new_type, "id": row.id}
+            if new_diff is not None:
+                params["diff"] = new_diff
+                conn.execute(
+                    text("UPDATE content SET content_type = :ct, difficulty = :diff WHERE id = :id"),
+                    params,
+                )
+            else:
+                conn.execute(
+                    text("UPDATE content SET content_type = :ct WHERE id = :id"),
+                    params,
+                )
+            logger.info(
+                "재태깅 id=%s  %s → %s  difficulty=%s",
+                row.id, row.content_type, new_type, new_diff,
             )
-            logger.info("재태깅 id=%s  %s → %s", row.id, row.content_type, new_type)
             success += 1
 
         conn.commit()
