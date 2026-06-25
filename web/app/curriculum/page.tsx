@@ -14,11 +14,11 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "커리큘럼 · Dev-Hive" };
 
 // 학습 경로 + 다음 학습 자료 — 둘 다 추천(recommend, GraphRAG ~12s)을 쓰므로 한 번만 호출해 같이 렌더.
-async function PathAndRecs({ userId }: { userId: number }) {
+async function PathAndRecs({ token }: { token: string }) {
   try {
     const [readRes, recRes] = await Promise.all([
-      getReadHistory(userId),
-      recommend(userId, 5),
+      getReadHistory(token),
+      recommend(token, 5),
     ]);
     const path = contentPath(readRes.items, recRes.recommendations);
     const recs = recRes.recommendations;
@@ -105,9 +105,9 @@ async function PathAndRecs({ userId }: { userId: number }) {
 }
 
 // 주제별 숙련도 — /graph(주제 노드) + /mastery. /graph가 느려 별도 Suspense로 뒤늦게 스트리밍.
-async function MasterySection({ userId }: { userId: number }) {
+async function MasterySection({ token }: { token: string }) {
   try {
-    const [g, m] = await Promise.all([getGraph(true), getMastery(userId)]);
+    const [g, m] = await Promise.all([getGraph(true), getMastery(token)]);
     const topics = g.nodes
       .filter((n) => n.kind === "topic" && !n.auto)
       .map((n) => ({ id: n.id, label: n.label }));
@@ -165,13 +165,13 @@ export default async function CurriculumPage() {
       </header>
 
       <Suspense fallback={<PathSkeleton />}>
-        <PathAndRecs userId={session.userId} />
+        <PathAndRecs token={session.token} />
       </Suspense>
 
       <h3 className="sec-sub sec-sub-lg">주제별 숙련도</h3>
       <p className="sec-note">약한 개념부터 채워 나가면 경험이 곧 커리큘럼이 됩니다.</p>
       <Suspense fallback={<p className="sec-foot">주제별 숙련도 불러오는 중…</p>}>
-        <MasterySection userId={session.userId} />
+        <MasterySection token={session.token} />
       </Suspense>
 
       <p className="sec-foot">

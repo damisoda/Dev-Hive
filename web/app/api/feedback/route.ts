@@ -1,25 +1,25 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { UID_COOKIE } from "@/lib/session";
+import { TOKEN_COOKIE } from "@/lib/session";
 
-// BFF — 브라우저가 이 라우트에 제출, 서버가 dh_uid 쿠키로 X-User-Id 헤더를 주입해
-// 백엔드 /feedback 호출(CORS 회피 + IDOR: 클라가 user_id를 못 위조). HIVE-59 백엔드와 짝.
+// BFF — 브라우저가 이 라우트에 제출, 서버가 dh_token(JWT)을 Authorization: Bearer로 주입해
+// 백엔드 /feedback 호출(CORS 회피 + 서명검증으로 본인 강제). HIVE-100 백엔드와 짝.
 
 const API = process.env.API_BASE_URL ?? "http://localhost:8000";
 
-async function currentUid(): Promise<string | null> {
+async function currentToken(): Promise<string | null> {
   const c = await cookies();
-  return c.get(UID_COOKIE)?.value ?? null;
+  return c.get(TOKEN_COOKIE)?.value ?? null;
 }
 
 async function forward(method: "PUT" | "DELETE", body: Record<string, unknown>) {
-  const uid = await currentUid();
-  if (!uid) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const token = await currentToken();
+  if (!token) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   let res: Response;
   try {
     res = await fetch(`${API}/feedback`, {
       method,
-      headers: { "Content-Type": "application/json", "X-User-Id": uid },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(body),
       cache: "no-store",
     });

@@ -261,7 +261,7 @@ def crawl_x() -> list[Any]:
         logger.info("X crawl finished. items=%s deduped=%s", len(items), len(deduped))
         return deduped
     except Exception:
-        logger.warning("X crawl skipped (APIFY_TOKEN 없음 또는 오류)", exc_info=True)
+        logger.error("X crawl skipped (APIFY_TOKEN 없음 또는 오류)", exc_info=True)
         return []
 
 

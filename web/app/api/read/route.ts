@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { UID_COOKIE } from "@/lib/session";
+import { TOKEN_COOKIE } from "@/lib/session";
 
 // '읽기' BFF — 재가공본(공개, 캐시 우선) 조회 + 로그인 시 읽음 처리(PATCH /progress).
-// 재가공본 조회는 인증 불필요(표시 전용). 읽음은 dh_uid 쿠키가 있을 때만.
+// 재가공본 조회는 인증 불필요(표시 전용). 읽음은 dh_token(JWT)이 있을 때만.
 
 const API = process.env.API_BASE_URL ?? "http://localhost:8000";
 
@@ -29,12 +29,12 @@ export async function POST(req: Request) {
 
   let leveled_up = false;
   let new_level: string | null = null;
-  const uid = (await cookies()).get(UID_COOKIE)?.value;
-  if (uid) {
+  const token = (await cookies()).get(TOKEN_COOKIE)?.value;
+  if (token) {
     try {
       const r = await fetch(`${API}/progress`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "X-User-Id": uid },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ content_id: cid }),
         cache: "no-store",
       });

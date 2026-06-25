@@ -9,7 +9,7 @@
 
 ## 현황 (2026-06-11, Layer 2 완료)
 
-- **배포**: 맥미니 M4 셀프호스팅 — 공개 사이트 https://macmini.tail67859f.ts.net (Streamlit 임시), API https://macmini.tail67859f.ts.net:8443 (Tailscale Funnel). 상세는 [`deploy/macmini/README.md`](deploy/macmini/README.md)
+- **배포**: 맥미니 M4 셀프호스팅 — 공개 사이트 https://macmini.tail67859f.ts.net (Next.js/web), API https://macmini.tail67859f.ts.net:8443 (Tailscale Funnel). 상세는 [`deploy/macmini/README.md`](deploy/macmini/README.md)
 - **데이터**: 통합본 994건 (velog 311 / github_trending 300 / huggingface 221 / reddit 91 / x 64 / 기타)
 - **그래프**: Auto-HKG v2(2패스)로 자동노드 26개 · orphan 0, GraphSAGE 256차원 임베딩 994/994건 적재 (val link-AUC 0.768)
 - **평가 실측**: modularity 0.512 / tag_purity_topic 0.7745 (baseline 0.4143) / V-measure_topic 0.4238 (baseline 0.1481) / coverage 0.214 / e2e 연결점검 11/12
@@ -86,8 +86,8 @@ GraphRAG 추천 (mean-centering 벡터 검색 + 4성분 스코어링 + Haiku 자
 
 ```
 ┌────────────────────────────────────────────────────┐
-│ Presentation Layer   (Streamlit 임시 — Next.js 전환  │
-│   예정. api/viewmodel/렌더 3층 분리 완료)             │
+│ Presentation Layer   (Next.js / web — App Router +   │
+│   BFF, 서버사이드 백엔드 호출)                        │
 ├────────────────────────────────────────────────────┤
 │ API Layer            (FastAPI / 맥미니 docker)       │
 ├────────────────────────────────────────────────────┤
@@ -171,11 +171,11 @@ topic(커리큘럼 노드)–content 이종 그래프에서 링크 예측 자기
 | 임베딩 (그래프) | GraphSAGE (PyTorch Geometric, 256차원) |
 | 벡터 저장소 | pgvector (Postgres 확장) |
 | 태깅·가공·추천 LLM | Anthropic Claude Haiku 4.5 |
-| 백엔드 | FastAPI (Python) |
-| 프론트엔드 | Streamlit (임시 — api/viewmodel/렌더 3층 분리, Next.js 마이그레이션 준비 완료) |
-| 그래프 시각화 | pyvis + networkx (Next.js 이행 시 react-force-graph로 대체 예정) |
+| 백엔드 | FastAPI (Python) — JWT 인증(아이디·비번 + Bearer) |
+| 프론트엔드 | Next.js (App Router, React) — `web/` (BFF로 백엔드 호출, JWT httpOnly 세션) |
+| 그래프 시각화 | vis.js (networkx 산출 그래프 렌더) |
 | 학습 환경 | 로컬 CPU (`backend/scripts/train_graphsage_local.py`, 약 7초) — Colab 노트북 보조 |
-| 인프라 | 맥미니 M4 셀프호스팅 (docker compose: pgvector + backend + frontend, Tailscale Funnel 공개) |
+| 인프라 | 맥미니 M4 셀프호스팅 (docker compose: pgvector + backend + web, Tailscale Funnel 공개) |
 
 ---
 
@@ -295,11 +295,10 @@ MVP 전체 운영 비용은 미화 35달러 이내로 추정한다 (기획 시�
 │   ├── scripts/                       # 파이프라인 CLI (태깅·Auto-HKG·GraphSAGE 학습·평가·e2e)
 │   ├── requirements.txt
 │   └── Dockerfile
-├── frontend/                         # Streamlit (api/viewmodel/렌더 3층 분리)
-│   ├── app.py
-│   ├── lib/                           # api.py · viewmodel.py · ui.py · components.py · graph_viz.py
-│   ├── pages/                         # 피드 · 커리큘럼 · 프로필 · 그래프 · 업로드
-│   └── requirements.txt
+├── web/                              # Next.js 프런트엔드 (App Router + BFF)
+│   ├── app/                           # 페이지(피드·커리큘럼·프로필·업로드·온보딩) + api/ BFF 라우트
+│   ├── components/ · lib/             # UI 컴포넌트 + api·session·viewmodel
+│   └── package.json
 └── training/                         # GraphSAGE 학습 (Colab 노트북 — 기본 경로는 backend/scripts/train_graphsage_local.py)
     └── graphsage_train.ipynb
 ```
@@ -328,17 +327,18 @@ uvicorn app.main:app --reload
 # http://localhost:8000/health 로 확인
 ```
 
-### 3. 프론트엔드
+### 3. 프론트엔드 (web / Next.js)
 ```bash
-cd frontend
-pip install -r requirements.txt
-streamlit run app.py
+cd web
+npm install
+npm run dev
+# http://localhost:3000
 ```
 
 ### 배포 (2026-06-11 운영 중)
-맥미니 M4 셀프호스팅 — docker compose(pgvector + backend + frontend), `ENABLE_SCHEDULER=false`(재크롤 수동 트리거), launchd 자동시작.
+맥미니 M4 셀프호스팅 — docker compose(pgvector + backend + web), `ENABLE_SCHEDULER=false`(재크롤 수동 트리거), launchd 자동시작.
 
-- 공개 사이트: https://macmini.tail67859f.ts.net (Streamlit 임시)
+- 공개 사이트: https://macmini.tail67859f.ts.net (Next.js/web)
 - API: https://macmini.tail67859f.ts.net:8443 (Tailscale Funnel)
 
 상세 절차는 [`deploy/macmini/README.md`](deploy/macmini/README.md) 참조. (`railway.json`은 이전 배포 경로 잔재.)
