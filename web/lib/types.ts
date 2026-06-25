@@ -33,6 +33,22 @@ export interface Recommendation {
   difficulty?: string | null;
   content_type?: string | null;
   summary?: string | null;
+  topic?: string | null; // 소속 대주제 (학습경로 단계 메타, HIVE-65)
+}
+
+// /progress — 읽은 콘텐츠 이력(읽은 순). 학습경로 '완료' 구간용.
+export interface ReadHistoryItem {
+  content_id: number;
+  title: string;
+  url?: string | null;
+  difficulty?: string | null;
+  content_type?: string | null;
+  topic?: string | null;
+  read_at: string;
+}
+export interface ReadHistoryResponse {
+  user_id: number;
+  items: ReadHistoryItem[];
 }
 
 export interface RecommendResponse {

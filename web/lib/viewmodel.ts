@@ -1,7 +1,7 @@
 // 표시용 뷰모델 — frontend/lib/viewmodel.py 의 TS 이식(React/Next.js 이행 시 그대로 살아남는 층).
 // UI 프레임워크 비의존: '데이터 → 표시용 구조' 변환만.
 
-import type { ContentItem, Recommendation } from "./types";
+import type { ContentItem, Recommendation, ReadHistoryItem } from "./types";
 
 // 피드백 버튼 (라벨, 내부 키) — 백엔드 /feedback 타입 4종과 일치(HIVE-37).
 export const FEEDBACK_BUTTONS: { key: string; label: string }[] = [
@@ -187,6 +187,65 @@ export function curriculumRows(
   rows.sort((a, b) => a.m - b.m);
   for (const r of rows.slice(0, 2)) if (r.m < 0.7) r.next = true;
   return rows;
+}
+
+// ── 학습 경로(콘텐츠 단계형) — HIVE-65 ──
+// 읽은 자료(완료) + 추천 자료(예정)를 한 줄로 이어 '지나온 길 → 지금 → 앞길'을 보여준다.
+// 단계 텍스트 = 콘텐츠 제목, 메타 = [상태 · 소속 주제]. 진행도 = 읽음 / (읽음 + 추천).
+
+const PATH_DONE_LIMIT = 5; // '완료' 단계는 최근 N개만 표시(경로가 너무 길어지지 않게)
+
+export type StepStatus = "done" | "current" | "upcoming";
+
+export interface ContentStep {
+  content_id: number;
+  title: string;
+  url: string | null;
+  topic: string | null; // 소속 대주제
+  status: StepStatus;
+}
+
+export interface ContentPath {
+  steps: ContentStep[];
+  progress: number; // 0~1, 읽음 / (읽음 + 추천)
+  prevReadCount: number; // 표시에서 잘린 '이전에 읽은 자료' 수
+  currentTitle: string | null; // '다음에 읽을 자료' 라벨용(=추천 1순위). 추천 없으면 null
+}
+
+// 읽은 이력(오래된→최근) + 추천(적합도 순) → 콘텐츠 학습 경로.
+export function contentPath(
+  read: ReadHistoryItem[],
+  recs: Recommendation[]
+): ContentPath {
+  const totalRead = read.length;
+  const total = totalRead + recs.length;
+  const progress = total > 0 ? totalRead / total : 0;
+
+  // 완료: 최근 N개만(오래된→최근 유지). 나머지는 개수로만.
+  const shownRead = read.slice(-PATH_DONE_LIMIT);
+  const doneSteps: ContentStep[] = shownRead.map((r) => ({
+    content_id: r.content_id,
+    title: r.title,
+    url: r.url ?? null,
+    topic: r.topic ?? null,
+    status: "done",
+  }));
+
+  // 예정: 추천(점수 순 그대로). 첫 번째 = 현위치('다음 차례').
+  const upSteps: ContentStep[] = recs.map((r, i) => ({
+    content_id: r.content_id,
+    title: r.title,
+    url: r.url ?? null,
+    topic: r.topic ?? null,
+    status: i === 0 ? "current" : "upcoming",
+  }));
+
+  return {
+    steps: [...doneSteps, ...upSteps],
+    progress,
+    prevReadCount: totalRead - shownRead.length,
+    currentTitle: recs.length > 0 ? recs[0].title : null,
+  };
 }
 
 export function recommendationView(rec: Recommendation): RecommendationView {

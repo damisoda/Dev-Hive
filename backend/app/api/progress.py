@@ -9,12 +9,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.content import Content
 from app.models.event import UserReadEvent
 from app.models.user import User
+from app.services.content_topic import top_topic_for_contents
 from app.services.influence import update_influence_score
 from app.services.leveling import check_and_level_up
 from app.services.profile_vector import update_from_read_history
@@ -34,6 +36,61 @@ class ProgressResponse(BaseModel):
     leveled_up: bool = False        # 이번 읽음으로 레벨이 올랐는지 (HIVE-36)
     new_level: Optional[str] = None  # 올랐다면 새 레벨, 아니면 None
     influence_score: Optional[int] = None  # 갱신된 영향력 점수 (HIVE-37)
+
+
+class ReadHistoryItem(BaseModel):
+    content_id: int
+    title: str
+    url: Optional[str] = None
+    difficulty: Optional[str] = None
+    content_type: Optional[str] = None
+    topic: Optional[str] = None       # 소속 대주제 (학습경로 단계 메타, HIVE-65)
+    read_at: datetime
+
+
+class ReadHistoryResponse(BaseModel):
+    user_id: int
+    items: list[ReadHistoryItem]
+
+
+@router.get("", response_model=ReadHistoryResponse)
+def list_read_history(
+    user_id: int, db: Session = Depends(get_db)
+) -> ReadHistoryResponse:
+    """유저가 읽은 콘텐츠를 읽은 순(오래된→최근)으로 반환한다 (HIVE-65 학습경로 '완료' 구간).
+
+    같은 글을 여러 번 읽었으면 가장 최근 읽음 시각으로 합쳐 한 번만 나온다.
+    """
+    rows = db.execute(
+        text(
+            """
+            SELECT c.id, c.title, c.url, c.difficulty, c.content_type,
+                   MAX(e.read_at) AS read_at
+            FROM user_read_events e
+            JOIN content c ON c.id = e.content_id
+            WHERE e.user_id = :uid
+            GROUP BY c.id, c.title, c.url, c.difficulty, c.content_type
+            ORDER BY read_at ASC
+            """
+        ),
+        {"uid": user_id},
+    ).fetchall()
+    topics = top_topic_for_contents([r.id for r in rows], db)
+    return ReadHistoryResponse(
+        user_id=user_id,
+        items=[
+            ReadHistoryItem(
+                content_id=r.id,
+                title=r.title,
+                url=r.url,
+                difficulty=r.difficulty,
+                content_type=r.content_type,
+                topic=topics.get(r.id),
+                read_at=r.read_at,
+            )
+            for r in rows
+        ],
+    )
 
 
 @router.patch("", response_model=ProgressResponse)
