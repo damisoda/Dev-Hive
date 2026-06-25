@@ -7,6 +7,8 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- 1. 유저
 CREATE TABLE IF NOT EXISTS users (
     id                 SERIAL PRIMARY KEY,
+    username           VARCHAR(50) UNIQUE,            -- HIVE-100: 로그인 아이디(신규 가입 필수, 레거시 계정은 NULL)
+    password_hash      VARCHAR(255),                  -- HIVE-100: bcrypt 해시(레거시는 NULL → 로그인 불가)
     display_name       VARCHAR(100) NOT NULL,
     persona            VARCHAR(20) NOT NULL DEFAULT '개발자',
     onboarding_answers JSONB,

@@ -16,6 +16,9 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
+    # HIVE-100: 로그인 아이디/비밀번호. 신규 가입은 필수, 레거시 계정은 NULL(로그인 불가).
+    username = Column(String(50), unique=True, nullable=True)
+    password_hash = Column(String(255), nullable=True)
     display_name = Column(String(100), nullable=False)
     persona = Column(String(20), nullable=False, default="개발자")
     onboarding_answers = Column(JSONB, nullable=True)
