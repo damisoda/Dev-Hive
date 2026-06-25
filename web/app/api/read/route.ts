@@ -34,8 +34,8 @@ export async function POST(req: Request) {
     try {
       const r = await fetch(`${API}/progress`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: Number(uid), content_id: cid }),
+        headers: { "Content-Type": "application/json", "X-User-Id": uid },
+        body: JSON.stringify({ content_id: cid }),
         cache: "no-store",
       });
       if (r.ok) {

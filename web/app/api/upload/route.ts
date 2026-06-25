@@ -23,12 +23,11 @@ export async function POST(req: Request) {
   try {
     const r = await fetch(`${API}/content`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-User-Id": uid },
       body: JSON.stringify({
         title: b.title.trim(),
         body: b.body.trim(),
         url: b.url?.trim() || null,
-        user_id: Number(uid),
       }),
       cache: "no-store",
       signal: ctrl.signal,

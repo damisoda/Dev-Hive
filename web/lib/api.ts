@@ -88,7 +88,8 @@ export function listContent(opts: {
 export function recommend(userId: number, topN = 5): Promise<RecommendResponse> {
   // GraphRAG(LLM rerank)라 실측 ~12s — 타임아웃 여유 필수.
   return request<RecommendResponse>("/recommend", {
-    params: { user_id: userId, top_n: topN },
+    params: { top_n: topN },
+    headers: { "X-User-Id": String(userId) },
     timeoutMs: 60_000,
   });
 }
@@ -103,7 +104,7 @@ export function getGraph(light = false): Promise<GraphResponse> {
 
 export function getMastery(userId: number): Promise<MasteryResponse> {
   return request<MasteryResponse>("/recommend/mastery", {
-    params: { user_id: userId },
+    headers: { "X-User-Id": String(userId) },
     timeoutMs: 15_000,
   });
 }
@@ -111,7 +112,7 @@ export function getMastery(userId: number): Promise<MasteryResponse> {
 // 읽은 콘텐츠 이력(읽은 순) — 학습경로 '완료' 구간용 (HIVE-65).
 export function getReadHistory(userId: number): Promise<ReadHistoryResponse> {
   return request<ReadHistoryResponse>("/progress", {
-    params: { user_id: userId },
+    headers: { "X-User-Id": String(userId) },
     timeoutMs: 15_000,
   });
 }
@@ -136,12 +137,12 @@ export function getProfile(userId: number): Promise<Profile> {
 }
 
 export function getStats(userId: number): Promise<Stats> {
-  return request<Stats>("/stats", { params: { user_id: userId }, timeoutMs: 15_000 });
+  return request<Stats>("/stats", { headers: { "X-User-Id": String(userId) }, timeoutMs: 15_000 });
 }
 
 export function getUserStateText(userId: number): Promise<UserStateResponse> {
   return request<UserStateResponse>("/recommend/user-state", {
-    params: { user_id: userId },
+    headers: { "X-User-Id": String(userId) },
     timeoutMs: 15_000,
   });
 }

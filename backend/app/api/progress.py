@@ -110,6 +110,8 @@ def mark_read(
     db.commit()
     db.refresh(event)
 
+    # 부가 효과(벡터 갱신·레벨업)는 읽음 처리의 성공을 막지 않도록 격리한다.
+    # 실패해도 읽음 자체는 이미 커밋됐으므로 200을 반환하고 로깅만 남긴다.
     try:
         update_from_read_history(current_user.id, db)
     except Exception:
