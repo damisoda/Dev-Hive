@@ -51,15 +51,21 @@ def load_content(
             INSERT INTO content (
                 title, body, url, source, author_name,
                 language, difficulty, quality_score, content_type,
-                synthesis, text_embedding, engagement_likes, engagement_comments, published_at
+                synthesis, text_embedding,
+                engagement_likes, engagement_comments, engagement_retweets, engagement_views,
+                published_at
             ) VALUES (
                 :title, :body, :url, :source, :author_name,
                 :language, :difficulty, :quality_score, :content_type,
-                (:synthesis)::jsonb, (:embedding)::vector, :likes, :comments, :published_at
+                (:synthesis)::jsonb, (:embedding)::vector,
+                :likes, :comments, :retweets, :views,
+                :published_at
             )
             ON CONFLICT (url) DO UPDATE SET
-                engagement_likes = EXCLUDED.engagement_likes,
+                engagement_likes    = EXCLUDED.engagement_likes,
                 engagement_comments = EXCLUDED.engagement_comments,
+                engagement_retweets = EXCLUDED.engagement_retweets,
+                engagement_views    = EXCLUDED.engagement_views,
                 crawled_at = NOW()
             RETURNING id, (xmax = 0) AS inserted
         """),
@@ -75,8 +81,10 @@ def load_content(
             "content_type": tags.get("content_type"),
             "synthesis": json.dumps(synthesis, ensure_ascii=False) if synthesis is not None else None,
             "embedding": str(embedding),
-            "likes": engagement.get("likes") or 0,
+            "likes":    engagement.get("likes") or 0,
             "comments": engagement.get("comments") or 0,
+            "retweets": engagement.get("retweets") or 0,
+            "views":    engagement.get("views") or 0,
             "published_at": item.get("published_at"),
         },
     ).fetchone()

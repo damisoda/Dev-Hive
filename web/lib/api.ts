@@ -28,14 +28,15 @@ export class ApiError extends Error {
 interface RequestOpts {
   params?: Record<string, string | number | undefined>;
   timeoutMs?: number;
-  headers?: Record<string, string>; // 개인화 요청용 X-User-Id 등
+  headers?: Record<string, string>; // 개인화 요청용 Authorization 등
 }
 
-function userHeader(userId: number): { "X-User-Id": string } {
-  if (!Number.isInteger(userId) || userId <= 0) {
-    throw new ApiError("유효하지 않은 사용자 ID입니다.", { statusCode: 401 });
+// HIVE-100: 서명 JWT를 Bearer로 전달. 백엔드 get_current_user가 서명을 검증한다.
+function authHeader(token: string): { Authorization: string } {
+  if (!token) {
+    throw new ApiError("로그인이 필요합니다.", { statusCode: 401 });
   }
-  return { "X-User-Id": String(userId) };
+  return { Authorization: `Bearer ${token}` };
 }
 
 async function request<T>(path: string, { params, timeoutMs = 10_000, headers }: RequestOpts = {}): Promise<T> {
@@ -92,11 +93,11 @@ export function listContent(opts: {
   });
 }
 
-export function recommend(userId: number, topN = 5): Promise<RecommendResponse> {
+export function recommend(token: string, topN = 5): Promise<RecommendResponse> {
   // GraphRAG(LLM rerank)라 실측 ~12s — 타임아웃 여유 필수.
   return request<RecommendResponse>("/recommend", {
     params: { top_n: topN },
-    headers: userHeader(userId),
+    headers: authHeader(token),
     timeoutMs: 60_000,
   });
 }
@@ -109,27 +110,27 @@ export function getGraph(light = false): Promise<GraphResponse> {
   });
 }
 
-export function getMastery(userId: number): Promise<MasteryResponse> {
+export function getMastery(token: string): Promise<MasteryResponse> {
   return request<MasteryResponse>("/recommend/mastery", {
-    headers: userHeader(userId),
+    headers: authHeader(token),
     timeoutMs: 15_000,
   });
 }
 
 // 읽은 콘텐츠 이력(읽은 순) — 학습경로 '완료' 구간용 (HIVE-65).
-export function getReadHistory(userId: number): Promise<ReadHistoryResponse> {
+export function getReadHistory(token: string): Promise<ReadHistoryResponse> {
   return request<ReadHistoryResponse>("/progress", {
-    headers: userHeader(userId),
+    headers: authHeader(token),
     timeoutMs: 15_000,
   });
 }
 
-// 유저 피드백 {content_id: feedback} — HIVE-59 백엔드는 X-User-Id 헤더로 본인 식별.
+// 유저 피드백 {content_id: feedback} — 백엔드는 Bearer JWT로 본인 식별(HIVE-100).
 // 없음/오류면 빈 객체(조용히 — 신규/비로그인 정상 경로).
-export async function listFeedback(userId: number): Promise<Record<number, string>> {
+export async function listFeedback(token: string): Promise<Record<number, string>> {
   try {
     const data = await request<Record<string, string>>("/feedback", {
-      headers: userHeader(userId),
+      headers: authHeader(token),
     });
     const out: Record<number, string> = {};
     for (const [k, v] of Object.entries(data ?? {})) out[Number(k)] = v;
@@ -139,17 +140,18 @@ export async function listFeedback(userId: number): Promise<Record<number, strin
   }
 }
 
+// 공개 프로필 조회(인증 불필요, 경로의 user_id로 조회).
 export function getProfile(userId: number): Promise<Profile> {
   return request<Profile>(`/auth/profile/${userId}`);
 }
 
-export function getStats(userId: number): Promise<Stats> {
-  return request<Stats>("/stats", { headers: userHeader(userId), timeoutMs: 15_000 });
+export function getStats(token: string): Promise<Stats> {
+  return request<Stats>("/stats", { headers: authHeader(token), timeoutMs: 15_000 });
 }
 
-export function getUserStateText(userId: number): Promise<UserStateResponse> {
+export function getUserStateText(token: string): Promise<UserStateResponse> {
   return request<UserStateResponse>("/recommend/user-state", {
-    headers: userHeader(userId),
+    headers: authHeader(token),
     timeoutMs: 15_000,
   });
 }

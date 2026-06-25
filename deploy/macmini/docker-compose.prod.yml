@@ -51,18 +51,5 @@ services:
     ports:
       - "127.0.0.1:3000:3000"             # 외부 노출은 Funnel(→3000)로만
 
-  # (레거시) 임시 Streamlit 프런트 — web 안정화 후 제거 예정. 공개는 web을 사용한다.
-  frontend:
-    build:
-      context: ../../frontend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      - backend
-    environment:
-      API_BASE_URL: http://backend:8000   # 같은 compose 네트워크 — 서버사이드 호출
-    ports:
-      - "127.0.0.1:8501:8501"
-
 volumes:
   devhive_pgdata:

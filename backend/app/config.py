@@ -21,5 +21,9 @@ class Settings(BaseSettings):
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
 
+    # 인증 (HIVE-100). jwt_secret은 운영에서 반드시 .env로 주입(빈 값이면 토큰 발급/검증 거부).
+    jwt_secret: str = ""
+    jwt_expire_hours: int = 336  # 14일
+
 
 settings = Settings()

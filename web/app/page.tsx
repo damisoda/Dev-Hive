@@ -40,8 +40,8 @@ export default async function HomePage({
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // 로그인 시 현재 피드백 상태 1회 조회(X-User-Id) — 버튼 활성 표시용.
-  const feedbackMap = session ? await listFeedback(session.userId) : {};
+  // 로그인 시 현재 피드백 상태 1회 조회(Bearer) — 버튼 활성 표시용.
+  const feedbackMap = session ? await listFeedback(session.token) : {};
 
   return (
     <main className="feed">
