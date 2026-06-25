@@ -4,8 +4,9 @@
   관련성 0.3 — profile_vector ↔ content 임베딩 mean-centering 코사인
   난이도 0.4 — estimate_mastery(node) ↔ content.difficulty 적합도
               (약한 개념 → 쉬운/선행, 강한 개념 → 어려운/심화)
-  경로   0.2 — 선후(prerequisite) 일관성. ※ 현재 prerequisite 데이터가 없어 중립값.
-              Auto-HKG가 precedes를 채우면 활성화(지금은 순위에 영향 없음).
+  경로   0.2 — 선후(prerequisite) 일관성. 후보 토픽의 선행토픽 mastery 가중평균
+              (precedes 엣지 = node_links). 선행을 익혔으면↑(배울 준비됨), 안 익혔으면↓(이름).
+              선행이 없거나 precedes 데이터가 비면 _NEUTRAL_PATH로 폴백(순위 무영향).
   다양성 0.1 — 같은 노드 편중 방지(그리디 다양성 재정렬, MMR 변형).
 
 LLM(Haiku)은 top-1의 '왜 이 순서' 근거 1회 생성에만 쓴다 — 결정엔 미관여,
@@ -77,10 +78,53 @@ def _global_centroid(db: Session) -> np.ndarray | None:
     return _parse_vec(row)
 
 
+def _load_prereq_map(db: Session) -> dict[int, list[tuple[int, float]]]:
+    """precedes 엣지(node_links)를 {target_node: [(선행 source, weight), ...]}로 적재.
+
+    (source, target) = source가 target의 선행(prerequisite). 후보 토픽 T의 선행을
+    O(1)로 찾도록 target 기준으로 묶는다. node_links는 작아 호출당 1쿼리로 충분하다.
+    node_links가 비면 {} → 전 후보 path가 _NEUTRAL_PATH(기존 동작과 동일).
+    """
+    rows = db.execute(
+        text("SELECT source_node_id, target_node_id, weight FROM node_links")
+    ).fetchall()
+    prereq_map: dict[int, list[tuple[int, float]]] = {}
+    for r in rows:
+        w = float(r.weight) if r.weight is not None else 0.5
+        prereq_map.setdefault(int(r.target_node_id), []).append(
+            (int(r.source_node_id), w)
+        )
+    return prereq_map
+
+
 def _difficulty_fit(content_difficulty: str | None, mastery: float) -> float:
     """이상 난이도 ≈ 현재 mastery → 적합도 = 1 - |난이도 - mastery| (0~1)."""
     d = _DIFFICULTY_NORM.get(content_difficulty, 0.5)
     return 1.0 - abs(d - mastery)
+
+
+def _path_score(
+    node_id: int | None,
+    prereq_map: dict[int, list[tuple[int, float]]],
+    mastery: dict[int, float],
+) -> float:
+    """선행 충족도(0~1): 후보 토픽의 선행토픽 mastery 가중평균.
+
+    선행을 이미 익혔으면 1.0에 가까움(지금 배울 준비됨), 안 익혔으면 0.0(아직 이름).
+    선행이 없거나(루트 토픽) precedes 데이터가 비면 _NEUTRAL_PATH → 순위 무영향.
+    weight는 precedes 신뢰도(load_precedes) — 신뢰 높은 선행일수록 비중이 크다.
+    mastery에 없는 선행 노드는 0.0(미학습)으로 본다(KeyError 방지).
+    """
+    if node_id is None:
+        return _NEUTRAL_PATH
+    prereqs = prereq_map.get(node_id)
+    if not prereqs:
+        return _NEUTRAL_PATH
+    den = sum(w for _, w in prereqs)
+    if den <= 0:
+        return _NEUTRAL_PATH
+    num = sum(w * mastery.get(src, 0.0) for src, w in prereqs)
+    return num / den
 
 
 def _template_reason(c: dict) -> str:
@@ -177,6 +221,8 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
         return []
 
     g = _global_centroid(db)
+    # precedes 선행맵: 피드백 반영(too_hard/understood) 후의 mastery로 채점하도록 여기서 1회 적재.
+    prereq_map = _load_prereq_map(db)
     pc = (profile - g) if (profile is not None and g is not None) else None
     # want_more 중심도 관련성과 동일 기준으로 centering(global centroid 필요).
     wmc = (wm_centroid - g) if (wm_centroid is not None and g is not None) else None
@@ -199,10 +245,12 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
             wm_sim = (float(np.dot(wmc, ec) / wm_denom) + 1.0) / 2.0
         else:
             wm_sim = 0.0
-        base = W_REL * rel + W_DIFF * diff + W_PATH * _NEUTRAL_PATH + W_FB * wm_sim
+        path = _path_score(r.node_id, prereq_map, mastery)
+        base = W_REL * rel + W_DIFF * diff + W_PATH * path + W_FB * wm_sim
         cands.append({
             "content_id": r.id, "title": r.title, "difficulty": r.difficulty,
-            "node_id": r.node_id, "rel": rel, "rel_real": rel_real, "diff": diff, "base": base,
+            "node_id": r.node_id, "rel": rel, "rel_real": rel_real,
+            "diff": diff, "path": path, "base": base,
         })
 
     # 그리디 선택: 매 단계 base + 다양성(같은 노드 누적 penalty) 최대를 뽑는다.
