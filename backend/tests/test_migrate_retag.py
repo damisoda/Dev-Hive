@@ -1,7 +1,7 @@
 """HIVE-61 폐기타입 재태깅 마이그레이션 단위 테스트.
 
 DB / Anthropic 없이:
-- retag_with_retry: 정상 반환 / 유효하지 않은 타입 재시도 / 최종 실패 None
+- retag_with_retry: (content_type, difficulty) 튜플 반환 / 유효하지 않은 타입 재시도 / 최종 실패 None
 - 멱등: 대상 0건 시 UPDATE 없음
 - --dry-run: DB execute 호출 없음 + 예정 건수 출력
 """
@@ -15,6 +15,7 @@ sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1]
 
 from scripts.migrate_retag_deprecated_types import (
     DEPRECATED_TYPES,
+    VALID_DIFFICULTIES,
     VALID_TYPES,
     retag_with_retry,
 )
@@ -40,8 +41,9 @@ def test_retag_returns_valid_type_on_first_try():
         return_value={"content_type": "concept"},
     ):
         result = retag_with_retry({"title": "T", "body": "B"}, MagicMock())
-    assert result == "concept"
-    assert result in VALID_TYPES
+    # HIVE-82: (content_type, difficulty) 튜플 반환. difficulty 미제공 → None.
+    assert result == ("concept", None)
+    assert result[0] in VALID_TYPES
 
 
 def test_retag_retries_on_invalid_type():
@@ -52,7 +54,7 @@ def test_retag_retries_on_invalid_type():
         side_effect=responses,
     ), patch("scripts.migrate_retag_deprecated_types.time.sleep"):
         result = retag_with_retry({"title": "T", "body": "B"}, MagicMock())
-    assert result == "tool"
+    assert result == ("tool", None)
 
 
 def test_retag_retries_on_exception():
@@ -63,7 +65,7 @@ def test_retag_retries_on_exception():
         side_effect=responses,
     ), patch("scripts.migrate_retag_deprecated_types.time.sleep"):
         result = retag_with_retry({"title": "T", "body": "B"}, MagicMock())
-    assert result == "experience"
+    assert result == ("experience", None)
 
 
 def test_retag_returns_none_after_max_retries():
@@ -74,6 +76,27 @@ def test_retag_returns_none_after_max_retries():
     ), patch("scripts.migrate_retag_deprecated_types.time.sleep"):
         result = retag_with_retry({"title": "T", "body": "B"}, MagicMock())
     assert result is None
+
+
+def test_retag_captures_valid_difficulty():
+    # HIVE-82: 유효 difficulty면 (content_type, difficulty)로 함께 반환
+    with patch(
+        "scripts.migrate_retag_deprecated_types.tag_content",
+        return_value={"content_type": "tutorial", "difficulty": "중급"},
+    ):
+        result = retag_with_retry({"title": "T", "body": "B"}, MagicMock())
+    assert result == ("tutorial", "중급")
+    assert result[1] in VALID_DIFFICULTIES
+
+
+def test_retag_drops_invalid_difficulty():
+    # 유효하지 않은 difficulty는 None으로 떨군다(content_type만 필수)
+    with patch(
+        "scripts.migrate_retag_deprecated_types.tag_content",
+        return_value={"content_type": "tool", "difficulty": "전문가"},
+    ):
+        result = retag_with_retry({"title": "T", "body": "B"}, MagicMock())
+    assert result == ("tool", None)
 
 
 # ── 멱등성: 대상 0건 ─────────────────────────────────────────────────────
