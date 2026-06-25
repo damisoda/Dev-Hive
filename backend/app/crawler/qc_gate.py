@@ -497,6 +497,7 @@ def qc_gate(
                 body_len < X_ZERO_ENGAGEMENT_MAX_CHARS
                 and _engagement_int(record, "likes") == 0
                 and _engagement_int(record, "comments") == 0
+                and _engagement_int(record, "retweets") == 0
             ):
                 _reject(source, "zero_engagement_short")
                 continue
