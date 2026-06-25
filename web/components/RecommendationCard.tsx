@@ -1,8 +1,18 @@
 import type { Recommendation } from "@/lib/types";
 import { recommendationView } from "@/lib/viewmodel";
+import { ReadModal } from "./ReadModal";
 
 // 커리큘럼 '다음 학습 자료' — /recommend(GraphRAG) 한 건. 순위·매치%·pill·요약·근거.
-export function RecommendationCard({ rec, rank }: { rec: Recommendation; rank: number }) {
+// 읽기(ReadModal) 시 읽음 처리되어 학습 경로 '완료'로 반영된다 (HIVE-97).
+export function RecommendationCard({
+  rec,
+  rank,
+  loggedIn = false,
+}: {
+  rec: Recommendation;
+  rank: number;
+  loggedIn?: boolean;
+}) {
   const vm = recommendationView(rec);
   return (
     <article className="rec-card">
@@ -30,6 +40,7 @@ export function RecommendationCard({ rec, rank }: { rec: Recommendation; rank: n
           vm.summary_pending && <p className="rec-pending">AI 요약 준비 중 — 잠시 후 새로고침하면 표시됩니다.</p>
         )}
         {vm.reason && <blockquote className="rec-reason">{vm.reason}</blockquote>}
+        <ReadModal contentId={vm.content_id} title={vm.title} url={vm.url} loggedIn={loggedIn} />
       </div>
     </article>
   );

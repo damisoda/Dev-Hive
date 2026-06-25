@@ -7,6 +7,7 @@ import { getGraph, getMastery, getReadHistory, recommend, ApiError } from "@/lib
 import { curriculumRows, contentPath } from "@/lib/viewmodel";
 import { StateView } from "@/components/StateView";
 import { RecommendationCard } from "@/components/RecommendationCard";
+import { ReadLink } from "@/components/ReadLink";
 import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,7 @@ async function PathAndRecs({ userId }: { userId: number }) {
     ]);
     const path = contentPath(readRes.items, recRes.recommendations);
     const recs = recRes.recommendations;
+    const loggedIn = true; // 이 섹션은 세션 게이트 뒤에서만 렌더 → 항상 로그인 상태
 
     return (
       <>
@@ -51,12 +53,20 @@ async function PathAndRecs({ userId }: { userId: number }) {
                   </span>
                   <div className="path-body">
                     <div className="path-row">
-                      {s.url ? (
-                        <a className="path-name" href={s.url} target="_blank" rel="noopener noreferrer">
-                          {s.title}
-                        </a>
+                      {s.status === "done" ? (
+                        // 이미 읽음 — 원문 링크만(재로깅 불필요)
+                        s.url ? (
+                          <a className="path-name" href={s.url} target="_blank" rel="noopener noreferrer">
+                            {s.title}
+                          </a>
+                        ) : (
+                          <span className="path-name">{s.title}</span>
+                        )
                       ) : (
-                        <span className="path-name">{s.title}</span>
+                        // 예정/현위치 — 클릭 시 읽음 처리하며 원문 열기(HIVE-97)
+                        <ReadLink className="path-name" contentId={s.content_id} url={s.url} loggedIn={loggedIn}>
+                          {s.title}
+                        </ReadLink>
                       )}
                       {s.status === "current" && <span className="path-here">다음 차례</span>}
                     </div>
@@ -78,7 +88,7 @@ async function PathAndRecs({ userId }: { userId: number }) {
         ) : (
           <div className="rec-list">
             {recs.map((r, i) => (
-              <RecommendationCard key={r.content_id} rec={r} rank={i + 1} />
+              <RecommendationCard key={r.content_id} rec={r} rank={i + 1} loggedIn={loggedIn} />
             ))}
           </div>
         )}
