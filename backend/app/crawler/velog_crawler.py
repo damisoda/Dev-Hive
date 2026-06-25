@@ -21,7 +21,6 @@ VELOG_PAGE_SIZE = int(os.getenv("VELOG_PAGE_SIZE", "20"))
 VELOG_MAX_PAGES_PER_KEYWORD = int(os.getenv("VELOG_MAX_PAGES_PER_KEYWORD", "15"))
 VELOG_REQUEST_SLEEP = float(os.getenv("VELOG_REQUEST_SLEEP", "0.5"))
 VELOG_MIN_LIKES = int(os.getenv("VELOG_MIN_LIKES", "1"))
-VELOG_FETCH_FULL_BODY = os.getenv("VELOG_FETCH_FULL_BODY", "true").lower() != "false"
 VELOG_MIN_BODY_LEN = int(os.getenv("VELOG_MIN_BODY_LEN", "500"))
 
 # haiku_tagging_prompt.md 의 7개 대주제를 커버하는 검색 키워드
@@ -232,14 +231,15 @@ def _fetch_body(username: str, url_slug: str) -> str:
 
 def _to_content(post: dict[str, Any], username: str) -> ContentSchema | None:
     url_slug = post.get("url_slug") or ""
-    if VELOG_FETCH_FULL_BODY and url_slug:
+    if url_slug:
         body = _fetch_body(username, url_slug)
         time.sleep(VELOG_REQUEST_SLEEP)
     else:
-        body = post.get("short_description") or ""
+        body = ""
 
     if len(body) < VELOG_MIN_BODY_LEN:
-        logger.debug("body 짧아 제외 (%d자): @%s/%s", len(body), username, url_slug)
+        reason = "fetch 실패" if not body else "본문 짧음"
+        logger.debug("body 제외 (%s, %d자): @%s/%s", reason, len(body), username, url_slug)
         return None
 
     return normalize(
