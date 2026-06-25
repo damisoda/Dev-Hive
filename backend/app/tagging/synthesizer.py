@@ -101,6 +101,7 @@ _ARRAY_BODY_KEYS: dict[str, set[str]] = {
 # 한글(2자↑) / 영문(3자↑) 의미 토큰 추출 후 스톱워드 제거.
 # 완전 일치가 아닌 body 내 부분문자열 검색 → 조사 변형·어미 변화에 강함.
 
+# grounding 전용 불용어. 언어 감지용 qc_gate._EN_FUNCTION_WORDS와 목적이 다르므로 별도 관리.
 _KO_STOP = frozenset({
     "이", "가", "은", "는", "을", "를", "의", "에", "에서", "로", "으로",
     "와", "과", "하고", "이나", "이고", "도", "만", "까지", "부터", "한",
@@ -117,20 +118,25 @@ _GROUNDING_THRESHOLD = float(0.25)  # 핵심 토큰 25% 이상 body에 등장해
 
 
 def _content_tokens(text: str) -> list[str]:
-    words = re.findall(r"[가-힣]{2,}|[a-zA-Z]{3,}", text)
+    # [A-Z]{2,}: AI·ML·DB 등 2자 대문자 약어 포함 (3자 미만 영문은 [a-zA-Z]{3,}에서 탈락)
+    words = re.findall(r"[가-힣]{2,}|[A-Z]{2,}|[a-zA-Z]{3,}", text)
     return [w.lower() for w in words if w.lower() not in _KO_STOP and w.lower() not in _EN_STOP]
 
 
-def _is_grounded(statement: str, body_lower: str) -> bool:
+def _is_grounded(
+    statement: str, body_lower: str, body_en_words: set[str] | None = None
+) -> bool:
     """statement 핵심 토큰의 _GROUNDING_THRESHOLD 이상이 body에 등장하면 근거 있음.
 
     한글: 형태소 변화를 고려해 부분 문자열 검색.
     영문: 오탐 방지를 위해 단어 단위(whole-word) 검색.
+    body_en_words: 호출자가 미리 계산해 전달하면 재계산을 생략한다(성능).
     """
     toks = _content_tokens(statement)
     if not toks:
         return True
-    body_en_words = set(re.findall(r"[a-z]+", body_lower))
+    if body_en_words is None:
+        body_en_words = set(re.findall(r"[a-z]+", body_lower))
 
     def _hit(t: str) -> bool:
         if re.match(r"^[가-힣]+$", t):
@@ -142,25 +148,41 @@ def _is_grounded(statement: str, body_lower: str) -> bool:
 
 
 def _apply_grounding(card: dict, body: str) -> dict:
-    """card 배열 필드에서 body에 근거 없는 항목을 제거한다(HIVE-90)."""
+    """card 배열 및 단일값 필드에서 body에 근거 없는 항목을 제거한다(HIVE-90)."""
     body_stripped = (body or "").strip()
     if not body_stripped:
         return card
     body_lower = body_stripped.lower()
+    body_en_words = set(re.findall(r"[a-z]+", body_lower))  # 한 번 계산 후 모든 항목에 공유
     content_type = card.get("content_type", "")
     array_keys = _ARRAY_BODY_KEYS.get(content_type, set()) | {"key_takeaways"}
 
     result = dict(card)
     removed_total = 0
+
+    # 배열 필드: 근거 없는 항목 제거
     for key in array_keys:
         if key not in result or not isinstance(result[key], list):
             continue
         before = result[key]
-        result[key] = [item for item in before if not isinstance(item, str) or _is_grounded(item, body_lower)]
+        result[key] = [
+            item for item in before
+            if not isinstance(item, str) or _is_grounded(item, body_lower, body_en_words)
+        ]
         removed = len(before) - len(result[key])
         if removed:
             removed_total += removed
             logger.debug("grounding 필터: key=%s %d항목 제거", key, removed)
+
+    # 단일값 문자열 필드: 근거 없으면 None으로 설정 (one_liner 포함)
+    scalar_keys = (set(_BODY_KEYS.get(content_type, ())) - array_keys) | {"one_liner"}
+    for key in scalar_keys:
+        val = result.get(key)
+        if isinstance(val, str) and not _is_grounded(val, body_lower, body_en_words):
+            result[key] = None
+            removed_total += 1
+            logger.debug("grounding 필터: key=%s 단일값 제거", key)
+
     if removed_total:
         logger.warning(
             "grounding 필터: 총 %d항목 제거 (content_type=%s) — 원문 미근거 항목",
@@ -283,4 +305,11 @@ def synthesize(item: dict, tags: dict, client: anthropic.Anthropic) -> dict | No
     card = _coerce_card(parsed, content_type)
     if card is None:
         return None
-    return _apply_grounding(card, body)
+    card = _apply_grounding(card, body)
+    all_array_keys = _ARRAY_BODY_KEYS.get(content_type, set()) | {"key_takeaways"}
+    if not any(card.get(k) for k in all_array_keys):
+        logger.warning(
+            "grounding 필터: 배열 항목 전체 제거 — None 반환 (content_type=%s)", content_type
+        )
+        return None
+    return card

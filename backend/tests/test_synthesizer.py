@@ -226,15 +226,16 @@ def test_missing_body_keys_filled_as_empty():
 def test_unknown_keys_dropped():
     # 명세 밖 키(hallucinated_extra)는 카드에서 제거된다
     card = {
-        "one_liner": "x",
-        "key_takeaways": [],
-        "definition": "d",
-        "mechanism": [],
+        "one_liner": "RAG 개념",
+        "key_takeaways": ["외부 지식을 벡터 검색해 생성에 활용"],
+        "definition": "외부 지식 임베딩 벡터 검색 기반 생성",
+        "mechanism": ["임베딩 벡터 검색", "컨텍스트 주입"],
         "comparisons": [],
-        "when_matters": "w",
+        "when_matters": "최신 지식 필요할 때",
         "hallucinated_extra": "버려져야 함",
     }
     out = synthesize(_ITEM, {"content_type": "concept"}, _client_returning(card))
+    assert out is not None
     assert "hallucinated_extra" not in out
     allowed = {"content_type", *_HEADER_KEYS, *_BODY_KEYS["concept"]}
     assert set(out.keys()) == allowed
@@ -371,8 +372,8 @@ def test_is_grounded_empty_statement_passes():
 def test_code_fence_stripped():
     # Haiku가 ```json 코드블록으로 감싸도 파싱된다(tagger와 동일 처리)
     card = {
-        "one_liner": "x", "key_takeaways": [],
-        "claim": "c", "arguments": [], "counterpoints": [], "conclusion": "z",
+        "one_liner": "x", "key_takeaways": ["RAG 활용"],
+        "claim": "c", "arguments": ["갱신 용이"], "counterpoints": [], "conclusion": "z",
     }
     fenced = "```json\n" + json.dumps(card, ensure_ascii=False) + "\n```"
     client = _FakeAnthropic(reply_text=fenced)
