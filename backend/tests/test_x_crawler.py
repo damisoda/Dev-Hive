@@ -63,9 +63,13 @@ def test_author_missing_returns_none():
 
 # ── _engagement_counts / _parse_datetime / _url_from_item / dedupe ──────────
 
-def test_engagement_retweets_fold_into_comments():
-    likes, comments = _engagement_counts({"likeCount": 10, "retweetCount": 2, "replyCount": 3})
-    assert likes == 10 and comments == 5  # retweet+reply
+def test_engagement_counts_maps_four_fields():
+    # HIVE-28: likes/comments/retweets/views 분리 (retweet은 더 이상 comment에 폴드 안 함).
+    # comments=replyCount, retweets=retweetCount+quoteCount, views=viewCount
+    eng = _engagement_counts(
+        {"likeCount": 10, "retweetCount": 2, "replyCount": 3, "quoteCount": 1, "viewCount": 500}
+    )
+    assert eng == {"likes": 10, "comments": 3, "retweets": 3, "views": 500}
 
 
 def test_parse_datetime_formats():
@@ -104,7 +108,7 @@ def test_normalize_valid_item():
     assert c is not None
     assert c.source == "x"
     assert c.author_name == "swyx"
-    assert c.engagement == {"likes": 10, "comments": 3}
+    assert c.engagement == {"likes": 10, "comments": 2, "retweets": 1, "views": 0}
     assert c.url == "https://x.com/swyx/status/1"
     assert c.body and len(c.title) > 0
 
