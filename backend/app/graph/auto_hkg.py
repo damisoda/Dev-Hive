@@ -43,6 +43,12 @@ DEDUP_THRESHOLD = 0.70   # 1패스: 스켈레톤 흡수 임계 (top 코사인 �
 GROUP_THRESHOLD = 0.65   # 2패스: 잔여 콘텐츠 간 클러스터링 유사도 임계
 MIN_CLUSTER_SIZE = 3     # 2패스: 노드로 승격할 최소 클러스터 크기 (미만은 고아 → 흡수)
 
+# HIVE-57: 동적 흡수임계(opt-in, AUTOHKG_DYNAMIC_DEDUP=1). 고정 0.70은 코퍼스 분포에 종속이라
+# 새 글 유입으로 분포가 드리프트하면 흡수 실패→고아 폭증(백테스트 실증: 고정 잔차율 79~89% vs
+# 동적 55~76%, orphan_ratio 0.439→0.398). tau_j = max((1-β)분위(음성분포), floor)로 분포를 추종.
+DEDUP_BETA = 0.05        # tau_j 분위: 노드 j 음성분포의 (1-β) 분위수
+DEDUP_FLOOR = 0.62       # 흡수정밀도 하한 보장(0.62 미만은 정밀도<80%, 진단 실측) — tau 하한
+
 # expand_graph는 동일 DB에 대해 동시에 두 경로(_maybe_ingest + 48h 스케줄)로 호출될 수 있다.
 # 락 없이 동시 실행되면 _create_node(UNIQUE 제약 없음)가 중복 노드를 생성한다.
 _expand_graph_lock = threading.Lock()
@@ -232,6 +238,31 @@ def _cluster_residuals(
     return clusters, orphans
 
 
+def _adaptive_dedup_thresholds(
+    conn: Connection, skeleton: dict[int, np.ndarray], beta: float, floor: float
+) -> dict[int, float]:
+    """노드별 동적 흡수임계 tau_j = max((1-β)분위(음성분포), floor) (HIVE-57).
+
+    음성분포 = 노드 j 에 속하지 않은(다른 대주제로 매핑된) 콘텐츠와 j centroid의 코사인.
+    분포가 드리프트해도 흡수율을 일정하게 유지(고정 절대임계의 고아 폭증 방지). floor로 흡수정밀도 하한.
+    """
+    rows = conn.execute(text("""
+        SELECT (SELECT m.node_id FROM content_node_mapping m
+                JOIN curriculum_nodes n ON n.id = m.node_id
+                WHERE m.content_id = c.id AND n.is_auto_generated = FALSE
+                ORDER BY m.relevance_score DESC LIMIT 1) AS node_id,
+               c.text_embedding
+        FROM content c WHERE c.text_embedding IS NOT NULL
+    """)).fetchall()
+    labeled = [(r.node_id, _parse_emb(r.text_embedding)) for r in rows if r.node_id is not None]
+    tau: dict[int, float] = {}
+    for nid, cen in skeleton.items():
+        neg = [_cosine(emb, cen) for lab, emb in labeled if lab != nid]
+        if neg:
+            tau[nid] = max(float(np.quantile(neg, 1.0 - beta)), floor)
+    return tau
+
+
 def expand_graph(
     conn: Connection,
     client: anthropic.Anthropic,
@@ -240,16 +271,26 @@ def expand_graph(
     dedup_threshold: float = DEDUP_THRESHOLD,
     group_threshold: float = GROUP_THRESHOLD,
     min_cluster_size: int = MIN_CLUSTER_SIZE,
+    dynamic_dedup: bool = False,
+    dedup_beta: float = DEDUP_BETA,
+    dedup_floor: float = DEDUP_FLOOR,
 ) -> dict:
     """2-패스로 그래프를 확장한다. 종류별 카운트를 반환.
 
     1패스: 스켈레톤 흡수(top 코사인 >= dedup). 2패스: 잔여 클러스터링 후 노드 승격.
+    dynamic_dedup=True(또는 env AUTOHKG_DYNAMIC_DEDUP=1)면 고정 dedup_threshold 대신
+    노드별 동적 tau_j 사용(HIVE-57, 드리프트 robust). 기본은 고정(기존 동작 보존).
     """
+    import os
+    dynamic_dedup = dynamic_dedup or os.getenv("AUTOHKG_DYNAMIC_DEDUP") == "1"
     with _expand_graph_lock:
         return _expand_graph_inner(conn, client, limit,
                                    dedup_threshold=dedup_threshold,
                                    group_threshold=group_threshold,
-                                   min_cluster_size=min_cluster_size)
+                                   min_cluster_size=min_cluster_size,
+                                   dynamic_dedup=dynamic_dedup,
+                                   dedup_beta=dedup_beta,
+                                   dedup_floor=dedup_floor)
 
 
 def _expand_graph_inner(
@@ -260,9 +301,17 @@ def _expand_graph_inner(
     dedup_threshold: float = DEDUP_THRESHOLD,
     group_threshold: float = GROUP_THRESHOLD,
     min_cluster_size: int = MIN_CLUSTER_SIZE,
+    dynamic_dedup: bool = False,
+    dedup_beta: float = DEDUP_BETA,
+    dedup_floor: float = DEDUP_FLOOR,
 ) -> dict:
     skeleton = _skeleton_centroids(conn)
     roots = _root_centroids(conn)
+    # HIVE-57: 동적 흡수임계(노드별). off면 None → 고정 dedup_threshold 사용(기존 동작).
+    tau_map = (
+        _adaptive_dedup_thresholds(conn, skeleton, dedup_beta, dedup_floor)
+        if dynamic_dedup and skeleton else None
+    )
 
     # 멱등성: 이미 Auto-HKG 노드에 매핑된 콘텐츠는 재처리하지 않는다.
     sql = """
@@ -302,7 +351,8 @@ def _expand_graph_inner(
             stats["skipped"] += 1
             continue
         top_id, top_sim = _nearest(emb, skeleton)
-        if top_id is not None and top_sim >= dedup_threshold:
+        thr = tau_map.get(top_id, dedup_threshold) if tau_map else dedup_threshold
+        if top_id is not None and top_sim >= thr:
             _map(conn, cid, top_id, top_sim)
             stats["absorbed"] += 1
         else:
