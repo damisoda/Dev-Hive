@@ -238,7 +238,8 @@ def _to_content(post: dict[str, Any], username: str) -> ContentSchema | None:
         body = ""
 
     if len(body) < VELOG_MIN_BODY_LEN:
-        logger.debug("body 짧아 제외 (%d자): @%s/%s", len(body), username, url_slug)
+        reason = "fetch 실패" if not body else "본문 짧음"
+        logger.debug("body 제외 (%s, %d자): @%s/%s", reason, len(body), username, url_slug)
         return None
 
     return normalize(
