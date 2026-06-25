@@ -26,6 +26,10 @@ from app.services.security import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# 미존재/레거시(해시 NULL) 계정 로그인 시도에도 bcrypt를 1회 수행해, 응답 시간으로
+# 아이디 존재 여부가 새는 것을 막는다(timing 사이드채널 방어). 모듈 로드 시 1회 계산.
+_DUMMY_PASSWORD_HASH = hash_password("dh-dummy-timing-equalizer")
+
 
 def _coerce_score(value) -> int:
     """온보딩 답변 1개를 정수 점수로 안전 변환한다.
@@ -175,7 +179,13 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> AuthRespons
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
     """아이디·비번 검증 후 JWT 발급. 실패 시 401(아이디 존재 여부 노출 안 함)."""
     user = db.query(User).filter(User.username == payload.username).first()
-    if user is None or not verify_password(payload.password, user.password_hash):
+    if user is None or not user.password_hash:
+        # 미존재/레거시 계정도 동일한 bcrypt 비용을 치르게 해 timing 차이를 없앤다.
+        verify_password(payload.password, _DUMMY_PASSWORD_HASH)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials"
+        )
+    if not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials"
         )

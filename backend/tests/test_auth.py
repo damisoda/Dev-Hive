@@ -142,3 +142,14 @@ def test_login_unknown_user_401():
     client = _login_client(None)   # 아이디 없음
     res = client.post("/auth/login", json={"username": "ghost", "password": "whatever"})
     assert res.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_login_legacy_null_hash_401():
+    # 레거시 계정(password_hash NULL)은 로그인 불가 — 더미 bcrypt 경로로 timing도 동일화
+    legacy = SimpleNamespace(
+        id=2, username="legacy", password_hash=None,
+        display_name="Legacy", persona="개발자", current_level="입문",
+    )
+    client = _login_client(legacy)
+    res = client.post("/auth/login", json={"username": "legacy", "password": "whatever"})
+    assert res.status_code == status.HTTP_401_UNAUTHORIZED

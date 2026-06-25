@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- 1. 유저
 CREATE TABLE IF NOT EXISTS users (
     id                 SERIAL PRIMARY KEY,
-    username           VARCHAR(50) UNIQUE,            -- HIVE-100: 로그인 아이디(신규 가입 필수, 레거시 계정은 NULL)
+    username           VARCHAR(50),                   -- HIVE-100: 로그인 아이디(신규 가입 필수, 레거시 계정은 NULL)
     password_hash      VARCHAR(255),                  -- HIVE-100: bcrypt 해시(레거시는 NULL → 로그인 불가)
     display_name       VARCHAR(100) NOT NULL,
     persona            VARCHAR(20) NOT NULL DEFAULT '개발자',
@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
     influence_score    INT DEFAULT 0,
     created_at         TIMESTAMPTZ DEFAULT NOW()
 );
+-- HIVE-100: username 유일성(비-NULL만). 마이그레이션(migrate_HIVE100_auth.sql)과 동일한 명명 인덱스로 수렴.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_users_username ON users (username);
 
 -- 2. 콘텐츠 (source/author/tags를 필드로 내장)
 CREATE TABLE IF NOT EXISTS content (
