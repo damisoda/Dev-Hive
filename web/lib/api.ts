@@ -31,6 +31,13 @@ interface RequestOpts {
   headers?: Record<string, string>; // 개인화 요청용 X-User-Id 등
 }
 
+function userHeader(userId: number): { "X-User-Id": string } {
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ApiError("유효하지 않은 사용자 ID입니다.", { statusCode: 401 });
+  }
+  return { "X-User-Id": String(userId) };
+}
+
 async function request<T>(path: string, { params, timeoutMs = 10_000, headers }: RequestOpts = {}): Promise<T> {
   const url = new URL(`${API_BASE_URL}${path}`);
   if (params) {
@@ -88,7 +95,8 @@ export function listContent(opts: {
 export function recommend(userId: number, topN = 5): Promise<RecommendResponse> {
   // GraphRAG(LLM rerank)라 실측 ~12s — 타임아웃 여유 필수.
   return request<RecommendResponse>("/recommend", {
-    params: { user_id: userId, top_n: topN },
+    params: { top_n: topN },
+    headers: userHeader(userId),
     timeoutMs: 60_000,
   });
 }
@@ -103,7 +111,7 @@ export function getGraph(light = false): Promise<GraphResponse> {
 
 export function getMastery(userId: number): Promise<MasteryResponse> {
   return request<MasteryResponse>("/recommend/mastery", {
-    params: { user_id: userId },
+    headers: userHeader(userId),
     timeoutMs: 15_000,
   });
 }
@@ -111,7 +119,7 @@ export function getMastery(userId: number): Promise<MasteryResponse> {
 // 읽은 콘텐츠 이력(읽은 순) — 학습경로 '완료' 구간용 (HIVE-65).
 export function getReadHistory(userId: number): Promise<ReadHistoryResponse> {
   return request<ReadHistoryResponse>("/progress", {
-    params: { user_id: userId },
+    headers: userHeader(userId),
     timeoutMs: 15_000,
   });
 }
@@ -121,7 +129,7 @@ export function getReadHistory(userId: number): Promise<ReadHistoryResponse> {
 export async function listFeedback(userId: number): Promise<Record<number, string>> {
   try {
     const data = await request<Record<string, string>>("/feedback", {
-      headers: { "X-User-Id": String(userId) },
+      headers: userHeader(userId),
     });
     const out: Record<number, string> = {};
     for (const [k, v] of Object.entries(data ?? {})) out[Number(k)] = v;
@@ -136,12 +144,12 @@ export function getProfile(userId: number): Promise<Profile> {
 }
 
 export function getStats(userId: number): Promise<Stats> {
-  return request<Stats>("/stats", { params: { user_id: userId }, timeoutMs: 15_000 });
+  return request<Stats>("/stats", { headers: userHeader(userId), timeoutMs: 15_000 });
 }
 
 export function getUserStateText(userId: number): Promise<UserStateResponse> {
   return request<UserStateResponse>("/recommend/user-state", {
-    params: { user_id: userId },
+    headers: userHeader(userId),
     timeoutMs: 15_000,
   });
 }
