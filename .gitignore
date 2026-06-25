@@ -78,3 +78,6 @@ backend/data/*.npz
 
 # 맥미니 배포 시크릿
 deploy/macmini/.env
+
+# 로컬 전용 메모/기획 노트 (GitHub push 금지)
+DEV-HIVE/
