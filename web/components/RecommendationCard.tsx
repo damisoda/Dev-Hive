@@ -1,17 +1,21 @@
 import type { Recommendation } from "@/lib/types";
 import { recommendationView } from "@/lib/viewmodel";
 import { ReadModal } from "./ReadModal";
+import { FeedbackButtons } from "./FeedbackButtons";
 
 // 커리큘럼 '다음 학습 자료' — /recommend(GraphRAG) 한 건. 순위·매치%·pill·요약·근거.
 // 읽기(ReadModal) 시 읽음 처리되어 학습 경로 '완료'로 반영된다 (HIVE-97).
+// 피드백(이해/어려움/더보기/관심없음)도 홈 피드와 동일하게 남길 수 있다(추천 개인화 반영).
 export function RecommendationCard({
   rec,
   rank,
   loggedIn = false,
+  feedback = null,
 }: {
   rec: Recommendation;
   rank: number;
   loggedIn?: boolean;
+  feedback?: string | null;
 }) {
   const vm = recommendationView(rec);
   return (
@@ -41,6 +45,7 @@ export function RecommendationCard({
         )}
         {vm.reason && <blockquote className="rec-reason">{vm.reason}</blockquote>}
         <ReadModal contentId={vm.content_id} title={vm.title} url={vm.url} loggedIn={loggedIn} />
+        {loggedIn && <FeedbackButtons contentId={vm.content_id} current={feedback} />}
       </div>
     </article>
   );
