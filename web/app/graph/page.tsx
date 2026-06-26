@@ -51,9 +51,11 @@ export default async function GraphPage({
   if (session?.token) {
     try {
       const m = await getMastery(session.token);
+      // mastery 키는 정수 curriculum_node id(dict[int,float])지만 그래프 노드 id는 "topic:<id>"
+      // 형식(builder). prefix 없이 비교하면 영원히 미매칭 → 학습경로 하이라이트가 전부 죽는다.
       pathIds = Object.entries(m.mastery)
         .filter(([, v]) => v > 0)
-        .map(([k]) => k);
+        .map(([k]) => `topic:${k}`);
     } catch {
       // mastery 실패 시 조용히 무시 — 그래프는 계속 렌더됨
     }
