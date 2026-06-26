@@ -143,6 +143,22 @@ a { color: inherit; text-decoration: none; }
 a.post-title:hover { color: var(--accent-ink); }
 .post-title .ext { font-size: 12.5px; font-weight: 500; color: var(--text-subtle); margin-left: 6px; white-space: nowrap; }
 
+/* 제목 번역 토글 (HIVE-66) — 영문 제목 + 같은 줄 '번역 보기' 인라인 링크 + 펼침 시 한글 한 줄 */
+.post-title-block { margin: 0 0 10px; line-height: 1.45; }
+.post-title-tr {
+  font-size: 17px; font-weight: 700; letter-spacing: -0.015em; color: var(--text);
+}
+a.post-title-tr:hover { color: var(--accent-ink); }
+.title-tr-toggle {
+  font-family: inherit; font-size: 13px; color: var(--text-subtle);
+  background: none; border: none; padding: 0; margin-left: 8px; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px; white-space: nowrap;
+}
+.title-tr-toggle:hover { color: var(--text-muted); }
+.post-title-ko {
+  display: block; font-size: 14px; color: var(--text-muted); line-height: 1.5; margin-top: 3px;
+}
+
 .pill { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .tag-chip {
@@ -281,6 +297,7 @@ a.rec-title:hover { color: var(--accent-ink); }
 }
 .modal-close:hover { background: var(--accent-wash); color: var(--text); }
 .modal-title { margin: 0 32px 16px 0; font-size: 19px; font-weight: 800; line-height: 1.4; letter-spacing: -0.015em; color: var(--text); }
+.modal-title-ko { margin: -8px 0 16px; font-size: 14.5px; line-height: 1.5; color: var(--text-muted); }
 .modal-lead { margin: 0 0 18px; font-size: 14.5px; line-height: 1.65; color: var(--text-muted); padding-bottom: 16px; border-bottom: 1px solid var(--border); }
 .modal-body { display: flex; flex-direction: column; gap: 2px; }
 .modal-origin { display: inline-block; margin-top: 20px; font-size: 13px; font-weight: 600; color: var(--accent-ink); text-decoration: none; }

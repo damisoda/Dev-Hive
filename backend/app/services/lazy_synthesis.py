@@ -18,11 +18,17 @@ from app.tagging.synthesizer import synthesize
 logger = logging.getLogger(__name__)
 
 
-def ensure_synthesis(content_id: int, db: Session, client: anthropic.Anthropic | None) -> dict | None:
+def ensure_synthesis(
+    content_id: int,
+    db: Session,
+    client: anthropic.Anthropic | None,
+    force: bool = False,
+) -> dict | None:
     """content의 가공 카드를 반환한다. 없으면 생성·저장(lazy + cache). 실패 시 None(graceful).
 
     - synthesis가 이미 있으면 그대로 반환(캐시 히트).
-    - client(키) 없으면 생성하지 않고 None(추천은 계속).
+    - force=True면 기존 캐시를 무시하고 재생성한다(HIVE-66: title_ko 등 새 필드 채우기 배치용).
+    - client(키) 없으면 생성하지 않고 기존 캐시(있으면)/None(추천은 계속).
     - synthesize가 None(미지원 content_type 등)이면 저장하지 않고 None.
     """
     row = db.execute(
@@ -31,10 +37,10 @@ def ensure_synthesis(content_id: int, db: Session, client: anthropic.Anthropic |
     ).fetchone()
     if row is None:
         return None
-    if row.synthesis is not None:
+    if row.synthesis is not None and not force:
         return row.synthesis  # 캐시 히트 (JSONB → dict)
     if client is None:
-        return None  # ANTHROPIC 키 없음 → 가공 생략, 추천 자체는 정상 반환
+        return row.synthesis  # 키 없음 → 생성 불가. 기존 캐시 있으면 그대로, 없으면 None
 
     item = {"title": row.title, "body": row.body or ""}
     tags = {"content_type": row.content_type}

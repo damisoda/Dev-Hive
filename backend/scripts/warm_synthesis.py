@@ -34,9 +34,12 @@ BATCH_SLEEP = float(os.getenv("WARM_SYNTHESIS_SLEEP", "0.5"))
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="HIVE-80 synthesis warm")
+    parser = argparse.ArgumentParser(description="HIVE-80 synthesis warm / HIVE-66 재생성")
     parser.add_argument("--dry-run", action="store_true", help="대상 건수만 출력, DB 변경 없음")
-    parser.add_argument("--all", action="store_true", help="synthesis=NULL 전체 대상 (기본: 재태깅분만)")
+    parser.add_argument("--all", action="store_true", help="content_type 필터 없이 전체 대상 (기본: 유효 5타입)")
+    parser.add_argument("--force", action="store_true", help="기존 synthesis도 재생성 (HIVE-66 title_ko 채우기)")
+    parser.add_argument("--lang", help="language 필터 (예: en — 제목 번역 품질 점검용)")
+    parser.add_argument("--limit", type=int, help="처리 건수 상한 (테스트용)")
     args = parser.parse_args()
 
     db_url = os.getenv("DATABASE_URL")
@@ -49,26 +52,26 @@ def main() -> None:
 
     engine = create_engine(db_url)
 
+    # 조건 조립: 유효타입(기본) / synthesis NULL(--force면 기존도 포함) / language / limit
+    conds: list[str] = []
+    params: dict = {}
+    if not args.all:
+        conds.append(
+            "content_type IN ('experience','tutorial','concept','tool','discussion')"
+        )
+    if not args.force:
+        conds.append("synthesis IS NULL")  # 기본: 미생성만. --force면 기존 가공본도 재생성.
+    if args.lang:
+        conds.append("language = :lang")
+        params["lang"] = args.lang
+    where = " AND ".join(conds) if conds else "TRUE"
+    sql = f"SELECT id, content_type FROM content WHERE {where} ORDER BY id"
+    if args.limit:
+        sql += " LIMIT :limit"
+        params["limit"] = args.limit
+
     with engine.connect() as conn:
-        # 재태깅분: content_type이 유효 5타입이고 synthesis NULL
-        # --all: synthesis NULL 전체
-        if args.all:
-            rows = conn.execute(
-                text(
-                    "SELECT id, content_type FROM content "
-                    "WHERE synthesis IS NULL "
-                    "ORDER BY id"
-                )
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                text(
-                    "SELECT id, content_type FROM content "
-                    "WHERE synthesis IS NULL "
-                    "  AND content_type IN ('experience','tutorial','concept','tool','discussion') "
-                    "ORDER BY id"
-                )
-            ).fetchall()
+        rows = conn.execute(text(sql), params).fetchall()
 
     total = len(rows)
     print(f"\n대상: {total}건")
@@ -88,7 +91,7 @@ def main() -> None:
     with Session(engine) as db:
         for i, row in enumerate(rows, 1):
             try:
-                card = ensure_synthesis(row.id, db, client)
+                card = ensure_synthesis(row.id, db, client, force=args.force)
                 if card is not None:
                     success += 1
                     logger.info("[%d/%d] id=%s type=%s → 완료", i, total, row.id, row.content_type)
