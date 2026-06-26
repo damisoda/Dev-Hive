@@ -42,22 +42,11 @@ from app.graph.auto_hkg import (
     _parse_emb,
     _unit,
     find_catchall_nodes,
+    get_node_contents,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
-
-
-def get_node_contents(conn, node_id: int) -> list[dict]:
-    """해당 노드에 매핑된 콘텐츠(임베딩 보유분)."""
-    rows = conn.execute(text("""
-        SELECT c.id, c.title, c.text_embedding
-        FROM content c
-        JOIN content_node_mapping m ON m.content_id = c.id
-        WHERE m.node_id = :nid
-          AND c.text_embedding IS NOT NULL
-    """), {"nid": node_id}).fetchall()
-    return [{"id": r.id, "title": r.title or "", "emb": r.text_embedding} for r in rows]
 
 
 def split_node(

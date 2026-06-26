@@ -7,6 +7,7 @@ LLM/DB 없이 가짜 커넥션 + 가짜 Haiku로 2-패스 로직을 검증한다
 - 클러스터 네이밍은 Haiku 호출 1회/클러스터, 실패 시 폴백
 """
 import json
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import numpy as np
@@ -355,6 +356,29 @@ class _CatchallConn:
         return _Result([])
 
 
+class _CatchallEngine:
+    """split_catchall_nodes가 사용하는 Engine 인터페이스를 흉내내는 가짜 엔진."""
+
+    def __init__(self, catchall_rows, content_rows_by_node_id, new_id_start=800):
+        self._conn = _CatchallConn(catchall_rows, content_rows_by_node_id, new_id_start)
+
+    @contextmanager
+    def connect(self):
+        yield self._conn
+
+    @contextmanager
+    def begin(self):
+        yield self._conn
+
+    @property
+    def created(self):
+        return self._conn.created
+
+    @property
+    def mappings(self):
+        return self._conn.mappings
+
+
 def _catchall_row(node_id, name, degree):
     return SimpleNamespace(id=node_id, name=name, degree=degree)
 
@@ -393,10 +417,10 @@ def test_split_catchall_nodes_creates_subnodes():
             _content_row(13, [0, 1, 0, 0]),    # 고아
         ]
     }
-    conn = _CatchallConn(catchall, contents)
+    engine = _CatchallEngine(catchall, contents)
     client = _FakeAnthropic(name="LLM 서빙")
 
-    stats = split_catchall_nodes(conn, client, min_degree=1)
+    stats = split_catchall_nodes(engine, client, min_degree=1)
 
     assert stats["catchall_nodes"] == 1
     assert stats["contents_processed"] == 4
@@ -404,13 +428,13 @@ def test_split_catchall_nodes_creates_subnodes():
     assert stats["remapped"] == 3           # 3개 재매핑
     assert stats["llm_calls"] == 1
     # 생성된 노드의 parent_id = catch-all 노드 id(1)
-    assert conn.created[0][2] == 1
+    assert engine.created[0][2] == 1
 
 
 def test_split_catchall_nodes_no_catchall_is_noop():
-    conn = _CatchallConn([], {})
+    engine = _CatchallEngine([], {})
     client = _FakeAnthropic()
-    stats = split_catchall_nodes(conn, client, min_degree=50)
+    stats = split_catchall_nodes(engine, client, min_degree=50)
     assert stats["catchall_nodes"] == 0
     assert stats["new_nodes"] == 0
     assert client.calls == 0
@@ -418,8 +442,8 @@ def test_split_catchall_nodes_no_catchall_is_noop():
 
 def test_split_catchall_nodes_skips_node_without_embeddings():
     catchall = [_catchall_row(5, "빈노드", 100)]
-    conn = _CatchallConn(catchall, {5: []})   # 콘텐츠 없음
+    engine = _CatchallEngine(catchall, {5: []})   # 콘텐츠 없음
     client = _FakeAnthropic()
-    stats = split_catchall_nodes(conn, client, min_degree=1)
+    stats = split_catchall_nodes(engine, client, min_degree=1)
     assert stats["new_nodes"] == 0
     assert client.calls == 0

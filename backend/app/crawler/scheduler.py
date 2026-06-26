@@ -69,8 +69,7 @@ def run_auto_hkg_job() -> None:
         )
 
         # 2) catch-all 분할 — degree≥50 과흡수 노드를 하위 노드로 쪼갠다
-        with engine.begin() as conn:
-            split_stats = split_catchall_nodes(conn, client)
+        split_stats = split_catchall_nodes(engine, client)
         if split_stats["catchall_nodes"] > 0:
             logger.info(
                 "catch-all 분할 완료 — 대상노드:%s / 처리콘텐츠:%s / 신규하위노드:%s / 재매핑:%s / LLM:%s",

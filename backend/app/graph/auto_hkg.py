@@ -34,7 +34,7 @@ import anthropic
 import networkx as nx
 import numpy as np
 from sqlalchemy import text
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, Engine
 
 from app.tagging.tagger import MODEL
 
@@ -543,13 +543,32 @@ def expand_one(content: dict, centroids: dict[int, np.ndarray], info: dict[int, 
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def get_node_contents(conn: Connection, node_id: int) -> list[dict]:
+    """해당 노드에 매핑된 콘텐츠(임베딩 보유분)를 반환한다."""
+    rows = conn.execute(text("""
+        SELECT c.id, c.title, c.text_embedding
+        FROM content c
+        JOIN content_node_mapping m ON m.content_id = c.id
+        WHERE m.node_id = :nid
+          AND c.text_embedding IS NOT NULL
+    """), {"nid": node_id}).fetchall()
+    return [{"id": r.id, "title": r.title or "", "emb": r.text_embedding} for r in rows]
+
+
 def find_catchall_nodes(conn: Connection, min_degree: int = CATCHALL_MIN_DEGREE) -> list[dict]:
-    """degree >= min_degree인 비-자동 skeleton 노드 목록을 반환한다."""
+    """degree >= min_degree이고 아직 분할되지 않은 비-자동 skeleton 노드 목록을 반환한다.
+
+    이미 자동 생성 자식 노드가 존재하는 skeleton 노드는 제외해 멱등성을 보장한다.
+    """
     rows = conn.execute(text("""
         SELECT n.id, n.name, COUNT(m.content_id) AS degree
         FROM curriculum_nodes n
         JOIN content_node_mapping m ON m.node_id = n.id
         WHERE n.is_auto_generated = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM curriculum_nodes c2
+              WHERE c2.parent_id = n.id AND c2.is_auto_generated = TRUE
+          )
         GROUP BY n.id, n.name
         HAVING COUNT(m.content_id) >= :min_degree
         ORDER BY degree DESC
@@ -558,7 +577,7 @@ def find_catchall_nodes(conn: Connection, min_degree: int = CATCHALL_MIN_DEGREE)
 
 
 def split_catchall_nodes(
-    conn: Connection,
+    engine: Engine,
     client: anthropic.Anthropic,
     min_degree: int = CATCHALL_MIN_DEGREE,
     group_threshold: float = GROUP_THRESHOLD,
@@ -566,50 +585,74 @@ def split_catchall_nodes(
 ) -> dict:
     """degree >= min_degree인 skeleton 노드를 탐지해 하위 노드로 분할한다(HIVE-89).
 
-    각 catch-all 노드의 콘텐츠를 재클러스터링해 소주제 하위 노드를 자동 생성한다.
-    원래 노드 매핑은 유지하고 신규 하위 노드 매핑을 추가한다.
+    3단계로 실행한다:
+    1) 읽기: 과흡수 노드 탐지 + 콘텐츠 프리페치 (단일 read 커넥션)
+    2) LLM: 클러스터 네이밍 (트랜잭션 외부 — LLM 레이턴시 중 락·커넥션 비점유)
+    3) 쓰기: 노드별 독립 트랜잭션 (단일 LLM 오류가 다른 노드 롤백을 방지)
+
     반환: {catchall_nodes, contents_processed, new_nodes, remapped, llm_calls}
     """
-    nodes = find_catchall_nodes(conn, min_degree)
-    stats = {
-        "catchall_nodes": len(nodes),
-        "contents_processed": 0,
-        "new_nodes": 0,
-        "remapped": 0,
-        "llm_calls": 0,
-    }
+    with _expand_graph_lock:  # expand_graph와 동일 락으로 _create_node 동시 실행 차단
+        # ── 1) 읽기 단계 ────────────────────────────────────────────────────
+        with engine.connect() as read_conn:
+            nodes = find_catchall_nodes(read_conn, min_degree)
+            stats: dict = {
+                "catchall_nodes": len(nodes),
+                "contents_processed": 0,
+                "new_nodes": 0,
+                "remapped": 0,
+                "llm_calls": 0,
+            }
+            if not nodes:
+                return stats
 
-    for node in nodes:
-        nid, name = node["id"], node["name"]
-        rows = conn.execute(text("""
-            SELECT c.id, c.title, c.text_embedding
-            FROM content c
-            JOIN content_node_mapping m ON m.content_id = c.id
-            WHERE m.node_id = :nid AND c.text_embedding IS NOT NULL
-        """), {"nid": nid}).fetchall()
-        contents = [{"id": r.id, "title": r.title or "", "emb": r.text_embedding} for r in rows]
+            contents_by_node = {
+                node["id"]: get_node_contents(read_conn, node["id"])
+                for node in nodes
+            }
 
-        if not contents:
-            continue
+        # ── 2) LLM 단계 (트랜잭션 외부) ─────────────────────────────────────
+        # (node, n_contents, n_orphans, [(members, sub_name, sub_desc)])
+        cluster_plans: list[tuple] = []
+        for node in nodes:
+            nid = node["id"]
+            contents = contents_by_node.get(nid, [])
+            if not contents:
+                continue
 
-        stats["contents_processed"] += len(contents)
-        residuals = [(c["id"], _unit(_parse_emb(c["emb"]))) for c in contents]
-        title_by_id = {c["id"]: c["title"] for c in contents}
-        clusters, _ = _cluster_residuals(residuals, group_threshold, min_cluster_size)
+            residuals = [(c["id"], _unit(_parse_emb(c["emb"]))) for c in contents]
+            title_by_id = {c["id"]: c["title"] for c in contents}
+            clusters, orphans = _cluster_residuals(residuals, group_threshold, min_cluster_size)
 
-        for members in clusters:
-            titles = [title_by_id.get(cid, "") for cid in members]
-            sub_name, sub_desc = _name_cluster(titles, client)
-            stats["llm_calls"] += 1
-            new_id = _create_node(conn, sub_name, sub_desc, nid)
-            stats["new_nodes"] += 1
-            for cid in members:
-                _map(conn, cid, new_id, 1.0)
-                stats["remapped"] += 1
+            named_clusters: list[tuple] = []
+            for members in clusters:
+                titles = [title_by_id[cid] for cid in members]
+                sub_name, sub_desc = _name_cluster(titles, client)
+                stats["llm_calls"] += 1
+                named_clusters.append((members, sub_name, sub_desc))
 
-        logger.info(
-            "catch-all 분할: '%s'(id=%d) → 하위노드 %d개 / 재매핑 %d건",
-            name, nid, len(clusters), sum(len(c) for c in clusters),
-        )
+            cluster_plans.append((node, len(contents), len(orphans), named_clusters))
+
+        # ── 3) 쓰기 단계 (노드별 독립 트랜잭션) ──────────────────────────────
+        for node, n_contents, n_orphans, named_clusters in cluster_plans:
+            nid, name = node["id"], node["name"]
+            stats["contents_processed"] += n_contents
+            try:
+                with engine.begin() as conn:
+                    for members, sub_name, sub_desc in named_clusters:
+                        new_id = _create_node(conn, sub_name, sub_desc, nid)
+                        stats["new_nodes"] += 1
+                        for cid in members:
+                            _map(conn, cid, new_id, 1.0)
+                            stats["remapped"] += 1
+            except Exception:
+                logger.exception("catch-all 분할 실패 — '%s'(id=%d), 스킵", name, nid)
+                continue
+
+            n_remapped = sum(len(m) for m, _, _ in named_clusters)
+            logger.info(
+                "catch-all 분할: '%s'(id=%d) → 하위노드 %d개 / 재매핑 %d건 / 고아 %d건",
+                name, nid, len(named_clusters), n_remapped, n_orphans,
+            )
 
     return stats
