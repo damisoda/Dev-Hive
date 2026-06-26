@@ -32,6 +32,7 @@ load_dotenv(ROOT / ".env")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.graph.auto_hkg import (
+    CATCHALL_MIN_DEGREE,
     GROUP_THRESHOLD,
     MIN_CLUSTER_SIZE,
     _cluster_residuals,
@@ -40,38 +41,12 @@ from app.graph.auto_hkg import (
     _name_cluster,
     _parse_emb,
     _unit,
+    find_catchall_nodes,
+    get_node_contents,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
-
-DEFAULT_MIN_DEGREE = 50  # 이 이상 매핑을 가진 skeleton 노드를 catch-all로 판정
-
-
-def find_catchall_nodes(conn, min_degree: int) -> list[dict]:
-    """degree >= min_degree 인 비-자동 skeleton 노드 목록."""
-    rows = conn.execute(text("""
-        SELECT n.id, n.name, COUNT(m.content_id) AS degree
-        FROM curriculum_nodes n
-        JOIN content_node_mapping m ON m.node_id = n.id
-        WHERE n.is_auto_generated = FALSE
-        GROUP BY n.id, n.name
-        HAVING COUNT(m.content_id) >= :min_degree
-        ORDER BY degree DESC
-    """), {"min_degree": min_degree}).fetchall()
-    return [{"id": r.id, "name": r.name, "degree": r.degree} for r in rows]
-
-
-def get_node_contents(conn, node_id: int) -> list[dict]:
-    """해당 노드에 매핑된 콘텐츠(임베딩 보유분)."""
-    rows = conn.execute(text("""
-        SELECT c.id, c.title, c.text_embedding
-        FROM content c
-        JOIN content_node_mapping m ON m.content_id = c.id
-        WHERE m.node_id = :nid
-          AND c.text_embedding IS NOT NULL
-    """), {"nid": node_id}).fetchall()
-    return [{"id": r.id, "title": r.title or "", "emb": r.text_embedding} for r in rows]
 
 
 def split_node(
@@ -129,8 +104,8 @@ def main() -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--node-id", type=int, help="분할할 노드 ID")
     group.add_argument("--node-name", type=str, help="분할할 노드 이름 (부분 일치)")
-    parser.add_argument("--min-degree", type=int, default=DEFAULT_MIN_DEGREE,
-                        help=f"자동 탐지 임계값 (기본 {DEFAULT_MIN_DEGREE})")
+    parser.add_argument("--min-degree", type=int, default=CATCHALL_MIN_DEGREE,
+                        help=f"자동 탐지 임계값 (기본 {CATCHALL_MIN_DEGREE})")
     parser.add_argument("--min-cluster-size", type=int, default=MIN_CLUSTER_SIZE,
                         help=f"클러스터 승격 최소 크기 (기본 {MIN_CLUSTER_SIZE})")
     parser.add_argument("--group-threshold", type=float, default=GROUP_THRESHOLD,
