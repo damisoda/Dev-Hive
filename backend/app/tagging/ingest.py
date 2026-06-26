@@ -226,7 +226,7 @@ def ingest_items(
                 stats["inserted"] += 1
 
         except Exception as e:
-            logger.info("[%03d] ERROR  %s\n      %s", i, title, e)
+            logger.warning("[%03d] ERROR  %s\n      %s", i, title, e)
             stats["load_failed"] += 1
 
     logger.info(
