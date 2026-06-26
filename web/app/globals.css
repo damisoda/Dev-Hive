@@ -212,6 +212,9 @@ a.post-title-tr:hover { color: var(--accent-ink); }
 .synth-block ul { margin: 0; padding-left: 18px; }
 .synth-block li { font-size: 14px; line-height: 1.6; color: var(--text); margin-bottom: 3px; }
 .synth-err { margin: 0; font-size: 13.5px; color: var(--text-muted); }
+.synth-pending { margin: 0; font-size: 13.5px; color: var(--text-muted); }
+.synth-pending a { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
+.synth-pending a:hover { text-decoration: underline; }
 
 /* 커리큘럼 '다음 학습 자료' 추천 카드 */
 .rec-list { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }

@@ -27,6 +27,7 @@ export function ReadModal({
   const [synth, setSynth] = useState<Synth | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [synthPending, setSynthPending] = useState(false);
   const [levelUp, setLevelUp] = useState<string | null>(null);
   const [koOpen, setKoOpen] = useState(false);
 
@@ -47,7 +48,7 @@ export function ReadModal({
       else if (data.synthesis) {
         setSynth(data.synthesis as Synth);
         if (data.leveled_up && data.new_level) setLevelUp(data.new_level as string);
-      } else setErr("아직 재가공본이 준비되지 않았어요.");
+      } else setSynthPending(true);
     } catch {
       setErr("재가공본을 불러오지 못했어요.");
     } finally {
@@ -57,7 +58,7 @@ export function ReadModal({
 
   function openModal() {
     setOpen(true);
-    if (!synth && !err) load();
+    if (!synth && !err && !synthPending) load();
   }
 
   // Esc 닫기 + 배경 스크롤 잠금
@@ -111,6 +112,16 @@ export function ReadModal({
             <div className="modal-body">
               {loading && <p className="synth-err">여는 중…</p>}
               {err && <p className="synth-err">{err}</p>}
+              {synthPending && (
+                <p className="synth-pending">
+                  재가공본을 준비 중이에요.{" "}
+                  {url && (
+                    <a href={url} target="_blank" rel="noopener noreferrer">
+                      원문에서 직접 확인해 보세요 ↗
+                    </a>
+                  )}
+                </p>
+              )}
               {synth && <SynthBody synth={synth} />}
             </div>
 
