@@ -53,6 +53,8 @@ DEDUP_FLOOR = 0.62       # 흡수정밀도 하한 보장(0.62 미만은 정밀�
 
 # HIVE-89: degree 이 이상인 skeleton 노드를 catch-all로 판정하고 자동 분할한다.
 CATCHALL_MIN_DEGREE = 50
+CATCHALL_TARGET_SIZE = 45   # catch-all k-means 분할 시 하위노드당 목표 콘텐츠 수(k=round(잔여/이값))
+CATCHALL_OUTLIER_SIM = 0.45 # 자기 군집 centroid 코사인 이 미만이면 강제편입 안 함(고아=신규주제 후보 보존)
 
 # expand_graph는 동일 DB에 대해 동시에 두 경로(_maybe_ingest + 48h 스케줄)로 호출될 수 있다.
 # 락 없이 동시 실행되면 _create_node(UNIQUE 제약 없음)가 중복 노드를 생성한다.
@@ -239,6 +241,59 @@ def _cluster_residuals(
         else:
             orphans.extend(members)
     # 큰 클러스터 먼저 (로그 가독성 + 안정적 순서)
+    clusters.sort(key=len, reverse=True)
+    return clusters, orphans
+
+
+def _partition_residuals(
+    residuals: list[tuple[int, np.ndarray]],
+    target_size: int = CATCHALL_TARGET_SIZE,
+    min_size: int = MIN_CLUSTER_SIZE,
+    outlier_threshold: float = CATCHALL_OUTLIER_SIM,
+) -> tuple[list[list[int]], list[int]]:
+    """잔여 콘텐츠를 spherical k-means로 **분할(partition)**한다 — catch-all 전용.
+
+    연결요소(_cluster_residuals)는 빽빽한 대주제 잔여를 거대 단일 클러스터(낮은 임계)나
+    전부 고아(높은 임계)로 만들어 catch-all을 못 쪼갠다(실측). k-means는 콘텐츠를 k개 균형
+    클러스터로 배정한다. k=round(n/target_size). 임베딩은 단위벡터라 코사인=내적 → centroid를
+    정규화한 spherical k-means. sklearn 의존 없이 numpy Lloyd로 구현.
+
+    **이상치 가드**: 자기 군집 centroid 코사인 < outlier_threshold인 콘텐츠는 강제편입하지 않고
+    고아로 둔다 — '어디에도 잘 안 맞는' 글이 새 하위노드/대주제 후보(자가성장 신호)로 남게 해
+    self-organizing 능력을 보존한다. 크기 < min_size 클러스터도 고아로 돌려 마이크로노드 폭발 방지.
+    """
+    n = len(residuals)
+    if n < max(min_size, 2):
+        return [], [cid for cid, _ in residuals]
+    k = max(2, round(n / target_size))
+    X = np.array([emb for _, emb in residuals])          # (n, d), 각 행 단위벡터
+    rng = np.random.default_rng(0)
+    cent = X[rng.choice(n, size=k, replace=False)].copy()
+    labels = np.zeros(n, dtype=int)
+    for _ in range(30):
+        labels = (X @ cent.T).argmax(axis=1)             # 코사인 최대 군집 배정
+        moved = False
+        for c in range(k):
+            members = X[labels == c]
+            new_c = _unit(members.mean(axis=0)) if len(members) else X[rng.integers(n)]
+            if not np.allclose(new_c, cent[c]):
+                cent[c] = new_c
+                moved = True
+        if not moved:
+            break
+    buckets: dict[int, list[int]] = {}
+    orphans: list[int] = []
+    for i, ((cid, _), lab) in enumerate(zip(residuals, labels)):
+        if float(X[i] @ cent[lab]) < outlier_threshold:
+            orphans.append(cid)          # 자기 군집에서도 먼 이상치 → 강제편입 안 함(신규주제 후보)
+        else:
+            buckets.setdefault(int(lab), []).append(cid)
+    clusters: list[list[int]] = []
+    for members in buckets.values():
+        if len(members) >= min_size:
+            clusters.append(members)
+        else:
+            orphans.extend(members)
     clusters.sort(key=len, reverse=True)
     return clusters, orphans
 
@@ -543,22 +598,41 @@ def expand_one(content: dict, centroids: dict[int, np.ndarray], info: dict[int, 
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def get_node_contents(conn: Connection, node_id: int) -> list[dict]:
-    """해당 노드에 매핑된 콘텐츠(임베딩 보유분)를 반환한다."""
-    rows = conn.execute(text("""
+def get_node_contents(
+    conn: Connection, node_id: int, exclude_auto_children: bool = False
+) -> list[dict]:
+    """해당 노드에 매핑된 콘텐츠(임베딩 보유분)를 반환한다.
+
+    exclude_auto_children=True면 '이 노드의 auto 자식에 이미 매핑된' 콘텐츠는 제외(=잔여만).
+    catch-all 재분할이 멱등하도록(이미 분할된 콘텐츠 재클러스터 방지) split 경로에서 사용한다.
+    """
+    extra = ""
+    if exclude_auto_children:
+        extra = """
+          AND NOT EXISTS (
+              SELECT 1 FROM content_node_mapping mc
+              JOIN curriculum_nodes ch ON ch.id = mc.node_id
+              WHERE mc.content_id = c.id
+                AND ch.parent_id = :nid AND ch.is_auto_generated = TRUE
+          )"""
+    rows = conn.execute(text(f"""
         SELECT c.id, c.title, c.text_embedding
         FROM content c
         JOIN content_node_mapping m ON m.content_id = c.id
         WHERE m.node_id = :nid
-          AND c.text_embedding IS NOT NULL
+          AND c.text_embedding IS NOT NULL{extra}
     """), {"nid": node_id}).fetchall()
     return [{"id": r.id, "title": r.title or "", "emb": r.text_embedding} for r in rows]
 
 
 def find_catchall_nodes(conn: Connection, min_degree: int = CATCHALL_MIN_DEGREE) -> list[dict]:
-    """degree >= min_degree이고 아직 분할되지 않은 비-자동 skeleton 노드 목록을 반환한다.
+    """**잔여**(이 노드 직접매핑 중 auto 자식에 아직 안 들어간) 콘텐츠가 min_degree 이상인
+    비-자동 skeleton 노드를 반환한다.
 
-    이미 자동 생성 자식 노드가 존재하는 skeleton 노드는 제외해 멱등성을 보장한다.
+    멱등성: 기존엔 'auto 자식이 하나라도 있으면 영구 제외'였으나, 그 탓에 한 번 소수 분할된
+    대주제가 거대 잔여(수백 건)를 안고 다시는 분할되지 않는 catch-all 고착이 생겼다(감사 실측).
+    → 잔여 기준으로 바꿔, 분할 후 잔여가 임계 미만이 되면 자연히 멈추고(멱등), 잔여가 여전히
+    크면 추가 분할한다. degree = '아직 auto 자식에 안 들어간' 직접매핑 수.
     """
     rows = conn.execute(text("""
         SELECT n.id, n.name, COUNT(m.content_id) AS degree
@@ -566,8 +640,10 @@ def find_catchall_nodes(conn: Connection, min_degree: int = CATCHALL_MIN_DEGREE)
         JOIN content_node_mapping m ON m.node_id = n.id
         WHERE n.is_auto_generated = FALSE
           AND NOT EXISTS (
-              SELECT 1 FROM curriculum_nodes c2
-              WHERE c2.parent_id = n.id AND c2.is_auto_generated = TRUE
+              SELECT 1 FROM content_node_mapping mc
+              JOIN curriculum_nodes ch ON ch.id = mc.node_id
+              WHERE mc.content_id = m.content_id
+                AND ch.parent_id = n.id AND ch.is_auto_generated = TRUE
           )
         GROUP BY n.id, n.name
         HAVING COUNT(m.content_id) >= :min_degree
@@ -607,7 +683,7 @@ def split_catchall_nodes(
                 return stats
 
             contents_by_node = {
-                node["id"]: get_node_contents(read_conn, node["id"])
+                node["id"]: get_node_contents(read_conn, node["id"], exclude_auto_children=True)
                 for node in nodes
             }
 
@@ -622,7 +698,7 @@ def split_catchall_nodes(
 
             residuals = [(c["id"], _unit(_parse_emb(c["emb"]))) for c in contents]
             title_by_id = {c["id"]: c["title"] for c in contents}
-            clusters, orphans = _cluster_residuals(residuals, group_threshold, min_cluster_size)
+            clusters, orphans = _partition_residuals(residuals, min_size=min_cluster_size)
 
             named_clusters: list[tuple] = []
             for members in clusters:

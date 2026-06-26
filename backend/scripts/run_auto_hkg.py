@@ -56,7 +56,7 @@ def main() -> None:
                 "DELETE FROM curriculum_nodes WHERE is_auto_generated = TRUE"
             )).rowcount
             print(f"[reset] 기존 자동노드 {n_node}개 / 매핑 {n_map}건 삭제\n")
-        stats = expand_graph(conn, client, limit=args.limit)
+        stats = expand_graph(conn, client, limit=args.limit, dynamic_dedup=True)  # HIVE-57 동적 흡수
         if args.dry_run:
             trans.rollback()
         else:
