@@ -224,24 +224,26 @@ def _parse_card(raw_text: str) -> dict:
     """Haiku 응답 텍스트에서 코드블록을 제거하고 JSON으로 파싱한다(tagger와 동일).
 
     LLM이 닫는 ``` 이후에 설명을 추가하는 경우(Extra data) JSON 객체 범위만 추출해 파싱.
+    DOTALL 미사용: JSON 값 내부 백틱(```bash```)이 있어도 삭제되지 않도록 줄 끝 앵커($)만 사용.
     """
-    raw = re.sub(r"^```json\s*", "", raw_text.strip())
-    raw = re.sub(r"\s*```.*$", "", raw, flags=re.DOTALL)
+    raw = re.sub(r"^```(?:json)?\s*", "", raw_text.strip())  # ```json 또는 ``` 모두 제거
+    raw = re.sub(r"\s*```\s*$", "", raw)                      # 닫는 ``` 만 제거(DOTALL 없음)
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        # ``` 제거 후에도 JSON 뒤에 잉여 텍스트가 있으면 첫 번째 객체만 추출
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        # JSON 뒤에 잉여 텍스트가 있으면 첫 번째 완전한 객체만 추출.
+        # non-greedy + 1단계 중첩 허용으로 과잉 매칭 방지.
+        m = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", raw)
         if m:
             return json.loads(m.group())
         raise
 
 
 # LLM이 null 대신 "원문에서 명시되지 않음" 같은 위장 텍스트를 쓰는 패턴 감지.
-# 이런 값은 null/빈 배열로 대체한다.
+# - 첫 번째 브랜치: "원문에서" + 동사 + 부정형(되지 않/안 됨/없음)만 매칭 — 양성형 오탐 방지
+# - 두 번째 브랜치: 영문 부정형
 _PHANTOM_PATTERNS = re.compile(
-    r"원문에서\s*(명시|언급|설명|나타나|등장)|"
-    r"(명시|언급|설명)\s*되지\s*않|"
+    r"원문에서\s*(명시|언급|설명|나타나|등장)\s*(되지\s*않|안\s*됨|없음)|"
     r"not\s*(mentioned|specified|provided|stated)\s*in",
     re.IGNORECASE,
 )

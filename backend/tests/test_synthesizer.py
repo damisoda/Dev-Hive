@@ -98,6 +98,18 @@ def test_is_phantom_detects_korean_patterns():
     assert _is_phantom("실제 내용이 있는 문장") is False
 
 
+def test_is_phantom_no_false_positive_on_positive_form():
+    # "원문에서 언급된 X" 양성형은 정상 내용 — phantom 아님
+    assert _is_phantom("원문에서 언급된 세 가지 핵심 원칙이 있다") is False
+    assert _is_phantom("원문에서 설명한 작동 원리") is False
+
+
+def test_is_phantom_no_false_positive_on_technical_negation():
+    # "명시되지 않은 기본값" 등 기술적 관형절은 phantom 아님 (원문에서 prefix 없음)
+    assert _is_phantom("명시되지 않은 기본값이 보안 취약점을 유발한다") is False
+    assert _is_phantom("설명되지 않는 예외 케이스가 있음") is False
+
+
 def test_is_phantom_detects_english_patterns():
     assert _is_phantom("not mentioned in source") is True
     assert _is_phantom("not specified in the original") is True
@@ -444,6 +456,47 @@ def test_code_fence_stripped():
     }
     fenced = "```json\n" + json.dumps(card, ensure_ascii=False) + "\n```"
     client = _FakeAnthropic(reply_text=fenced)
+    out = synthesize(_ITEM, {"content_type": "discussion"}, client)
+    assert out is not None
+    assert out["claim"] == "c"
+
+
+def test_bare_code_fence_stripped():
+    # ```json 태그 없는 bare ``` 펜스도 파싱된다 (DOTALL 버그 회귀 방지)
+    card = {
+        "one_liner": "x", "key_takeaways": ["RAG 활용"],
+        "claim": "c", "arguments": ["갱신 용이"], "counterpoints": [], "conclusion": "z",
+    }
+    fenced = "```\n" + json.dumps(card, ensure_ascii=False) + "\n```"
+    client = _FakeAnthropic(reply_text=fenced)
+    out = synthesize(_ITEM, {"content_type": "discussion"}, client)
+    assert out is not None
+    assert out["claim"] == "c"
+
+
+def test_backtick_in_json_value_not_eaten():
+    # JSON 값 내부에 백틱이 있어도 파싱이 깨지지 않는다 (DOTALL 버그 회귀 방지)
+    card = {
+        "one_liner": "x",
+        "key_takeaways": ["RAG 활용"],
+        "goal": "로컬에서 모델 실행",
+        "steps": ["pip install vllm 으로 설치한다", "use ```bash``` shell for execution"],
+        "result": "추론 서버 실행 완료",
+        "notes": [],
+    }
+    client = _FakeAnthropic(reply_text=json.dumps(card, ensure_ascii=False))
+    out = synthesize(_ITEM, {"content_type": "tutorial"}, client)
+    assert out is not None
+
+
+def test_trailing_comment_after_json_parsed():
+    # JSON 닫는 중괄호 뒤에 설명 텍스트가 있어도 첫 번째 객체만 추출해 파싱한다
+    card = {
+        "one_liner": "x", "key_takeaways": ["RAG 활용"],
+        "claim": "c", "arguments": ["갱신 용이"], "counterpoints": [], "conclusion": "z",
+    }
+    with_trailing = json.dumps(card, ensure_ascii=False) + "\n\n여기는 설명 텍스트입니다."
+    client = _FakeAnthropic(reply_text=with_trailing)
     out = synthesize(_ITEM, {"content_type": "discussion"}, client)
     assert out is not None
     assert out["claim"] == "c"
