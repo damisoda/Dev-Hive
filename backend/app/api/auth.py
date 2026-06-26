@@ -5,7 +5,7 @@
 서명을 검증하므로 헤더 위조로 타인을 사칭할 수 없다(IDOR 봉합, HIVE-86 후속).
 """
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -17,6 +17,11 @@ from app.services.constants import (
     PERSONA_ONBOARDING,
 )
 from app.services.profile_vector import build_initial_vector
+from app.services.rate_limit import (
+    check_and_record_login_attempt,
+    check_rate_limit,
+    clear_login_failures,
+)
 from app.services.security import (
     create_access_token,
     decode_access_token,
@@ -142,8 +147,10 @@ class AuthResponse(BaseModel):
 
 
 @router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> AuthResponse:
+def signup(request: Request, payload: SignupRequest, db: Session = Depends(get_db)) -> AuthResponse:
     """아이디·비번 + 온보딩으로 계정 생성 후 JWT 발급. 중복 아이디는 409."""
+    ip = request.client.host if request.client else "unknown"
+    check_rate_limit(f"signup:{ip}", limit=10, window_seconds=3600, detail="가입 요청이 너무 많습니다.")
     level = compute_initial_level(payload.onboarding_answers, payload.persona)
     user = User(
         username=payload.username,
@@ -176,8 +183,13 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> AuthRespons
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
+def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
     """아이디·비번 검증 후 JWT 발급. 실패 시 401(아이디 존재 여부 노출 안 함)."""
+    ip = request.client.host if request.client else "unknown"
+    check_rate_limit(f"login:{ip}", limit=5, window_seconds=60, detail="요청이 너무 많습니다.")
+    # 잠금 확인 + 실패 기록을 원자적으로 수행 (TOCTOU 방지).
+    # 성공 로그인 시 clear_login_failures로 여기서 기록한 타임스탬프를 지운다.
+    check_and_record_login_attempt(payload.username)
     user = db.query(User).filter(User.username == payload.username).first()
     if user is None or not user.password_hash:
         # 미존재/레거시 계정도 동일한 bcrypt 비용을 치르게 해 timing 차이를 없앤다.
@@ -189,6 +201,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials"
         )
+    clear_login_failures(payload.username)
     return AuthResponse(
         access_token=create_access_token(user.id),
         user_id=user.id,

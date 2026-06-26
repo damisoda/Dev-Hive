@@ -1,5 +1,6 @@
-"""HIVE-92: 인메모리 슬라이딩 윈도우 레이트리밋.
+"""인증 엔드포인트 레이트 리밋 + LLM 비용 가드레일 (HIVE-92, HIVE-101).
 
+인메모리 슬라이딩 윈도우 카운터 기반.
 단일 프로세스(uvicorn 1 worker) 전용.
 멀티 워커 기동 시 각 프로세스가 독립 카운터를 가지므로 실효 한도가 worker수 배가 된다.
 운영에서 --workers > 1 이면 Redis 기반으로 교체할 것.
@@ -46,6 +47,10 @@ class _SlidingWindowCounter:
         with self._lock:
             return sum(1 for t in self._windows.get(key, []) if t > cutoff)
 
+    def clear(self, key: str) -> None:
+        with self._lock:
+            self._windows.pop(key, None)
+
 
 _counter = _SlidingWindowCounter()
 
@@ -71,3 +76,42 @@ def log_llm_call(endpoint: str, user_id: int | None, model: str, approx_tokens: 
         model,
         approx_tokens,
     )
+
+
+# ── /login per-username 실패 락아웃 (HIVE-101) ─────────────────────────
+# _counter(per-IP·LLM용)와 분리해 키 공간을 격리한다.
+# 설계 제약: clear_login_failures는 성공 로그인 시 모든 실패를 지우므로,
+# 공격자가 피해자의 정상 로그인 타이밍을 이용해 카운터를 리셋받을 수 있다.
+# 진정한 해결은 (IP, username) 복합 키이나 단일 노드 위협 모델에서는 현 방식으로 충분하다.
+_MAX_LOGIN_FAILURES = 5
+_LOGIN_LOCKOUT_SECS = 15 * 60
+
+_failure_counter = _SlidingWindowCounter()
+
+
+def check_and_record_login_attempt(username: str) -> None:
+    """잠금 확인 + 실패 기록을 단일 락 안에서 원자적으로 수행한다 (TOCTOU 방지).
+
+    성공 로그인 시 반드시 clear_login_failures를 호출해 기록을 지워야 한다.
+    """
+    allowed, retry_after = _failure_counter.check_and_increment(
+        username, _MAX_LOGIN_FAILURES, _LOGIN_LOCKOUT_SECS
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too many failed login attempts, try again later",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+def clear_login_failures(username: str) -> None:
+    _failure_counter.clear(username)
+
+
+def reset_all_for_testing() -> None:
+    """테스트 픽스처 전용. 프로덕션에서 호출 금지."""
+    with _counter._lock:
+        _counter._windows.clear()
+    with _failure_counter._lock:
+        _failure_counter._windows.clear()
