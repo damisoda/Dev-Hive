@@ -233,7 +233,7 @@ export function GraphCanvas({
    *   그 외        → "[새로운 탐색] <label>"
    */
   function getNodeLabel(n: GraphNode): string {
-    const prefix = pathIdsSet.has(n.id) ? "[내 학습 경로]" : "[새로운 탐색]";
+    const prefix = pathIdsSet.has(n.id) ? "[읽은 글]" : "[새로운 탐색]";
     return `${prefix} ${n.label}`;
   }
 
@@ -358,8 +358,8 @@ export function GraphCanvas({
             const src = linkNodeId(l.source);
             const tgt = linkNodeId(l.target);
             const anyHover = hoveredNodeRef.current !== null;
-            // 학습 경로 간선 — 호버 시 약간 dim (경로임은 유지)
-            if (src && tgt && pathIdsSet.has(src) && pathIdsSet.has(tgt))
+            // 읽은 콘텐츠 ↔ 연관 콘텐츠(similar_to) 간선 — 한쪽이라도 읽은 글이면 강조(호버 시 약간 dim)
+            if (src && tgt && l.rel === "similar_to" && (pathIdsSet.has(src) || pathIdsSet.has(tgt)))
               return anyHover ? "rgba(99,102,241,0.46)" : "rgba(99,102,241,0.65)";
             // URL-하이라이트 간선
             if (src && tgt && highlightIds.has(src) && highlightIds.has(tgt))
@@ -370,7 +370,7 @@ export function GraphCanvas({
           linkWidth={(l: GraphLink) => {
             const src = linkNodeId(l.source);
             const tgt = linkNodeId(l.target);
-            if (src && tgt && pathIdsSet.has(src) && pathIdsSet.has(tgt)) return 2.5;
+            if (src && tgt && l.rel === "similar_to" && (pathIdsSet.has(src) || pathIdsSet.has(tgt))) return 2.5;
             if (src && tgt && highlightIds.has(src) && highlightIds.has(tgt)) return 2.2;
             return Math.max(0.3, l.weight ?? 0.3);
           }}
