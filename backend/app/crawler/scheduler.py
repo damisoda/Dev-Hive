@@ -34,9 +34,12 @@ def _run_named_pipeline(name: str, crawl_func) -> None:
 
 
 def run_auto_hkg_job() -> None:
-    """주기적 Auto-HKG 확장 — 미매핑 콘텐츠를 2패스로 그래프에 편입한다.
+    """주기적 Auto-HKG 확장 + catch-all 분할(HIVE-89).
 
-    크롤→적재 직후 _maybe_ingest에서도 호출되지만, 크롤 실패·일시 오류로
+    1) expand_graph: 미매핑 콘텐츠를 2패스로 그래프에 편입 (dynamic_dedup 활성화).
+    2) split_catchall_nodes: degree≥50 과흡수 노드를 하위 노드로 자동 분할.
+
+    크롤→적재 직후 _maybe_ingest에서도 expand_graph가 호출되지만, 크롤 실패·일시 오류로
     누락된 콘텐츠를 48h마다 별도로 처리해 그래프 갱신 누락을 방지한다.
     """
     logger.info("Scheduled Auto-HKG job started")
@@ -45,7 +48,7 @@ def run_auto_hkg_job() -> None:
         import os
         import anthropic
         from sqlalchemy import create_engine
-        from app.graph.auto_hkg import expand_graph
+        from app.graph.auto_hkg import expand_graph, split_catchall_nodes
 
         anthropic_key = os.getenv("ANTHROPIC_API_KEY")
         db_url = os.getenv("DATABASE_URL")
@@ -55,13 +58,24 @@ def run_auto_hkg_job() -> None:
 
         client = anthropic.Anthropic(api_key=anthropic_key)
         engine = create_engine(db_url)
+
+        # 1) 미매핑 콘텐츠 편입 (dynamic_dedup=True — AUTOHKG_DYNAMIC_DEDUP 또는 env 무관하게 항상 활성)
         with engine.begin() as conn:
-            stats = expand_graph(conn, client)
+            stats = expand_graph(conn, client, dynamic_dedup=True)
         logger.info(
             "Scheduled Auto-HKG 완료 — 처리:%s / 흡수:%s / 클러스터:%s / 고아:%s / 신규노드:%s / LLM:%s",
             stats["total"], stats["absorbed"], stats["clustered"],
             stats["orphan_mapped"], stats["new_nodes"], stats["llm_calls"],
         )
+
+        # 2) catch-all 분할 — degree≥50 과흡수 노드를 하위 노드로 쪼갠다
+        split_stats = split_catchall_nodes(engine, client)
+        if split_stats["catchall_nodes"] > 0:
+            logger.info(
+                "catch-all 분할 완료 — 대상노드:%s / 처리콘텐츠:%s / 신규하위노드:%s / 재매핑:%s / LLM:%s",
+                split_stats["catchall_nodes"], split_stats["contents_processed"],
+                split_stats["new_nodes"], split_stats["remapped"], split_stats["llm_calls"],
+            )
     except Exception:
         logger.exception("Scheduled Auto-HKG job failed")
     finally:
