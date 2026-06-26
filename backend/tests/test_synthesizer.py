@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.tagging.synthesizer import (
-    _BODY_KEYS, _HEADER_KEYS, _apply_grounding, _is_grounded, synthesize,
+    _BODY_KEYS, _HEADER_KEYS, _apply_grounding, _is_grounded, _is_phantom, synthesize,
 )
 
 
@@ -66,6 +66,49 @@ def test_system_prompt_instructs_korean_output():
     client = _client_returning({"one_liner": "x", "key_takeaways": []})
     synthesize(_ITEM, {"content_type": "experience"}, client)
     assert "한국어" in client.captured_system
+
+
+def test_phantom_text_coerced_to_null():
+    """HIVE-104: LLM이 null 대신 '원문에서 명시되지 않음' 텍스트를 쓰면 null/[]로 보정된다."""
+    card_with_phantom = {
+        "one_liner": "x",
+        # 첫 항목은 _ITEM body에 실제로 있는 내용(grounding 통과), 두 번째는 위장 텍스트
+        "key_takeaways": ["vLLM throughput 3배 향상", "원문에서 명시되지 않음"],
+        "context": "원문에서 명시적으로 설명되지 않음",
+        "findings": ["vLLM PagedAttention으로 VRAM 효율 향상"],
+        "pitfalls": [],
+        "numbers": [],
+        "verdict": "not mentioned in the source",
+    }
+    out = synthesize(
+        _ITEM,
+        {"content_type": "experience"},
+        _client_returning(card_with_phantom),
+    )
+    assert out is not None
+    assert len(out["key_takeaways"]) == 1   # 위장 텍스트 1개 제거됨
+    assert out["context"] is None           # 위장 텍스트 → null
+    assert out["verdict"] is None           # 영문 패턴도 감지
+
+
+def test_is_phantom_detects_korean_patterns():
+    assert _is_phantom("원문에서 명시되지 않음") is True
+    assert _is_phantom("원문에서 언급되지 않음") is True
+    assert _is_phantom("원문에서 설명되지 않음") is True
+    assert _is_phantom("실제 내용이 있는 문장") is False
+
+
+def test_is_phantom_detects_english_patterns():
+    assert _is_phantom("not mentioned in source") is True
+    assert _is_phantom("not specified in the original") is True
+    assert _is_phantom("normal gotcha text") is False
+
+
+def test_system_prompt_forbids_external_reference_expansion():
+    """HIVE-104: 인용 트윗·URL 등 외부 콘텐츠 추론 금지 지시가 프롬프트에 포함된다."""
+    client = _client_returning({"one_liner": "x", "key_takeaways": []})
+    synthesize(_ITEM, {"content_type": "discussion"}, client)
+    assert "인용 트윗" in client.captured_system
 
 
 # --- HIVE-45: 출력 토큰 상한 + 잘림 로깅 -----------------------------------
@@ -367,6 +410,30 @@ def test_is_grounded_returns_false_for_no_match():
 
 def test_is_grounded_empty_statement_passes():
     assert _is_grounded("", "아무 본문") is True
+
+
+def test_grounding_catches_quoted_tweet_hallucination():
+    """HIVE-104: 인용 트윗 없이 외부 문구만 있는 짧은 트윗에서 환각 항목을 제거한다."""
+    body = "Karpathy의 새 영상 정말 인상적이에요."
+    card = {
+        "one_liner": "Karpathy LLM 지식 베이스 시리즈",
+        "key_takeaways": [
+            "Karpathy 영상 인상적",            # 원문 근거 있음 → 통과
+            "LLM Knowledge Bases 3단계 구성",  # 원문에 없음 → 제거
+            "Vector DB와 RAG 결합 방법론",     # 원문에 없음 → 제거
+        ],
+        "claim": "LLM Knowledge Bases 구축이 핵심 기술",  # 원문에 없음 → None
+        "arguments": ["Vector DB 활용", "RAG 파이프라인"], # 원문에 없음 → 제거
+        "counterpoints": [],
+        "conclusion": "Karpathy 영상 참고 권장",  # 원문 근거 있음 → 통과
+        "content_type": "discussion",
+    }
+    result = _apply_grounding(card, body)
+    assert len(result["key_takeaways"]) == 1
+    assert "Karpathy" in result["key_takeaways"][0]
+    assert result["arguments"] == []
+    assert result["claim"] is None
+    assert result["conclusion"] is not None
 
 
 def test_code_fence_stripped():
