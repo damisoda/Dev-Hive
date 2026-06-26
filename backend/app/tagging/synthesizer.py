@@ -80,7 +80,7 @@ _BODY_SPECS: dict[str, str] = {
 }
 
 # 타입별 기대 키(검증/형태 보정용). 헤더 키는 공통.
-_HEADER_KEYS = ("one_liner", "key_takeaways")
+_HEADER_KEYS = ("one_liner", "key_takeaways", "title_ko")
 _BODY_KEYS: dict[str, tuple[str, ...]] = {
     "experience": ("context", "findings", "pitfalls", "numbers", "verdict"),
     "tool": ("what", "when_to_use", "how", "requirements", "gotchas"),
