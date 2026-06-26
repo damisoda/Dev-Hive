@@ -21,6 +21,7 @@ from app.recommend.rule_based import recommend_next as _rule_based_recommend
 from app.services.content_topic import top_topic_for_contents
 from app.services.knowledge_tracing import build_user_state, estimate_mastery
 from app.services.lazy_synthesis import ensure_synthesis
+from app.services.rate_limit import check_rate_limit
 
 
 def _synthesize_in_background(content_ids: list[int], api_key: str) -> None:
@@ -95,6 +96,14 @@ def recommend(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> RecommendResponse:
+    # HIVE-92: 유저별 레이트리밋 (GraphRAG는 LLM 호출 포함)
+    check_rate_limit(
+        f"recommend:min:{current_user.id}",
+        settings.recommend_rate_per_minute,
+        60,
+        f"추천 조회는 분당 {settings.recommend_rate_per_minute}회까지 가능합니다.",
+    )
+
     # HIVE-22: GraphRAG 우선, 실패 시 rule_based(v0)로 폴백 — 데모 중 500 방지
     try:
         result = _graphrag_recommend(current_user.id, top_n, db)
