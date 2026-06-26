@@ -81,6 +81,10 @@ FEEDBACK_EXCLUDE = frozenset({"understood", "not_interested"})
 INFLUENCE_DIFFICULTY_WEIGHT: dict[str, int] = {"입문": 1, "중급": 2, "고급": 3}
 INFLUENCE_DEFAULT_DIFFICULTY_WEIGHT: int = 1  # difficulty NULL/미지정
 INFLUENCE_STREAK_WEIGHT: float = 0.5
+# HIVE-96: 기여(contribution) 가중치 — influence가 소비뿐 아니라 기여를 반영(thesis 심장).
+#   업로드 자체 + 그 글이 남에게 소비된 횟수(자가복제 인센티브).
+INFLUENCE_UPLOAD_WEIGHT: int = 3            # 글 1편 업로드
+INFLUENCE_CONSUMED_UPLOAD_WEIGHT: int = 2   # 내 업로드를 남이 1회 읽음(영향력)
 INFLUENCE_LEVEL_MULTIPLIER: dict[str, float] = {"입문": 1.0, "중급": 1.15, "고급": 1.3}
 
 # rule_based 피드백 점수 가중 (휴리스틱, 데이터 fit 아님 — 추후 튜닝 대상)

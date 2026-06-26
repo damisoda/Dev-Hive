@@ -8,6 +8,7 @@ from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
 from app.services.influence import compute_streak, read_heatmap
+from app.services.instrumentation import funnel_metrics
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
@@ -31,3 +32,13 @@ def get_stats(
         streak=compute_streak(current_user.id, db),
         heatmap=read_heatmap(current_user.id, db, days),
     )
+
+
+@router.get("/funnel")
+def get_funnel(
+    days: int = Query(30, ge=1, le=365),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """추천 funnel + retention + 북극성 지표 (HIVE-96). CTR/read-through/retention 측정."""
+    return funnel_metrics(db, days)

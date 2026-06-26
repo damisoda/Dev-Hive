@@ -20,6 +20,7 @@ from app.recommend.graphrag import recommend_next as _graphrag_recommend
 from app.recommend.rule_based import recommend_next as _rule_based_recommend
 from app.services.content_topic import top_topic_for_contents
 from app.services.knowledge_tracing import build_user_state, estimate_mastery
+from app.services.instrumentation import log_click, log_impressions
 from app.services.lazy_synthesis import ensure_synthesis
 
 
@@ -106,6 +107,7 @@ def recommend(
     # (client=None으로 ensure_synthesis 호출 = 생성 안 함), 미캐시분은 백그라운드에서 생성·캐시한다.
     # 동기 생성은 top-N LLM 호출로 프론트 타임아웃을 넘기므로 다음 로드에 요약이 채워지는 방식.
     ids = [r["content_id"] for r in result]
+    background_tasks.add_task(log_impressions, current_user.id, ids)  # HIVE-96 노출 로깅
     meta = {}
     if ids:
         meta = {
@@ -140,3 +142,18 @@ def recommend(
         background_tasks.add_task(_synthesize_in_background, uncached, settings.anthropic_api_key)
 
     return RecommendResponse(recommendations=recs)
+
+
+class RecommendClickRequest(BaseModel):
+    content_id: int
+
+
+@router.post("/click")
+def recommend_click(
+    payload: RecommendClickRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """추천 클릭 로깅 (HIVE-96 funnel). 프론트가 추천 카드 클릭 시 호출 → CTR 분자."""
+    log_click(current_user.id, payload.content_id, db)
+    return {"ok": True}
