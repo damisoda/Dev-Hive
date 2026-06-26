@@ -50,18 +50,18 @@ _BODY_SPECS: dict[str, str] = {
     ),
     "tool": (
         "tool 바디:\n"
-        '  "what": 이 도구가 무엇인지 (string)\n'
-        '  "when_to_use": 언제/어떤 상황에 쓰면 좋은지 (string)\n'
-        '  "how": 사용 방법/단계 (string 배열)\n'
-        '  "requirements": 필요 환경/전제(설치·계정·의존성 등). 없으면 null (string 또는 null)\n'
-        '  "gotchas": 주의할 점/한계 (string 배열)\n'
+        '  "what": 원문에 나온 도구 설명만 (string)\n'
+        '  "when_to_use": 원문이 명시한 사용 상황만. 없으면 null (string 또는 null)\n'
+        '  "how": 원문에 나온 사용 절차만. 없으면 빈 배열 (string 배열)\n'
+        '  "requirements": 원문에 나온 필요 환경/전제만. 없으면 null (string 또는 null)\n'
+        '  "gotchas": 원문이 명시한 주의점/한계만. 없으면 빈 배열 (string 배열)\n'
     ),
     "concept": (
         "concept 바디:\n"
-        '  "definition": 개념의 정의 (string)\n'
-        '  "mechanism": 작동 원리/메커니즘 (string 배열)\n'
-        '  "comparisons": 유사 개념과의 비교(X vs Y). 없으면 빈 배열 (string 배열)\n'
-        '  "when_matters": 언제/왜 중요한지 (string)\n'
+        '  "definition": 원문에 나온 정의만 (string)\n'
+        '  "mechanism": 원문에 나온 작동 원리만. 없으면 빈 배열 (string 배열)\n'
+        '  "comparisons": 원문이 직접 비교한 것만. 없으면 빈 배열 (string 배열)\n'
+        '  "when_matters": 원문이 명시한 중요 시점/이유만. 없으면 null (string 또는 null)\n'
     ),
     "tutorial": (
         "tutorial 바디:\n"
@@ -201,27 +201,61 @@ def _build_system_prompt(content_type: str) -> str:
     return (
         "너는 개발 커뮤니티의 콘텐츠 가공 도우미다. "
         f"아래 원문을 읽고 content_type='{content_type}'에 맞는 **가공 카드**를 JSON으로 만든다.\n\n"
-        "목적: 독자에게 원문(raw)을 그대로 주지 않고, 학습 가치만 뽑아 구조화한다.\n\n"
-        "절대 규칙:\n"
-        "- 각 항목을 작성하기 전에 원문에서 해당 내용이 실제로 등장하는지 먼저 확인한다.\n"
-        "- 원문에 있는 내용만 쓴다. 원문에 없는 사실·절차·수치를 지어내지 않는다(환각 금지).\n"
-        "- 해당 정보가 원문에 없으면 배열은 빈 배열([]), 단일 값은 null로 둔다.\n"
-        "- 원문 문장을 그대로 길게 복붙하지 않는다. 핵심만 간결히 재서술한다.\n"
+        "목적: 원문에 실제로 있는 내용을 구조화해 정리한다. "
+        "원문에 없는 내용을 채우거나 배경 지식으로 보완하는 것이 아니다.\n\n"
+        "절대 규칙(HIVE-104):\n"
+        "- 원문이 전부다. 학습 데이터에서 아는 배경 지식·일반 상식을 보완하지 않는다.\n"
+        "- 각 항목을 쓰기 전에 원문의 어느 문장에 근거하는지 확인한다. 근거 문장이 없으면 쓰지 않는다.\n"
+        "- 기능 이름·도구 이름만 언급된 경우, 원문이 설명하지 않은 세부 동작·사용법·주의점은 절대 만들지 않는다.\n"
+        "- 원문이 링크·URL·인용 트윗·스레드 등 외부 콘텐츠를 참조해도, 그 외부 내용은 제공되지 않으므로 추론·보완하지 않는다.\n"
+        "- 근거 없는 필드는 배열이면 빈 배열([]), 단일 값이면 null로 둔다. 빈칸이 환각보다 낫다. '원문에서 명시되지 않음' 같은 설명 텍스트 대신 반드시 null 또는 []를 써야 한다.\n"
+        "- 원문 표현을 간결히 정리한다. 원문이 말하지 않은 내용을 추론하거나 확장하지 않는다.\n"
         "- 모든 텍스트는 한국어로 출력한다.\n\n"
         "출력 JSON 구조:\n"
         f"{_COMMON_HEADER}"
         f"{body_spec}\n"
         "출력 규칙:\n"
-        "- JSON 객체만 출력한다. 코드블록/설명 문장을 JSON 밖에 쓰지 않는다.\n"
+        "- JSON 객체 하나만 출력한다. 닫는 중괄호 이후 설명·코멘트를 추가하지 않는다.\n"
         "- 위에 명시한 키만 포함한다(공통 헤더 키 + 해당 타입 바디 키)."
     )
 
 
 def _parse_card(raw_text: str) -> dict:
-    """Haiku 응답 텍스트에서 코드블록을 제거하고 JSON으로 파싱한다(tagger와 동일)."""
-    raw = re.sub(r"^```json\s*", "", raw_text.strip())
-    raw = re.sub(r"\s*```$", "", raw)
-    return json.loads(raw)
+    """Haiku 응답 텍스트에서 코드블록을 제거하고 JSON으로 파싱한다(tagger와 동일).
+
+    LLM이 닫는 ``` 이후에 설명을 추가하는 경우(Extra data) JSON 객체 범위만 추출해 파싱.
+    DOTALL 미사용: JSON 값 내부 백틱(```bash```)이 있어도 삭제되지 않도록 줄 끝 앵커($)만 사용.
+    """
+    raw = re.sub(r"^```(?:json)?\s*", "", raw_text.strip())  # ```json 또는 ``` 모두 제거
+    raw = re.sub(r"\s*```\s*$", "", raw)                      # 닫는 ``` 만 제거(DOTALL 없음)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # JSON 뒤에 잉여 텍스트가 있으면 첫 번째 완전한 객체만 추출.
+        # non-greedy + 1단계 중첩 허용으로 과잉 매칭 방지.
+        m = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", raw)
+        if m:
+            return json.loads(m.group())
+        raise
+
+
+# LLM이 null 대신 "원문에서 명시되지 않음" 같은 위장 텍스트를 쓰는 패턴 감지.
+# - 한글: 원문(에/에서) + 동사(명시/언급/설명/나타나/등장/기재/제시/확인/존재) + 부정형(되지않/안됨/없음/않음),
+#   '명시되지 않음' 단독형·'원문에 없음'·'찾을 수 없음'까지 포착. 양성형("원문에서 언급된 X")은 부정형이 없어 미매칭.
+# - 영문: not (found/present/mentioned/specified) / not in the (original/source/text)
+_PHANTOM_PATTERNS = re.compile(
+    r"원문(?:에서|에)?\s*\S*\s*(?:명시|언급|설명|나타나|등장|기재|제시|확인|존재)\S*\s*(?:되지\s*않|안\s*[됨돼]|없[음다습]|않[음다습])"
+    r"|원문(?:에서|에)\s*(?:없[음다습]|찾을\s*수\s*없)"
+    r"|(?:명시|언급|기재|제시|설명)되지\s*않(?:음|았|습)"
+    r"|찾을\s*수\s*없[음다습]"
+    r"|not\s+(?:found|present|mentioned|specified)"
+    r"|not\s+in\s+the\s+(?:original|source|text)",
+    re.IGNORECASE,
+)
+
+
+def _is_phantom(val: str) -> bool:
+    return bool(_PHANTOM_PATTERNS.search(val))
 
 
 def _coerce_card(parsed: dict, content_type: str) -> dict | None:
@@ -230,6 +264,7 @@ def _coerce_card(parsed: dict, content_type: str) -> dict | None:
     - 공통 헤더 키가 둘 다 없으면(완전 헛출력) None.
     - 누락 키는 채운다: 배열 기대 키 → []，단일 키 → None/"".
     - 명세 밖 키는 버린다(프롬프트 일탈 방지).
+    - HIVE-104: "원문에서 명시되지 않음" 위장 텍스트 → null/[] 로 보정.
     """
     if not isinstance(parsed, dict):
         return None
@@ -244,20 +279,30 @@ def _coerce_card(parsed: dict, content_type: str) -> dict | None:
     title_ko = parsed.get("title_ko")
     card["title_ko"] = title_ko if isinstance(title_ko, str) and title_ko.strip() else None
     one_liner = parsed.get("one_liner")
-    card["one_liner"] = one_liner if isinstance(one_liner, str) else None
+    ol_str = one_liner if isinstance(one_liner, str) else None
+    card["one_liner"] = None if (ol_str and _is_phantom(ol_str)) else ol_str
     takeaways = parsed.get("key_takeaways")
-    card["key_takeaways"] = [str(t) for t in takeaways] if isinstance(takeaways, list) else []
+    card["key_takeaways"] = (
+        [t for t in (str(v) for v in takeaways) if not _is_phantom(t)]
+        if isinstance(takeaways, list) else []
+    )
 
     # 타입별 바디 — 배열 기대 키는 list로, 그 외는 원값(없으면 None) 유지.
     array_keys = _ARRAY_BODY_KEYS[content_type]
     for key in _BODY_KEYS[content_type]:
         val = parsed.get(key)
         if key in array_keys:
-            # 배열 키: str 요소만 유지(dict/list 같은 형식위반 요소는 버림 — 깨진 표시값 방지).
-            card[key] = [v for v in val if isinstance(v, str)] if isinstance(val, list) else []
+            # 배열 키: str 요소만 유지, 위장 텍스트 제거(깨진 표시값 방지).
+            card[key] = (
+                [v for v in val if isinstance(v, str) and not _is_phantom(v)]
+                if isinstance(val, list) else []
+            )
         else:
-            # 단일값 키: str만 허용. 형식위반(list/dict/number 등)은 None(환각·형식 계약).
-            card[key] = val if isinstance(val, str) else None
+            # 단일값 키: str만 허용, 위장 텍스트는 None.
+            if isinstance(val, str) and not _is_phantom(val):
+                card[key] = val
+            else:
+                card[key] = None
 
     return card
 

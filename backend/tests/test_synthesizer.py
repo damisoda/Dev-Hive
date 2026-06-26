@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.tagging.synthesizer import (
-    _BODY_KEYS, _HEADER_KEYS, _apply_grounding, _is_grounded, synthesize,
+    _BODY_KEYS, _HEADER_KEYS, _apply_grounding, _is_grounded, _is_phantom, synthesize,
 )
 
 
@@ -66,6 +66,61 @@ def test_system_prompt_instructs_korean_output():
     client = _client_returning({"one_liner": "x", "key_takeaways": []})
     synthesize(_ITEM, {"content_type": "experience"}, client)
     assert "한국어" in client.captured_system
+
+
+def test_phantom_text_coerced_to_null():
+    """HIVE-104: LLM이 null 대신 '원문에서 명시되지 않음' 텍스트를 쓰면 null/[]로 보정된다."""
+    card_with_phantom = {
+        "one_liner": "x",
+        # 첫 항목은 _ITEM body에 실제로 있는 내용(grounding 통과), 두 번째는 위장 텍스트
+        "key_takeaways": ["vLLM throughput 3배 향상", "원문에서 명시되지 않음"],
+        "context": "원문에서 명시적으로 설명되지 않음",
+        "findings": ["vLLM PagedAttention으로 VRAM 효율 향상"],
+        "pitfalls": [],
+        "numbers": [],
+        "verdict": "not mentioned in the source",
+    }
+    out = synthesize(
+        _ITEM,
+        {"content_type": "experience"},
+        _client_returning(card_with_phantom),
+    )
+    assert out is not None
+    assert len(out["key_takeaways"]) == 1   # 위장 텍스트 1개 제거됨
+    assert out["context"] is None           # 위장 텍스트 → null
+    assert out["verdict"] is None           # 영문 패턴도 감지
+
+
+def test_is_phantom_detects_korean_patterns():
+    assert _is_phantom("원문에서 명시되지 않음") is True
+    assert _is_phantom("원문에서 언급되지 않음") is True
+    assert _is_phantom("원문에서 설명되지 않음") is True
+    assert _is_phantom("실제 내용이 있는 문장") is False
+
+
+def test_is_phantom_no_false_positive_on_positive_form():
+    # "원문에서 언급된 X" 양성형은 정상 내용 — phantom 아님
+    assert _is_phantom("원문에서 언급된 세 가지 핵심 원칙이 있다") is False
+    assert _is_phantom("원문에서 설명한 작동 원리") is False
+
+
+def test_is_phantom_no_false_positive_on_technical_negation():
+    # "명시되지 않은 기본값" 등 기술적 관형절은 phantom 아님 (원문에서 prefix 없음)
+    assert _is_phantom("명시되지 않은 기본값이 보안 취약점을 유발한다") is False
+    assert _is_phantom("설명되지 않는 예외 케이스가 있음") is False
+
+
+def test_is_phantom_detects_english_patterns():
+    assert _is_phantom("not mentioned in source") is True
+    assert _is_phantom("not specified in the original") is True
+    assert _is_phantom("normal gotcha text") is False
+
+
+def test_system_prompt_forbids_external_reference_expansion():
+    """HIVE-104: 인용 트윗·URL 등 외부 콘텐츠 추론 금지 지시가 프롬프트에 포함된다."""
+    client = _client_returning({"one_liner": "x", "key_takeaways": []})
+    synthesize(_ITEM, {"content_type": "discussion"}, client)
+    assert "인용 트윗" in client.captured_system
 
 
 # --- HIVE-45: 출력 토큰 상한 + 잘림 로깅 -----------------------------------
@@ -369,6 +424,30 @@ def test_is_grounded_empty_statement_passes():
     assert _is_grounded("", "아무 본문") is True
 
 
+def test_grounding_catches_quoted_tweet_hallucination():
+    """HIVE-104: 인용 트윗 없이 외부 문구만 있는 짧은 트윗에서 환각 항목을 제거한다."""
+    body = "Karpathy의 새 영상 정말 인상적이에요."
+    card = {
+        "one_liner": "Karpathy LLM 지식 베이스 시리즈",
+        "key_takeaways": [
+            "Karpathy 영상 인상적",            # 원문 근거 있음 → 통과
+            "LLM Knowledge Bases 3단계 구성",  # 원문에 없음 → 제거
+            "Vector DB와 RAG 결합 방법론",     # 원문에 없음 → 제거
+        ],
+        "claim": "LLM Knowledge Bases 구축이 핵심 기술",  # 원문에 없음 → None
+        "arguments": ["Vector DB 활용", "RAG 파이프라인"], # 원문에 없음 → 제거
+        "counterpoints": [],
+        "conclusion": "Karpathy 영상 참고 권장",  # 원문 근거 있음 → 통과
+        "content_type": "discussion",
+    }
+    result = _apply_grounding(card, body)
+    assert len(result["key_takeaways"]) == 1
+    assert "Karpathy" in result["key_takeaways"][0]
+    assert result["arguments"] == []
+    assert result["claim"] is None
+    assert result["conclusion"] is not None
+
+
 def test_code_fence_stripped():
     # Haiku가 ```json 코드블록으로 감싸도 파싱된다(tagger와 동일 처리)
     card = {
@@ -380,3 +459,56 @@ def test_code_fence_stripped():
     out = synthesize(_ITEM, {"content_type": "discussion"}, client)
     assert out is not None
     assert out["claim"] == "c"
+
+
+def test_bare_code_fence_stripped():
+    # ```json 태그 없는 bare ``` 펜스도 파싱된다 (DOTALL 버그 회귀 방지)
+    card = {
+        "one_liner": "x", "key_takeaways": ["RAG 활용"],
+        "claim": "c", "arguments": ["갱신 용이"], "counterpoints": [], "conclusion": "z",
+    }
+    fenced = "```\n" + json.dumps(card, ensure_ascii=False) + "\n```"
+    client = _FakeAnthropic(reply_text=fenced)
+    out = synthesize(_ITEM, {"content_type": "discussion"}, client)
+    assert out is not None
+    assert out["claim"] == "c"
+
+
+def test_backtick_in_json_value_not_eaten():
+    # JSON 값 내부에 백틱이 있어도 파싱이 깨지지 않는다 (DOTALL 버그 회귀 방지)
+    card = {
+        "one_liner": "x",
+        "key_takeaways": ["RAG 활용"],
+        "goal": "로컬에서 모델 실행",
+        "steps": ["pip install vllm 으로 설치한다", "use ```bash``` shell for execution"],
+        "result": "추론 서버 실행 완료",
+        "notes": [],
+    }
+    client = _FakeAnthropic(reply_text=json.dumps(card, ensure_ascii=False))
+    out = synthesize(_ITEM, {"content_type": "tutorial"}, client)
+    assert out is not None
+
+
+def test_trailing_comment_after_json_parsed():
+    # JSON 닫는 중괄호 뒤에 설명 텍스트가 있어도 첫 번째 객체만 추출해 파싱한다
+    card = {
+        "one_liner": "x", "key_takeaways": ["RAG 활용"],
+        "claim": "c", "arguments": ["갱신 용이"], "counterpoints": [], "conclusion": "z",
+    }
+    with_trailing = json.dumps(card, ensure_ascii=False) + "\n\n여기는 설명 텍스트입니다."
+    client = _FakeAnthropic(reply_text=with_trailing)
+    out = synthesize(_ITEM, {"content_type": "discussion"}, client)
+    assert out is not None
+    assert out["claim"] == "c"
+
+
+def test_is_phantom_catches_korean_variants_hive104():
+    # HIVE-104 회귀: 기존에 놓치던 phantom-dodge 변형들도 잡는다.
+    from app.tagging.synthesizer import _is_phantom
+    for p in ["원문에 나타나지 않음", "원문에서 찾을 수 없음", "명시되지 않음",
+              "이 정보는 원문에 없음", "원문에 언급되지 않음", "not specified in the source"]:
+        assert _is_phantom(p), p
+    # 긍정형/정상 텍스트는 phantom 아님(과매칭 방지)
+    for ok in ["원문에서 언급된 RAG 기법", "벡터 검색으로 관련 문서를 찾을 수 있다",
+               "명시적 캐싱을 사용한다", "원문은 설치 방법을 설명한다"]:
+        assert not _is_phantom(ok), ok
