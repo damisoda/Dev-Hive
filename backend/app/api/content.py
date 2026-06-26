@@ -87,7 +87,7 @@ def list_content(
 
     total = query.count()
     rows = (
-        query.order_by(Content.published_at.desc().nullslast(), Content.id.desc())
+        query.order_by(Content.published_at.desc().nullslast(), Content.created_at.desc().nullslast(), Content.id.desc())
         .offset(offset)
         .limit(limit)
         .all()
