@@ -226,12 +226,14 @@ a.rec-title:hover { color: var(--accent-ink); }
 .up-submit { align-self: flex-start; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; padding: 11px 22px; border-radius: 10px; color: #fff; background: var(--accent); border: none; transition: opacity 0.12s ease; }
 .up-submit:hover:not(:disabled) { opacity: 0.9; }
 .up-submit:disabled { opacity: 0.6; cursor: default; }
-.up-result { padding: 22px; border: 1px solid var(--accent); border-radius: 14px; background: var(--accent-wash); }
-.up-result-badge { font-size: 12px; font-weight: 800; color: var(--accent-ink); letter-spacing: 0.02em; }
-.up-result-main { margin: 10px 0 4px; font-size: 16px; line-height: 1.5; color: var(--text); }
-.up-gold { color: #b8860b; font-weight: 600; }
-.up-result-meta { margin: 0; font-size: 13px; color: var(--text-muted); }
-.up-result-actions { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
+.up-result { padding: 22px; border: 1px solid #D9DEE9; border-radius: 14px; background: #FFFFFF; box-shadow: 0 10px 26px rgba(42, 54, 92, 0.06); }
+.up-result-kicker { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 800; color: var(--accent-ink); letter-spacing: 0.02em; }
+.up-result-dot { width: 7px; height: 7px; border-radius: 50%; background: #D9A441; }
+.up-result-main { margin: 11px 0 4px; font-size: 16.5px; line-height: 1.5; color: var(--text); }
+.up-result-main strong { font-weight: 800; color: #253B8F; }
+.up-result-note { margin: 0 0 7px; font-size: 13.5px; line-height: 1.55; color: var(--text-muted); }
+.up-result-meta { margin: 0; font-size: 12.5px; color: var(--text-subtle); }
+.up-result-actions { display: flex; gap: 10px; align-items: center; margin-top: 17px; }
 .up-again { font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; padding: 6px 14px; border-radius: 8px; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); }
 .up-again:hover { color: var(--text); border-color: var(--border-strong); }
 
