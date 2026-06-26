@@ -1,6 +1,7 @@
 """influence_score / streak / 잔디 히트맵 계산 (HIVE-37).
 
-influence_score = (읽은수 × 난이도가중 + streak × 0.5) × 레벨가중
+influence_score = (읽은수 × 난이도가중 + streak × 0.5 + 기여) × 레벨가중
+  - 기여(HIVE-96): 업로드 × W + 내 업로드를 남이 소비한 횟수 × W (소비뿐 아니라 기여 반영)
   - 읽은수: DISTINCT 콘텐츠 기준(중복 읽음 1회), 난이도별 가중 합산
   - streak: 연속 학습일 (날짜 기준, 마지막 읽음이 오늘/어제면 유지)
   - 레벨가중: current_level(HIVE-36)에 따라 활동 점수를 증폭(곱셈)
@@ -12,10 +13,12 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.services.constants import (
+    INFLUENCE_CONSUMED_UPLOAD_WEIGHT,
     INFLUENCE_DEFAULT_DIFFICULTY_WEIGHT,
     INFLUENCE_DIFFICULTY_WEIGHT,
     INFLUENCE_LEVEL_MULTIPLIER,
     INFLUENCE_STREAK_WEIGHT,
+    INFLUENCE_UPLOAD_WEIGHT,
 )
 
 # 서비스 기준 타임존. streak/잔디 날짜를 SQL·Python 양쪽에서 이 TZ로 통일한다
@@ -105,7 +108,25 @@ def compute_influence_score(user_id: int, db: Session) -> int:
     streak = compute_streak(user_id, db)
     multiplier = INFLUENCE_LEVEL_MULTIPLIER.get(level, 1.0)
 
-    raw = (read_score + streak * INFLUENCE_STREAK_WEIGHT) * multiplier
+    # HIVE-96: 기여항 — 업로드 + 그 글이 '남에게' 소비된 횟수(자가복제 인센티브의 심장).
+    contrib = db.execute(
+        text(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM content WHERE uploaded_by = :uid) AS uploads,
+              (SELECT COUNT(*) FROM user_read_events ure
+                 JOIN content c ON c.id = ure.content_id
+               WHERE c.uploaded_by = :uid AND ure.user_id <> :uid) AS consumed
+            """
+        ),
+        {"uid": user_id},
+    ).fetchone()
+    contribution = (
+        (contrib.uploads or 0) * INFLUENCE_UPLOAD_WEIGHT
+        + (contrib.consumed or 0) * INFLUENCE_CONSUMED_UPLOAD_WEIGHT
+    )
+
+    raw = (read_score + streak * INFLUENCE_STREAK_WEIGHT + contribution) * multiplier
     return round(raw)
 
 

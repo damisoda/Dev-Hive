@@ -97,4 +97,13 @@ CREATE INDEX IF NOT EXISTS idx_content_tags ON content USING GIN(tags);
 CREATE INDEX IF NOT EXISTS idx_content_quality ON content(quality_score);
 CREATE INDEX IF NOT EXISTS idx_content_embedding ON content USING ivfflat (text_embedding vector_cosine_ops) WITH (lists = 100);
 CREATE INDEX IF NOT EXISTS idx_cnm_node ON content_node_mapping(node_id);
+-- 8. 추천 funnel 계측 (HIVE-96) — 노출/클릭 로깅 (읽음은 user_read_events)
+CREATE TABLE IF NOT EXISTS recommend_events (
+    id         SERIAL PRIMARY KEY,
+    user_id    INT REFERENCES users(id)   ON DELETE CASCADE,
+    content_id INT REFERENCES content(id) ON DELETE CASCADE,
+    event_type VARCHAR(20) NOT NULL,       -- 'impression' | 'click'
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_ure_user ON user_read_events(user_id);
