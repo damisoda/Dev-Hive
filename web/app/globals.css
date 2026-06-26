@@ -211,8 +211,7 @@ a.post-title-tr:hover { color: var(--accent-ink); }
 .synth-block p { margin: 0; font-size: 14px; line-height: 1.65; color: var(--text); }
 .synth-block ul { margin: 0; padding-left: 18px; }
 .synth-block li { font-size: 14px; line-height: 1.6; color: var(--text); margin-bottom: 3px; }
-.synth-err { margin: 0; font-size: 13.5px; color: var(--text-muted); }
-.synth-pending { margin: 0; font-size: 13.5px; color: var(--text-muted); }
+.synth-err, .synth-pending { margin: 0; font-size: 13.5px; color: var(--text-muted); }
 .synth-pending a { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
 .synth-pending a:hover { text-decoration: underline; }
 

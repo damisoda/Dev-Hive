@@ -37,6 +37,8 @@ export function ReadModal({
 
   async function load() {
     setLoading(true);
+    setSynthPending(false);
+    setErr(null);
     try {
       const res = await fetch("/api/read", {
         method: "POST",
@@ -58,7 +60,7 @@ export function ReadModal({
 
   function openModal() {
     setOpen(true);
-    if (!synth && !err && !synthPending) load();
+    if (!synth) load();
   }
 
   // Esc 닫기 + 배경 스크롤 잠금
@@ -114,18 +116,21 @@ export function ReadModal({
               {err && <p className="synth-err">{err}</p>}
               {synthPending && (
                 <p className="synth-pending">
-                  재가공본을 준비 중이에요.{" "}
+                  재가공본을 준비 중이에요.
                   {url && (
-                    <a href={url} target="_blank" rel="noopener noreferrer">
-                      원문에서 직접 확인해 보세요 ↗
-                    </a>
+                    <>
+                      {" "}
+                      <a href={url} target="_blank" rel="noopener noreferrer">
+                        원문에서 직접 확인해 보세요 ↗
+                      </a>
+                    </>
                   )}
                 </p>
               )}
               {synth && <SynthBody synth={synth} />}
             </div>
 
-            {url && (
+            {url && !synthPending && (
               <a className="modal-origin" href={url} target="_blank" rel="noopener noreferrer">
                 원문 보기 ↗
               </a>
