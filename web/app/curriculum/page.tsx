@@ -3,7 +3,7 @@
 // current user = 세션 유저(회원가입 시 발급, dh_uid 쿠키). 비로그인은 시작하기 CTA.
 
 import { Suspense } from "react";
-import { getGraph, getMastery, getReadHistory, recommend, ApiError } from "@/lib/api";
+import { getGraph, getMastery, getReadHistory, recommend, listFeedback, ApiError } from "@/lib/api";
 import { curriculumRows, contentPath } from "@/lib/viewmodel";
 import { StateView } from "@/components/StateView";
 import { RecommendationCard } from "@/components/RecommendationCard";
@@ -16,9 +16,10 @@ export const metadata = { title: "커리큘럼 · Dev-Hive" };
 // 학습 경로 + 다음 학습 자료 — 둘 다 추천(recommend, GraphRAG ~12s)을 쓰므로 한 번만 호출해 같이 렌더.
 async function PathAndRecs({ token }: { token: string }) {
   try {
-    const [readRes, recRes] = await Promise.all([
+    const [readRes, recRes, feedbackMap] = await Promise.all([
       getReadHistory(token),
       recommend(token, 5),
+      listFeedback(token),
     ]);
     const path = contentPath(readRes.items, recRes.recommendations);
     const recs = recRes.recommendations;
@@ -88,7 +89,7 @@ async function PathAndRecs({ token }: { token: string }) {
         ) : (
           <div className="rec-list">
             {recs.map((r, i) => (
-              <RecommendationCard key={r.content_id} rec={r} rank={i + 1} loggedIn={loggedIn} />
+              <RecommendationCard key={r.content_id} rec={r} rank={i + 1} loggedIn={loggedIn} feedback={feedbackMap[r.content_id] ?? null} />
             ))}
           </div>
         )}
