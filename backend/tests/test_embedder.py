@@ -41,11 +41,10 @@ def test_truncate_logs_warning_when_truncated(caplog):
 def test_truncate_exactly_at_limit_unchanged():
     import tiktoken
     enc = tiktoken.get_encoding("cl100k_base")
-    # MAX_TOKENS 토큰짜리 텍스트 — 절단 없어야 함
-    tokens = enc.encode("token ") * 1  # 작은 단위로 MAX_TOKENS개 만들기
-    text = enc.decode(enc.encode("token ") * MAX_TOKENS)
+    # "a " 반복 → MAX_TOKENS개 슬라이싱 → 디코딩: BPE 라운드트립 보장으로 정확히 MAX_TOKENS 토큰
+    text = enc.decode(enc.encode("a " * (MAX_TOKENS + 10))[:MAX_TOKENS])
     result = _truncate(text)
-    assert len(enc.encode(result)) <= MAX_TOKENS
+    assert result == text  # 절단 없음을 직접 검증 (token 수만으로는 off-by-one 감지 불가)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
