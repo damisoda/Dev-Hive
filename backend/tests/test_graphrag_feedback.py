@@ -287,7 +287,6 @@ def test_recency_boosts_intermediate_not_beginner(monkeypatch):
     """중급 유저는 최신 글에 가중치, 초급 유저는 가중치 없음."""
     _no_llm(monkeypatch)
     from datetime import datetime, timezone, timedelta
-    import app.recommend.graphrag as gr_mod
 
     recent = datetime.now(timezone.utc) - timedelta(days=1)   # 어제 발행 → 신선도 높음
     old    = datetime.now(timezone.utc) - timedelta(days=365)  # 1년 전 발행 → 신선도 낮음

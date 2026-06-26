@@ -58,13 +58,16 @@ _HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
 def _recency_score(published_at: datetime | None) -> float:
     """발행일 기준 시간 감쇠 점수(0~1). 반감기 _RECENCY_HALF_LIFE_DAYS일.
-    published_at이 없으면 중립 0.5(순위 무영향).
+    published_at 없으면 0.0(recency 항 비가산 — 순위 무영향).
+    미래 발행일은 0일로 간주해 최대 1.0 고정을 방지한다.
     """
     if published_at is None:
-        return 0.5
+        return 0.0
     if published_at.tzinfo is None:
         published_at = published_at.replace(tzinfo=timezone.utc)
-    days = max(0.0, (datetime.now(timezone.utc) - published_at).total_seconds() / 86400)
+    days = (datetime.now(timezone.utc) - published_at).total_seconds() / 86400
+    if days < 0:
+        return 0.0  # 미래 발행일(임베고/예정 콘텐츠) → recency 보너스 없음
     return math.exp(-math.log(2) * days / _RECENCY_HALF_LIFE_DAYS)
 
 
@@ -273,7 +276,7 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
         cands.append({
             "content_id": r.id, "title": r.title, "difficulty": r.difficulty,
             "node_id": r.node_id, "rel": rel, "rel_real": rel_real,
-            "diff": diff, "path": path, "base": base,
+            "diff": diff, "path": path, "recency": recency, "base": base,
         })
 
     # 그리디 선택: 매 단계 base + 다양성(같은 노드 누적 penalty) 최대를 뽑는다.
