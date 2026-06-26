@@ -11,7 +11,7 @@ from typing import Optional
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, defer
 
 from app.api.auth import get_current_user
@@ -64,6 +64,7 @@ def list_content(
     source: Optional[str] = None,
     node_id: Optional[int] = None,
     difficulty: Optional[str] = None,
+    q: Optional[str] = Query(None, max_length=100),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -85,6 +86,19 @@ def list_content(
         query = query.filter(Content.source == source)
     if difficulty is not None:
         query = query.filter(Content.difficulty == difficulty)
+
+    # 검색(HIVE-94): 제목 + 가공 요약(synthesis.one_liner) ILIKE. 영문 제목 콘텐츠도
+    # 한글 요약으로 잡히게 둘 다 본다. LIKE 와일드카드(%, _)는 리터럴로 이스케이프.
+    if q is not None:
+        term = q.strip()
+        if term:
+            like = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            query = query.filter(
+                or_(
+                    Content.title.ilike(like, escape="\\"),
+                    Content.synthesis["one_liner"].astext.ilike(like, escape="\\"),
+                )
+            )
 
     total = query.count()
     # 첫인상 정렬(HIVE-94): 순수 최신순이면 영어 arXiv 크롤이 첫 화면을 도배하고

@@ -269,6 +269,27 @@ a.rec-title:hover { color: var(--accent-ink); }
 @media (max-width: 640px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
 
 /* 피드 필터 + 페이지네이션 */
+/* 검색바(HIVE-94) — 필터바 바로 위, 동일 톤 */
+.search-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 10px; padding: 8px 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+}
+.search-bar:focus-within { border-color: var(--accent); }
+.search-bar svg { width: 17px; height: 17px; color: var(--text-subtle); flex: 0 0 auto; }
+.search-bar input {
+  flex: 1 1 auto; min-width: 0;
+  font-family: inherit; font-size: 14px; color: var(--text);
+  border: none; outline: none; background: transparent;
+}
+.search-bar input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.search-clear {
+  flex: 0 0 auto; font-family: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--text-muted); background: var(--surface-sunken);
+  border: none; border-radius: 7px; padding: 5px 10px; cursor: pointer;
+}
+.search-clear:hover { color: var(--text); }
+
 .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .filter-sel { font-family: inherit; font-size: 13.5px; font-weight: 500; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; cursor: pointer; }
 .filter-sel:focus { outline: none; border-color: var(--accent); }

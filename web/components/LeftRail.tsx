@@ -24,7 +24,7 @@ const Upload = () => <S><path d="M12 15V4" /><path d="m7.5 8.5 4.5-4.5 4.5 4.5" 
 const More = () => <S><circle cx="5" cy="12" r="1.3" fill="currentColor" /><circle cx="12" cy="12" r="1.3" fill="currentColor" /><circle cx="19" cy="12" r="1.3" fill="currentColor" /></S>;
 
 const NAV = [
-  { href: "/discover", label: "검색", active: false, Icon: Search },
+  { href: "/?focus=search", label: "검색", active: false, Icon: Search },
   { href: "/", label: "홈", active: true, Icon: Home },
   { href: "/discover", label: "디스커버", active: false, Icon: Compass },
   { href: "/curriculum", label: "커리큘럼", active: false, Icon: Curriculum },

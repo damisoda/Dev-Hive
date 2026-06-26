@@ -4,6 +4,7 @@ import { listContent, listFeedback, ApiError } from "@/lib/api";
 import type { ContentItem } from "@/lib/types";
 import { ContentCard } from "@/components/ContentCard";
 import { FilterBar } from "@/components/FilterBar";
+import { SearchBar } from "@/components/SearchBar";
 import { Pagination } from "@/components/Pagination";
 import { StateView } from "@/components/StateView";
 import { getSession } from "@/lib/session";
@@ -15,10 +16,11 @@ const PAGE_SIZE = 20;
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ source?: string; difficulty?: string; page?: string }>;
+  searchParams: Promise<{ source?: string; difficulty?: string; q?: string; page?: string }>;
 }) {
-  const { source, difficulty, page: pageParam } = await searchParams;
+  const { source, difficulty, q, page: pageParam } = await searchParams;
   const page = Math.max(1, Number(pageParam) || 1);
+  const query = q?.trim() || undefined;
   const session = await getSession();
 
   let items: ContentItem[] = [];
@@ -31,6 +33,7 @@ export default async function HomePage({
       offset: (page - 1) * PAGE_SIZE,
       source,
       difficulty,
+      q: query,
     });
     items = data.items;
     total = data.total;
@@ -55,6 +58,7 @@ export default async function HomePage({
         </span>
       </section>
 
+      <SearchBar />
       <FilterBar />
 
       {error ? (
@@ -69,11 +73,18 @@ export default async function HomePage({
           )}
         </StateView>
       ) : items.length === 0 ? (
-        <StateView emoji="🐝" title="피드가 비어 있어요">
-          크롤·업로드로 글이 쌓이면 출처별로 여기 모입니다.
-        </StateView>
+        query ? (
+          <StateView emoji="🔍" title={`‘${query}’ 검색 결과가 없어요`}>
+            다른 검색어를 써보거나 필터를 풀어보세요.
+          </StateView>
+        ) : (
+          <StateView emoji="🐝" title="피드가 비어 있어요">
+            크롤·업로드로 글이 쌓이면 출처별로 여기 모입니다.
+          </StateView>
+        )
       ) : (
         <>
+          {query && <div className="sec-sub">‘{query}’ 검색 결과 {total}건</div>}
           {items.map((item) => (
             <ContentCard
               key={item.id}
