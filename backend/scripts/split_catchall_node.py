@@ -36,6 +36,7 @@ from app.graph.auto_hkg import (
     GROUP_THRESHOLD,
     MIN_CLUSTER_SIZE,
     _cluster_residuals,
+    _partition_residuals,
     _create_node,
     _map,
     _name_cluster,
@@ -61,8 +62,8 @@ def split_node(
     """단일 catch-all 노드를 분할한다. 통계 dict 반환."""
     nid = node["id"]
     name = node["name"]
-    contents = get_node_contents(conn, nid)
-    logger.info("  노드 '%s'(id=%d): 콘텐츠 %d건 재클러스터링", name, nid, len(contents))
+    contents = get_node_contents(conn, nid, exclude_auto_children=True)
+    logger.info("  노드 '%s'(id=%d): 잔여 콘텐츠 %d건 재클러스터링", name, nid, len(contents))
 
     if not contents:
         logger.info("  → 콘텐츠 없음, 스킵")
@@ -71,8 +72,8 @@ def split_node(
     residuals = [(c["id"], _unit(_parse_emb(c["emb"]))) for c in contents]
     title_by_id = {c["id"]: c["title"] for c in contents}
 
-    clusters, orphans = _cluster_residuals(residuals, group_threshold, min_cluster_size)
-    logger.info("  → 클러스터 %d개 / 고아 %d건", len(clusters), len(orphans))
+    clusters, orphans = _partition_residuals(residuals, min_size=min_cluster_size)
+    logger.info("  → k-means 클러스터 %d개 / 고아 %d건", len(clusters), len(orphans))
 
     stats = {"node": name, "contents": len(contents), "new_nodes": 0, "remapped": 0, "llm_calls": 0}
 

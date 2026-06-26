@@ -36,10 +36,12 @@ class _FakeSession:
         sql = str(clause)
         if sql.lstrip().upper().startswith("SET "):
             return _Result([])
-        if "curriculum_nodes" in sql:
-            return _Result(self._topics)
+        # belongs_to 쿼리는 content_node_mapping JOIN curriculum_nodes(최구체 노드 판정)라 둘 다 포함 →
+        # content_node_mapping을 먼저 검사해야 topics 분기로 오라우팅되지 않는다.
         if "content_node_mapping" in sql:
             return _Result(self._belongs)
+        if "curriculum_nodes" in sql:
+            return _Result(self._topics)
         if "node_links" in sql:
             return _Result(self._precedes)
         if "LATERAL" in sql:
@@ -64,10 +66,10 @@ def graph():
         _row(id=11, title="LangGraph 튜토리얼", difficulty="중급", content_type="tutorial", source="velog"),
     ]
     belongs = [
-        _row(content_id=10, node_id=1, relevance_score=0.9),
-        _row(content_id=10, node_id=2, relevance_score=0.6),
-        _row(content_id=11, node_id=2, relevance_score=0.8),
-        _row(content_id=99, node_id=1, relevance_score=0.7),  # content 99 없음 → 스킵돼야
+        _row(content_id=10, node_id=1, relevance_score=0.9, parent_id=None),
+        _row(content_id=10, node_id=2, relevance_score=0.6, parent_id=None),
+        _row(content_id=11, node_id=2, relevance_score=0.8, parent_id=None),
+        _row(content_id=99, node_id=1, relevance_score=0.7, parent_id=None),  # content 99 없음 → 스킵돼야
     ]
     precedes = [
         _row(source_node_id=1, target_node_id=2, weight=0.7),
