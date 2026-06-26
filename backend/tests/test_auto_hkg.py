@@ -17,6 +17,8 @@ from app.graph.auto_hkg import (
     _nearest,
     expand_graph,
     expand_one,
+    find_catchall_nodes,
+    split_catchall_nodes,
 )
 
 
@@ -318,3 +320,106 @@ def test_upload_module_imports():
     # (HIVE-44가 이걸 삭제해 앱 부팅이 깨졌던 블로커 재발 방지)
     import app.services.upload  # noqa: F401
     from app.graph.auto_hkg import _node_centroids, _node_info  # noqa: F401
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HIVE-89: find_catchall_nodes / split_catchall_nodes
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class _CatchallConn:
+    """find_catchall_nodes + split_catchall_nodes가 부르는 SQL을 흉내내는 가짜 커넥션."""
+
+    def __init__(self, catchall_rows, content_rows_by_node_id, new_id_start=800):
+        self._catchall = catchall_rows          # find_catchall_nodes 결과
+        self._contents = content_rows_by_node_id  # {node_id: [row, ...]}
+        self._next_id = new_id_start
+        self.created = []    # (name, desc, parent_id)
+        self.mappings = []   # (cid, nid, score)
+
+    def execute(self, clause, params=None):
+        sql = str(clause)
+        if "INSERT INTO curriculum_nodes" in sql:
+            self.created.append((params["name"], params["desc"], params["parent_id"]))
+            nid = self._next_id
+            self._next_id += 1
+            return _Result([SimpleNamespace(id=nid)])
+        if "INSERT INTO content_node_mapping" in sql:
+            self.mappings.append((params["cid"], params["nid"], params["score"]))
+            return _Result([])
+        if "HAVING COUNT" in sql:
+            return _Result(self._catchall)
+        if "WHERE m.node_id = :nid" in sql:
+            nid = params["nid"]
+            return _Result(self._contents.get(nid, []))
+        return _Result([])
+
+
+def _catchall_row(node_id, name, degree):
+    return SimpleNamespace(id=node_id, name=name, degree=degree)
+
+
+def _content_row(cid, vec, title="글"):
+    return SimpleNamespace(id=cid, title=title, text_embedding=_emb(*vec))
+
+
+def test_find_catchall_nodes_returns_high_degree():
+    rows = [
+        _catchall_row(1, "AI 엔지니어링", 186),
+        _catchall_row(2, "MLOps", 12),
+    ]
+    conn = _CatchallConn(rows, {})
+    result = find_catchall_nodes(conn, min_degree=50)
+    assert len(result) == 2
+    assert result[0]["name"] == "AI 엔지니어링"
+    assert result[0]["degree"] == 186
+
+
+def test_find_catchall_nodes_empty_when_none_qualify():
+    conn = _CatchallConn([], {})
+    result = find_catchall_nodes(conn, min_degree=50)
+    assert result == []
+
+
+def test_split_catchall_nodes_creates_subnodes():
+    # 'AI 엔지니어링'(id=1)에 4개 콘텐츠: [1,0,0] 방향 3개 + [0,1,0] 방향 1개
+    # MIN_CLUSTER_SIZE=3이므로 첫 클러스터(3개)만 노드 승격, 나머지 1개는 고아
+    catchall = [_catchall_row(1, "AI 엔지니어링", 4)]
+    contents = {
+        1: [
+            _content_row(10, [1, 0.1, 0, 0]),
+            _content_row(11, [1, 0.1, 0, 0]),
+            _content_row(12, [1, 0.1, 0, 0]),
+            _content_row(13, [0, 1, 0, 0]),    # 고아
+        ]
+    }
+    conn = _CatchallConn(catchall, contents)
+    client = _FakeAnthropic(name="LLM 서빙")
+
+    stats = split_catchall_nodes(conn, client, min_degree=1)
+
+    assert stats["catchall_nodes"] == 1
+    assert stats["contents_processed"] == 4
+    assert stats["new_nodes"] == 1          # 클러스터 1개 → 하위노드 1개
+    assert stats["remapped"] == 3           # 3개 재매핑
+    assert stats["llm_calls"] == 1
+    # 생성된 노드의 parent_id = catch-all 노드 id(1)
+    assert conn.created[0][2] == 1
+
+
+def test_split_catchall_nodes_no_catchall_is_noop():
+    conn = _CatchallConn([], {})
+    client = _FakeAnthropic()
+    stats = split_catchall_nodes(conn, client, min_degree=50)
+    assert stats["catchall_nodes"] == 0
+    assert stats["new_nodes"] == 0
+    assert client.calls == 0
+
+
+def test_split_catchall_nodes_skips_node_without_embeddings():
+    catchall = [_catchall_row(5, "빈노드", 100)]
+    conn = _CatchallConn(catchall, {5: []})   # 콘텐츠 없음
+    client = _FakeAnthropic()
+    stats = split_catchall_nodes(conn, client, min_degree=1)
+    assert stats["new_nodes"] == 0
+    assert client.calls == 0
