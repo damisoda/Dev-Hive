@@ -1,6 +1,6 @@
 // 지식그래프 — /graph 실데이터를 인터랙티브 포스그래프로. 서버에서 fetch(브라우저 CORS 회피) 후 클라 캔버스에 주입.
 
-import { getGraph, getMastery, ApiError } from "@/lib/api";
+import { getGraph, getReadHistory, ApiError } from "@/lib/api";
 import { GraphCanvas, type GraphHighlight } from "@/components/GraphCanvas";
 import { StateView } from "@/components/StateView";
 import { getSession } from "@/lib/session";
@@ -46,18 +46,15 @@ export default async function GraphPage({
     getSession(),
   ]);
 
-  // 로그인 유저의 학습 경로 노드: mastery > 0 인 topic nodeId 집합
-  let pathIds: string[] = [];
+  // 학습경로 하이라이트 = "읽은 콘텐츠"(content:<id>). mastery(토픽)가 아니라 실제 읽은 글을
+  // 강조하고, GraphCanvas가 그 콘텐츠↔연관 콘텐츠(similar_to) 엣지를 함께 칠한다.
+  let readIds: string[] = [];
   if (session?.token) {
     try {
-      const m = await getMastery(session.token);
-      // mastery 키는 정수 curriculum_node id(dict[int,float])지만 그래프 노드 id는 "topic:<id>"
-      // 형식(builder). prefix 없이 비교하면 영원히 미매칭 → 학습경로 하이라이트가 전부 죽는다.
-      pathIds = Object.entries(m.mastery)
-        .filter(([, v]) => v > 0)
-        .map(([k]) => `topic:${k}`);
+      const reads = await getReadHistory(session.token);
+      readIds = reads.items.map((it) => `content:${it.content_id}`);
     } catch {
-      // mastery 실패 시 조용히 무시 — 그래프는 계속 렌더됨
+      // 읽음 이력 실패 시 조용히 무시 — 그래프는 계속 렌더됨
     }
   }
 
@@ -82,7 +79,7 @@ export default async function GraphPage({
             <span className="lg"><i style={{ background: "#CBD0DA" }} />콘텐츠</span>
           </div>
         </div>
-        <GraphCanvas data={{ ...data, edges }} highlight={highlight} loggedIn={!!session} pathIds={pathIds} />
+        <GraphCanvas data={{ ...data, edges }} highlight={highlight} loggedIn={!!session} pathIds={readIds} />
         <p className="graph-foot">노드를 드래그·줌하며 탐색하세요. 콘텐츠는 소속 주제 주변으로 모입니다.</p>
       </main>
     );

@@ -1,4 +1,7 @@
 // 좌측 아이콘 레일 — 라벨 없이 아이콘만(RocketPunch 홈 레퍼런스). Dev-Hive 서비스용 SVG 세트.
+"use client";
+
+import { usePathname } from "next/navigation";
 
 const S = (p: { children: React.ReactNode }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -23,32 +26,41 @@ const Upload = () => <S><path d="M12 15V4" /><path d="m7.5 8.5 4.5-4.5 4.5 4.5" 
 const More = () => <S><circle cx="5" cy="12" r="1.3" fill="currentColor" /><circle cx="12" cy="12" r="1.3" fill="currentColor" /><circle cx="19" cy="12" r="1.3" fill="currentColor" /></S>;
 
 const NAV = [
-  { href: "/", label: "홈", active: true, Icon: Home },
-  { href: "/discover", label: "디스커버", active: false, Icon: Compass },
-  { href: "/curriculum", label: "커리큘럼", active: false, Icon: Curriculum },
-  { href: "/graph", label: "지식그래프", active: false, Icon: Graph },
-  { href: "/profile", label: "프로필", active: false, Icon: Profile },
-  { href: "/upload", label: "업로드", active: false, Icon: Upload },
+  { href: "/", label: "홈", Icon: Home },
+  { href: "/discover", label: "디스커버", Icon: Compass },
+  { href: "/curriculum", label: "커리큘럼", Icon: Curriculum },
+  { href: "/graph", label: "지식그래프", Icon: Graph },
+  { href: "/profile", label: "프로필", Icon: Profile },
+  { href: "/upload", label: "업로드", Icon: Upload },
 ];
 
 export function LeftRail() {
+  // active는 하드코딩이 아니라 현재 경로로 판정한다. "/"는 정확히 일치할 때만(아니면 모든 경로에 매칭),
+  // 그 외는 prefix 매칭(예: /graph, /graph?focus=...)으로 하위 경로도 활성.
+  const pathname = usePathname() || "/";
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+
   return (
     <nav className="rail" aria-label="주요 메뉴">
       <a className="rail-brand" href="/" aria-label="Dev-Hive 홈">
         <Hive />
       </a>
-      {NAV.map(({ href, label, active, Icon }, i) => (
-        <a
-          key={i}
-          href={href}
-          className={`rail-item${active ? " active" : ""}`}
-          aria-label={label}
-          title={label}
-          aria-current={active ? "page" : undefined}
-        >
-          <Icon />
-        </a>
-      ))}
+      {NAV.map(({ href, label, Icon }, i) => {
+        const active = isActive(href);
+        return (
+          <a
+            key={i}
+            href={href}
+            className={`rail-item${active ? " active" : ""}`}
+            aria-label={label}
+            title={label}
+            aria-current={active ? "page" : undefined}
+          >
+            <Icon />
+          </a>
+        );
+      })}
       <div className="rail-spacer" />
       <div className="rail-div" />
       <a className="rail-item" href="/profile" aria-label="더보기" title="더보기">
