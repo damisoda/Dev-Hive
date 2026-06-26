@@ -93,7 +93,8 @@ class _Session:
                 SimpleNamespace(
                     id=cid, title=title, difficulty=diff,
                     quality_score=q, emb=emb, node_id=nid,
-                    published_at=None,  # 테스트 기본값: recency 중립(0.5)
+                    published_at=None,
+                    created_at=None,
                 )
                 for cid, title, diff, q, emb, nid in self._candidates
             ])
@@ -296,9 +297,9 @@ def test_recency_boosts_intermediate_not_beginner(monkeypatch):
     # 중급: recency 보너스 → 최신 A(id=1)가 quality 격차를 뒤집고 먼저.
     cands_ns = [
         SimpleNamespace(id=1, title="최신글", difficulty="중급", quality_score=0.45,
-                        emb="[0.0,0.0]", node_id=10, published_at=recent),
+                        emb="[0.0,0.0]", node_id=10, published_at=recent, created_at=recent),
         SimpleNamespace(id=2, title="구글",   difficulty="중급", quality_score=0.55,
-                        emb="[0.0,0.0]", node_id=10, published_at=old),
+                        emb="[0.0,0.0]", node_id=10, published_at=old, created_at=old),
     ]
 
     class _PatchedSession(_Session):
