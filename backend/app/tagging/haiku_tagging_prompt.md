@@ -80,6 +80,17 @@
 - 모든 숫자는 문자열이 아니라 숫자로 출력한다.
 - relevance에는 7개 대주제를 모두 포함한다.
 - 잘 모르겠는 경우에도 가장 가까운 값을 추정한다.
+- off_topic: 이 글이 **AI 7대주제와 무관**하면 true, 실제로 AI 주제를 다루면 false.
+
+## off_topic 기준
+
+이 커리큘럼은 **AI(LLM·에이전트·RAG·멀티모달·오픈소스·AI워크플로우·AI엔지니어링)** 전용이다.
+다음은 off_topic=true로 판정한다 (relevance는 높게 나와도 무관):
+- AI와 무관한 **일반 소프트웨어 개발**(웹/모바일/DB/인프라 일반), 개발 문화·철학·회고 에세이
+- 비-기술(취미·일상·홍보), 단순 뉴스/이벤트 공지
+- 핵심: "개발 인접"만으로는 false가 아니다. 글이 **실제로 AI 주제를 가르치거나 논의**해야 false.
+예) "조선시대 사극 문체로 쓴 개발 성장 에세이" → AI 무관 → **off_topic=true**.
+예) "MCP 서버로 코드리뷰 봇 만들기" → 에이전트/도구 → off_topic=false.
 
 ## 출력 형식
 
@@ -97,7 +108,8 @@
   "difficulty": "입문",
   "quality_score": 0.0,
   "content_type": "tutorial",
-  "language": "ko"
+  "language": "ko",
+  "off_topic": false
 }
 ```
 
