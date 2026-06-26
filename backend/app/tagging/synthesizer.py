@@ -139,14 +139,26 @@ def _is_grounded(
         return True
     if body_en_words is None:
         body_en_words = set(re.findall(r"[a-z]+", body_lower))
+    body_has_korean = bool(re.search(r"[가-힣]", body_lower))
+
+    def _is_ko(t: str) -> bool:
+        return bool(re.match(r"^[가-힣]+$", t))
 
     def _hit(t: str) -> bool:
-        if re.match(r"^[가-힣]+$", t):
+        if _is_ko(t):
             return t in body_lower          # 한글: 부분 문자열
         return t in body_en_words           # 영문: 전체 단어
 
-    matched = sum(1 for t in toks if _hit(t))
-    return matched / len(toks) >= _GROUNDING_THRESHOLD
+    # 교차언어 보정: 영문 소스(body에 한글 없음)에 대한 한글 요약은 한글 토큰을 body에서
+    # 절대 찾을 수 없어 유효 필드까지 전부 strip되던 버그가 있었다. body가 영문이면 한글 토큰은
+    # '검증 불가'로 보고 검증 가능한 토큰(영문/약어)만으로 근거율을 낸다. 검증 토큰이 하나도
+    # 없으면(영문소스에 대한 순한글 요약) 프롬프트의 anti-hallucination 규칙(HIVE-104)에 위임해 통과.
+    applicable = [t for t in toks if (not _is_ko(t)) or body_has_korean]
+    if not applicable:
+        return True
+
+    matched = sum(1 for t in applicable if _hit(t))
+    return matched / len(applicable) >= _GROUNDING_THRESHOLD
 
 
 def _apply_grounding(card: dict, body: str) -> dict:
