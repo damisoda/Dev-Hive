@@ -126,3 +126,18 @@ def test_concurrency_loser_returns_none(monkeypatch):
     _patch_mastery(monkeypatch, {1: 0.9, 2: 0.9})
     db = _FakeConn("입문", [1, 2], update_rowcount=0)
     assert check_and_level_up(1, db) is None
+
+
+def test_levelup_engaged_topics_only_hive95(monkeypatch):
+    # HIVE-95: 일부 대주제만 읽음으로 깊게 학습(>0.2), 나머지는 온보딩/미학습(≤0.2).
+    # 전체평균이면 고착되지만, '학습한 대주제'(>0.2) 평균으로 판정해 승급해야 한다.
+    _patch_mastery(monkeypatch, {1: 0.9, 2: 0.8, 3: 0.05, 4: 0.0, 5: 0.2})
+    db = _FakeConn("입문", {1, 2, 3, 4, 5})
+    assert check_and_level_up(1, db) == {"new_level": "중급"}  # engaged {0.9,0.8} avg 0.85≥0.6
+
+
+def test_levelup_no_engaged_no_promote_hive95(monkeypatch):
+    # 온보딩만(≤0.2)·읽음 학습 없음 → 승급 보류.
+    _patch_mastery(monkeypatch, {1: 0.2, 2: 0.1, 3: 0.0})
+    db = _FakeConn("입문", {1, 2, 3})
+    assert check_and_level_up(1, db) is None

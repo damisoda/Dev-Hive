@@ -25,5 +25,15 @@ class Settings(BaseSettings):
     jwt_secret: str = ""
     jwt_expire_hours: int = 336  # 14일
 
+    # 레이트리밋 (HIVE-92). 인메모리 슬라이딩 윈도우, 단일 프로세스 기준.
+    upload_rate_per_minute: int = 3       # 업로드 /분/유저
+    upload_rate_per_day: int = 10         # 업로드 /일/유저 (LLM 비용 가드레일)
+    recommend_rate_per_minute: int = 20   # 추천 /분/유저
+    synthesis_rate_per_minute: int = 10   # synthesis 조회 /분/유저
+
+    # 업로드 요청 크기 제한 (HIVE-92)
+    upload_max_title_chars: int = 500
+    upload_max_body_chars: int = 20_000   # ~4000 토큰 상당
+
 
 settings = Settings()

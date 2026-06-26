@@ -211,7 +211,9 @@ a.post-title-tr:hover { color: var(--accent-ink); }
 .synth-block p { margin: 0; font-size: 14px; line-height: 1.65; color: var(--text); }
 .synth-block ul { margin: 0; padding-left: 18px; }
 .synth-block li { font-size: 14px; line-height: 1.6; color: var(--text); margin-bottom: 3px; }
-.synth-err { margin: 0; font-size: 13.5px; color: var(--text-muted); }
+.synth-err, .synth-pending { margin: 0; font-size: 13.5px; color: var(--text-muted); }
+.synth-pending a { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
+.synth-pending a:hover { text-decoration: underline; }
 
 /* 커리큘럼 '다음 학습 자료' 추천 카드 */
 .rec-list { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
@@ -269,8 +271,37 @@ a.rec-title:hover { color: var(--accent-ink); }
 @media (max-width: 640px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
 
 /* 피드 필터 + 페이지네이션 */
+/* 검색 + 필터 한 줄(HIVE-94). 좁아지면 검색이 먼저 전체폭으로 내려감 */
+.feed-controls {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.feed-controls .search-bar { flex: 1 1 280px; margin-bottom: 0; }
+.feed-controls .filter-bar { margin-bottom: 0; flex: 0 0 auto; }
+
+/* 검색바(HIVE-94) — 필터 셀렉트와 동일 높이/톤 */
+.search-bar {
+  display: flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 6px 0 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+}
+.search-bar:focus-within { border-color: var(--accent); }
+.search-bar svg { width: 17px; height: 17px; color: var(--text-subtle); flex: 0 0 auto; }
+.search-bar input {
+  flex: 1 1 auto; min-width: 0;
+  font-family: inherit; font-size: 14px; color: var(--text);
+  border: none; outline: none; background: transparent;
+}
+.search-bar input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.search-go {
+  flex: 0 0 auto; font-family: inherit; font-size: 13px; font-weight: 600;
+  color: #fff; background: var(--accent);
+  border: none; border-radius: 7px; height: 28px; padding: 0 14px; cursor: pointer;
+}
+.search-go:hover { background: var(--accent-ink); }
+
 .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-.filter-sel { font-family: inherit; font-size: 13.5px; font-weight: 500; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; cursor: pointer; }
+.filter-sel { font-family: inherit; font-size: 13.5px; font-weight: 500; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 9px; height: 38px; padding: 0 12px; cursor: pointer; }
 .filter-sel:focus { outline: none; border-color: var(--accent); }
 .pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 24px; }
 .pager-btn { font-size: 13.5px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 8px 16px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
@@ -314,6 +345,44 @@ a.rec-title:hover { color: var(--accent-ink); }
 .state h2 { font-size: 17px; margin: 0 0 6px; color: var(--text); }
 .state p { margin: 0 auto; max-width: 420px; font-size: 14px; }
 .state code { background: var(--accent-wash); color: var(--accent-ink); padding: 1px 6px; border-radius: 6px; font-size: 13px; }
+
+/* ───────── 에러 경계 액션 (HIVE-94) ───────── */
+.state-actions { display: flex; gap: 8px; justify-content: center; margin-top: 18px; }
+.btn-retry {
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  padding: 9px 18px; border-radius: 10px; border: none;
+  background: var(--accent); color: #fff;
+}
+.btn-retry:hover { background: var(--accent-ink); }
+.btn-ghost {
+  display: inline-flex; align-items: center;
+  font-size: 14px; font-weight: 600;
+  padding: 9px 16px; border-radius: 10px;
+  border: 1px solid var(--border-strong); color: var(--text-muted);
+}
+.btn-ghost:hover { background: var(--surface-sunken); }
+
+/* ───────── 로딩 스켈레톤 (HIVE-94) ───────── */
+@keyframes sk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.skeleton { background: var(--surface-sunken); border-radius: 10px; animation: sk-pulse 1.2s ease-in-out infinite; }
+.sk-line { height: 14px; display: block; max-width: 100%; }
+.sk-canvas { height: 60vh; margin-top: 16px; }
+.sk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 8px; }
+.sk-stat { height: 76px; }
+.load-center {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 90px 20px; color: var(--text-subtle); font-size: 14px;
+}
+.spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid var(--surface-sunken); border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@media (max-width: 560px) { .sk-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton, .spinner { animation-duration: 0s; }
+}
 
 /* ───────── 섹션 헤더(디스커버·커리큘럼) ───────── */
 .sec-head { margin-bottom: 16px; }

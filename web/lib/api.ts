@@ -79,6 +79,7 @@ export function listContent(opts: {
   source?: string;
   nodeId?: number;
   difficulty?: string;
+  q?: string;
   limit?: number;
   offset?: number;
 } = {}): Promise<ContentListResponse> {
@@ -89,6 +90,7 @@ export function listContent(opts: {
       source: opts.source,
       node_id: opts.nodeId,
       difficulty: opts.difficulty,
+      q: opts.q,
     },
   });
 }
