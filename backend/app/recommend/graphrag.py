@@ -29,10 +29,11 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.services.constants import (
     FEEDBACK_WANT_MORE_GRAPHRAG_WEIGHT as W_FB,
-)
-from app.services.constants import (
+    LEVEL_ORDER,
     MASTERY_TOO_HARD_DELTA,
     MASTERY_UNDERSTOOD_ALPHA,
+    RECENCY_GRAPHRAG_WEIGHT as W_RECENCY,
+    RECENCY_HALF_LIFE_DAYS,
 )
 from app.services.feedback_signals import (
     feedback_excluded_ids,
@@ -45,11 +46,8 @@ from app.services.knowledge_tracing import build_user_state, estimate_mastery
 logger = logging.getLogger(__name__)
 
 W_REL, W_DIFF, W_PATH, W_DIV = 0.3, 0.4, 0.2, 0.1
-# 중급·고급 전용 신선도 보너스. 초급은 기초 개념 중심이라 발행일 무관.
-# W_FB와 동일하게 4성분 외 조건부 가산. 튜닝 대상.
-W_RECENCY = 0.15
-_RECENCY_HALF_LIFE_DAYS = 90  # 90일마다 신선도 반감
-_RECENCY_LEVELS = frozenset({"중급", "고급"})
+# 중급 이상 전용 신선도 보너스(LEVEL_ORDER[1:]에서 파생 — 레벨 추가 시 자동 반영).
+_RECENCY_LEVELS = frozenset(LEVEL_ORDER[1:])
 
 _DIFFICULTY_NORM = {"입문": 0.0, "중급": 0.5, "고급": 1.0}
 _NEUTRAL_PATH = 0.5          # prerequisite 데이터 부재 시 중립(순위 무영향)
@@ -57,7 +55,7 @@ _HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
 
 def _recency_score(published_at: datetime | None, created_at: datetime | None = None) -> float:
-    """시간 감쇠 점수(0~1). 반감기 _RECENCY_HALF_LIFE_DAYS일.
+    """시간 감쇠 점수(0~1). 반감기 RECENCY_HALF_LIFE_DAYS일.
     홈 피드 정렬(HIVE-107)과 동일하게 COALESCE(published_at, created_at) 기준.
     둘 다 없으면 0.0(recency 항 비가산). 미래 발행일 → 0.0(보너스 없음).
     """
@@ -69,7 +67,7 @@ def _recency_score(published_at: datetime | None, created_at: datetime | None = 
     days = (datetime.now(timezone.utc) - effective).total_seconds() / 86400
     if days < 0:
         return 0.0  # 미래 발행일(임베고/예정 콘텐츠) → recency 보너스 없음
-    return math.exp(-math.log(2) * days / _RECENCY_HALF_LIFE_DAYS)
+    return math.exp(-math.log(2) * days / RECENCY_HALF_LIFE_DAYS)
 
 
 def _div_key(c: dict) -> object:
