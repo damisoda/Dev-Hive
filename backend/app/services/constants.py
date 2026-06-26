@@ -104,6 +104,8 @@ FEEDBACK_TOO_HARD_PENALTY: float = 0.2
 #     난이도 성분(W_DIFF)이 쉬운/어려운 쪽으로 정렬되게 한다(전역 감점 대신 토픽별 정교).
 FEEDBACK_WANT_MORE_GRAPHRAG_WEIGHT: float = 0.15
 RECENCY_GRAPHRAG_WEIGHT: float = 0.15
+# HIVE: 품질 보너스 — 프로필 유저 랭킹에 quality_score 반영(저가치 repo 상위노출 방지).
+QUALITY_GRAPHRAG_WEIGHT: float = 0.10
 RECENCY_HALF_LIFE_DAYS: int = 90
 MASTERY_TOO_HARD_DELTA: float = 0.2
 MASTERY_UNDERSTOOD_ALPHA: float = 0.15

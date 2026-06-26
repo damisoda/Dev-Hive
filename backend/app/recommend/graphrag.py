@@ -37,6 +37,7 @@ from app.services.constants import (
     MASTERY_TOO_HARD_DELTA,
     MASTERY_UNDERSTOOD_ALPHA,
     RECENCY_GRAPHRAG_WEIGHT as W_RECENCY,
+    QUALITY_GRAPHRAG_WEIGHT as W_QUALITY,
     RECENCY_HALF_LIFE_DAYS,
 )
 from app.services.feedback_signals import (
@@ -121,6 +122,14 @@ def _load_prereq_map(db: Session) -> dict[int, list[tuple[int, float]]]:
             (int(r.source_node_id), w)
         )
     return prereq_map
+
+
+def _topic_of(db: Session) -> dict[int, int]:
+    """노드 → 소속 대주제 id. precedes는 7대주제 간에만 있으므로, 콘텐츠 대표노드가 auto
+    하위노드면 부모 대주제로 해소해 _path_score가 선행 신호를 받게 한다(catch-all 분할 이후
+    대표노드가 대부분 하위노드라 path가 전부 중립이던 문제 해소). 대주제는 자기 자신."""
+    rows = db.execute(text("SELECT id, parent_id FROM curriculum_nodes")).fetchall()
+    return {int(r.id): (int(r.parent_id) if r.parent_id is not None else int(r.id)) for r in rows}
 
 
 def _difficulty_fit(content_difficulty: str | None, mastery: float) -> float:
@@ -250,6 +259,7 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
                   SELECT content_id FROM user_read_events WHERE user_id = :uid
               )
               {excl_clause}
+            ORDER BY c.id
             """
         ),
         params,
@@ -260,6 +270,7 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
     g = _global_centroid(db)
     # precedes 선행맵: 피드백 반영(too_hard/understood) 후의 mastery로 채점하도록 여기서 1회 적재.
     prereq_map = _load_prereq_map(db)
+    topic_of = _topic_of(db)  # 하위노드 대표 → 대주제 해소(precedes 신호 활성화)
     pc = (profile - g) if (profile is not None and g is not None) else None
     # want_more 중심도 관련성과 동일 기준으로 centering(global centroid 필요).
     wmc = (wm_centroid - g) if (wm_centroid is not None and g is not None) else None
@@ -282,9 +293,12 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
             wm_sim = (float(np.dot(wmc, ec) / wm_denom) + 1.0) / 2.0
         else:
             wm_sim = 0.0
-        path = _path_score(r.node_id, prereq_map, mastery)
+        path = _path_score(topic_of.get(r.node_id, r.node_id), prereq_map, mastery)
         recency = W_RECENCY * _recency_score(r.published_at, r.created_at) if use_recency else 0.0
-        base = W_REL * rel + W_DIFF * diff + W_PATH * path + W_FB * wm_sim + recency
+        # 품질 보너스: 프로필 유저만(콜드스타트는 rel=quality라 중복 방지). 저가치 콘텐츠 demote.
+        q = float(r.quality_score) if r.quality_score is not None else 0.5
+        qbonus = W_QUALITY * q if rel_real else 0.0
+        base = W_REL * rel + W_DIFF * diff + W_PATH * path + W_FB * wm_sim + recency + qbonus
         cands.append({
             "content_id": r.id, "title": r.title, "difficulty": r.difficulty,
             "node_id": r.node_id, "rel": rel, "rel_real": rel_real,

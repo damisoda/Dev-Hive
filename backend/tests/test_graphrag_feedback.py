@@ -110,6 +110,9 @@ class _Session:
             return _Result(rows=[])
         if "SELECT current_level, onboarding_answers FROM users" in sql:
             return _Result(rows=[SimpleNamespace(current_level="중급", onboarding_answers=self._onboarding)])
+        if "id, parent_id FROM curriculum_nodes" in sql:
+            # _topic_of(하위노드→대주제 해소). 테스트는 노드 계층이 없으므로 빈 맵 → 대표노드 그대로 사용.
+            return _Result(rows=[])
         raise AssertionError(f"예상치 못한 쿼리: {sql[:80]}")
 
 
