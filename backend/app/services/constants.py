@@ -82,11 +82,16 @@ FEEDBACK_TOO_HARD_PENALTY: float = 0.2
 
 # ── GraphRAG 피드백 반영 가중 (HIVE-48) ───────────────────────────────
 # 휴리스틱(데이터 fit 아님 — 추후 튜닝 대상). graphrag 4성분(W_REL/W_DIFF/W_PATH/W_DIV)은
-# 건드리지 않고, want_more는 별도 보너스 항으로만 더한다.
-#   - WANT_MORE_GRAPHRAG_WEIGHT: centered 코사인(0~1) 보너스 스케일. 4성분 합(1.0) 대비
-#     순위를 흔들되 뒤집지는 않을 정도로 W_REL(0.3)의 절반인 0.15로 둠.
+# 건드리지 않고, want_more와 recency는 별도 보너스 항으로만 더한다.
+#   - WANT_MORE_GRAPHRAG_WEIGHT: centered 코사인(0~1) 보너스 스케일.
+#   - RECENCY_GRAPHRAG_WEIGHT: 시간 감쇠(0~1) 보너스 스케일. 중급·고급 전용(HIVE-106).
+#     두 보너스 합산 최대값(0.15+0.15=0.30)이 W_REL(0.30)과 같으므로 두 신호가
+#     동시에 최대일 때 관련성 역전 가능. 각 값을 낮추면 역전 위험 감소.
+#   - RECENCY_HALF_LIFE_DAYS: 신선도 반감기(일). 90일마다 점수 절반으로 감쇠. 튜닝 대상.
 #   - MASTERY_TOO_HARD_DELTA / MASTERY_UNDERSTOOD_ALPHA: 대표 토픽 mastery를 직접 가감해
 #     난이도 성분(W_DIFF)이 쉬운/어려운 쪽으로 정렬되게 한다(전역 감점 대신 토픽별 정교).
 FEEDBACK_WANT_MORE_GRAPHRAG_WEIGHT: float = 0.15
+RECENCY_GRAPHRAG_WEIGHT: float = 0.15
+RECENCY_HALF_LIFE_DAYS: int = 90
 MASTERY_TOO_HARD_DELTA: float = 0.2
 MASTERY_UNDERSTOOD_ALPHA: float = 0.15

@@ -19,6 +19,8 @@ rule_based.recommend_next와 동일 시그니처 — 드롭인 교체.
 from __future__ import annotations
 
 import logging
+import math
+from datetime import datetime, timezone
 
 import numpy as np
 from sqlalchemy import text
@@ -27,10 +29,11 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.services.constants import (
     FEEDBACK_WANT_MORE_GRAPHRAG_WEIGHT as W_FB,
-)
-from app.services.constants import (
+    LEVEL_ORDER,
     MASTERY_TOO_HARD_DELTA,
     MASTERY_UNDERSTOOD_ALPHA,
+    RECENCY_GRAPHRAG_WEIGHT as W_RECENCY,
+    RECENCY_HALF_LIFE_DAYS,
 )
 from app.services.feedback_signals import (
     feedback_excluded_ids,
@@ -43,9 +46,28 @@ from app.services.knowledge_tracing import build_user_state, estimate_mastery
 logger = logging.getLogger(__name__)
 
 W_REL, W_DIFF, W_PATH, W_DIV = 0.3, 0.4, 0.2, 0.1
+# 중급 이상 전용 신선도 보너스(LEVEL_ORDER[1:]에서 파생 — 레벨 추가 시 자동 반영).
+_RECENCY_LEVELS = frozenset(LEVEL_ORDER[1:])
+
 _DIFFICULTY_NORM = {"입문": 0.0, "중급": 0.5, "고급": 1.0}
 _NEUTRAL_PATH = 0.5          # prerequisite 데이터 부재 시 중립(순위 무영향)
 _HAIKU_MODEL = "claude-haiku-4-5-20251001"
+
+
+def _recency_score(published_at: datetime | None, created_at: datetime | None = None) -> float:
+    """시간 감쇠 점수(0~1). 반감기 RECENCY_HALF_LIFE_DAYS일.
+    홈 피드 정렬(HIVE-107)과 동일하게 COALESCE(published_at, created_at) 기준.
+    둘 다 없으면 0.0(recency 항 비가산). 미래 발행일 → 0.0(보너스 없음).
+    """
+    effective = published_at or created_at
+    if effective is None:
+        return 0.0
+    if effective.tzinfo is None:
+        effective = effective.replace(tzinfo=timezone.utc)
+    days = (datetime.now(timezone.utc) - effective).total_seconds() / 86400
+    if days < 0:
+        return 0.0  # 미래 발행일(임베고/예정 콘텐츠) → recency 보너스 없음
+    return math.exp(-math.log(2) * days / RECENCY_HALF_LIFE_DAYS)
 
 
 def _div_key(c: dict) -> object:
@@ -166,13 +188,14 @@ def _rationale(user_state: str, item: dict) -> str | None:
 def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
     """4성분 알고리즘으로 미독 콘텐츠를 정렬해 top_n 추천. (rule_based 드롭인 교체)"""
     urow = db.execute(
-        text("SELECT profile_vector::text AS pv FROM users WHERE id = :uid"),
+        text("SELECT profile_vector::text AS pv, current_level FROM users WHERE id = :uid"),
         {"uid": user_id},
     ).fetchone()
     if urow is None:
         return []
 
     profile = _parse_vec(urow.pv)
+    use_recency = (urow.current_level or "입문") in _RECENCY_LEVELS
     mastery = estimate_mastery(user_id, db)  # {node_id: 0~1}
 
     # 피드백 → 토픽별 mastery 조정(HIVE-48). 전역 난이도 감점 대신 대표 토픽 단위로 정교하게.
@@ -202,6 +225,8 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
         text(
             f"""
             SELECT c.id, c.title, c.difficulty, c.quality_score,
+                   c.published_at,
+                   c.created_at,
                    c.text_embedding::text AS emb,
                    (SELECT m.node_id FROM content_node_mapping m
                     WHERE m.content_id = c.id
@@ -246,11 +271,12 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
         else:
             wm_sim = 0.0
         path = _path_score(r.node_id, prereq_map, mastery)
-        base = W_REL * rel + W_DIFF * diff + W_PATH * path + W_FB * wm_sim
+        recency = W_RECENCY * _recency_score(r.published_at, r.created_at) if use_recency else 0.0
+        base = W_REL * rel + W_DIFF * diff + W_PATH * path + W_FB * wm_sim + recency
         cands.append({
             "content_id": r.id, "title": r.title, "difficulty": r.difficulty,
             "node_id": r.node_id, "rel": rel, "rel_real": rel_real,
-            "diff": diff, "path": path, "base": base,
+            "diff": diff, "path": path, "recency": recency, "base": base,
         })
 
     # 그리디 선택: 매 단계 base + 다양성(같은 노드 누적 penalty) 최대를 뽑는다.

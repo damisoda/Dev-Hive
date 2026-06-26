@@ -50,6 +50,7 @@ class _Session:
         understood=None,
         want_more=None,
         precedes=None,
+        current_level="입문",
     ):
         self._profile = profile
         self._candidates = candidates or []
@@ -63,12 +64,13 @@ class _Session:
         self._want_more = want_more
         # precedes 엣지: [(source_node_id, target_node_id, weight)]. 기본 빈 → path 중립.
         self._precedes = precedes or []
+        self._current_level = current_level
 
     def execute(self, clause, params=None):
         sql = str(clause)
         params = params or {}
         if "profile_vector::text AS pv" in sql:
-            return _Result(rows=[SimpleNamespace(pv=self._profile)])
+            return _Result(rows=[SimpleNamespace(pv=self._profile, current_level=self._current_level)])
         if "SELECT onboarding_answers FROM users" in sql:
             return _Result(rows=[SimpleNamespace(onboarding_answers=self._onboarding)])
         if "SELECT id, name FROM curriculum_nodes" in sql:
@@ -91,6 +93,8 @@ class _Session:
                 SimpleNamespace(
                     id=cid, title=title, difficulty=diff,
                     quality_score=q, emb=emb, node_id=nid,
+                    published_at=None,
+                    created_at=None,
                 )
                 for cid, title, diff, q, emb, nid in self._candidates
             ])
@@ -276,3 +280,40 @@ def test_cold_start_no_profile_no_mastery(monkeypatch):
     )
     # 에러 없이 추천 생성, 입문이 먼저.
     assert _ids(out)[0] == 1
+
+
+# ── HIVE-106: 레벨별 신선도 가중치 ────────────────────────────────────────
+
+def test_recency_boosts_intermediate_not_beginner(monkeypatch):
+    """중급 유저는 최신 글에 가중치, 초급 유저는 가중치 없음."""
+    _no_llm(monkeypatch)
+    from datetime import datetime, timezone, timedelta
+
+    recent = datetime.now(timezone.utc) - timedelta(days=1)   # 어제 발행 → 신선도 높음
+    old    = datetime.now(timezone.utc) - timedelta(days=365)  # 1년 전 발행 → 신선도 낮음
+
+    # A(최신, quality 낮음) vs B(오래됨, quality 높음).
+    # 초급: recency 없음 → quality 우위 B(id=2) 먼저.
+    # 중급: recency 보너스 → 최신 A(id=1)가 quality 격차를 뒤집고 먼저.
+    cands_ns = [
+        SimpleNamespace(id=1, title="최신글", difficulty="중급", quality_score=0.45,
+                        emb="[0.0,0.0]", node_id=10, published_at=recent, created_at=recent),
+        SimpleNamespace(id=2, title="구글",   difficulty="중급", quality_score=0.55,
+                        emb="[0.0,0.0]", node_id=10, published_at=old, created_at=old),
+    ]
+
+    class _PatchedSession(_Session):
+        def execute(self, clause, params=None):
+            sql = str(clause)
+            if "ORDER BY m.relevance_score DESC LIMIT 1) AS node_id" in sql and "FROM content c" in sql:
+                return _Result(rows=cands_ns)
+            return super().execute(clause, params)
+
+    # profile=None: rel_real=False → rel=quality_score 폴백. quality 차이가 선명하게 드러남.
+    base = dict(profile=None, centroid="[0.0,0.0]", nodes=[(10, "토픽A")])
+
+    out_mid   = recommend_next(1, 2, _PatchedSession(**base, current_level="중급"))
+    out_begin = recommend_next(1, 2, _PatchedSession(**base, current_level="입문"))
+
+    assert _ids(out_mid)[0] == 1,   "중급: recency 보너스로 최신 글이 quality 격차 역전"
+    assert _ids(out_begin)[0] == 2, "초급: recency 없으므로 quality 우위 구글이 먼저"
