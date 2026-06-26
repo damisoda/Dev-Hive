@@ -11,6 +11,7 @@ from typing import Optional
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session, defer
 
 from app.api.auth import get_current_user
@@ -87,7 +88,7 @@ def list_content(
 
     total = query.count()
     rows = (
-        query.order_by(Content.created_at.desc().nullslast(), Content.id.desc())
+        query.order_by(func.coalesce(Content.published_at, Content.created_at).desc().nullslast(), Content.id.desc())
         .offset(offset)
         .limit(limit)
         .all()
