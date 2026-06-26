@@ -269,10 +269,18 @@ a.rec-title:hover { color: var(--accent-ink); }
 @media (max-width: 640px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
 
 /* 피드 필터 + 페이지네이션 */
-/* 검색바(HIVE-94) — 필터바 바로 위, 동일 톤 */
+/* 검색 + 필터 한 줄(HIVE-94). 좁아지면 검색이 먼저 전체폭으로 내려감 */
+.feed-controls {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.feed-controls .search-bar { flex: 1 1 280px; margin-bottom: 0; }
+.feed-controls .filter-bar { margin-bottom: 0; flex: 0 0 auto; }
+
+/* 검색바(HIVE-94) — 필터 셀렉트와 동일 높이/톤 */
 .search-bar {
   display: flex; align-items: center; gap: 8px;
-  margin-bottom: 10px; padding: 8px 12px;
+  height: 38px; padding: 0 6px 0 12px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
 }
 .search-bar:focus-within { border-color: var(--accent); }
@@ -283,15 +291,15 @@ a.rec-title:hover { color: var(--accent-ink); }
   border: none; outline: none; background: transparent;
 }
 .search-bar input::-webkit-search-cancel-button { -webkit-appearance: none; }
-.search-clear {
-  flex: 0 0 auto; font-family: inherit; font-size: 12.5px; font-weight: 600;
-  color: var(--text-muted); background: var(--surface-sunken);
-  border: none; border-radius: 7px; padding: 5px 10px; cursor: pointer;
+.search-go {
+  flex: 0 0 auto; font-family: inherit; font-size: 13px; font-weight: 600;
+  color: #fff; background: var(--accent);
+  border: none; border-radius: 7px; height: 28px; padding: 0 14px; cursor: pointer;
 }
-.search-clear:hover { color: var(--text); }
+.search-go:hover { background: var(--accent-ink); }
 
 .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-.filter-sel { font-family: inherit; font-size: 13.5px; font-weight: 500; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; cursor: pointer; }
+.filter-sel { font-family: inherit; font-size: 13.5px; font-weight: 500; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 9px; height: 38px; padding: 0 12px; cursor: pointer; }
 .filter-sel:focus { outline: none; border-color: var(--accent); }
 .pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 24px; }
 .pager-btn { font-size: 13.5px; font-weight: 600; color: var(--accent-ink); text-decoration: none; padding: 8px 16px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }

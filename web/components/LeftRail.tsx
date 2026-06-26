@@ -14,7 +14,6 @@ const Hive = () => (
   </svg>
 );
 
-const Search = () => <S><circle cx="11" cy="11" r="7" /><path d="m20 20-3.2-3.2" /></S>;
 const Home = () => <S><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /></S>;
 const Compass = () => <S><circle cx="12" cy="12" r="9" /><path d="m15.5 8.5-2 5-5 2 2-5z" /></S>;
 const Curriculum = () => <S><path d="m12 4 9 4-9 4-9-4z" /><path d="M5 10v5c0 1.5 3.1 3 7 3s7-1.5 7-3v-5" /></S>;
@@ -24,7 +23,6 @@ const Upload = () => <S><path d="M12 15V4" /><path d="m7.5 8.5 4.5-4.5 4.5 4.5" 
 const More = () => <S><circle cx="5" cy="12" r="1.3" fill="currentColor" /><circle cx="12" cy="12" r="1.3" fill="currentColor" /><circle cx="19" cy="12" r="1.3" fill="currentColor" /></S>;
 
 const NAV = [
-  { href: "/?focus=search", label: "검색", active: false, Icon: Search },
   { href: "/", label: "홈", active: true, Icon: Home },
   { href: "/discover", label: "디스커버", active: false, Icon: Compass },
   { href: "/curriculum", label: "커리큘럼", active: false, Icon: Curriculum },

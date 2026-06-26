@@ -58,8 +58,10 @@ export default async function HomePage({
         </span>
       </section>
 
-      <SearchBar />
-      <FilterBar />
+      <div className="feed-controls">
+        <FilterBar />
+        <SearchBar />
+      </div>
 
       {error ? (
         <StateView emoji={error.isConnection ? "🔌" : "⚠️"} title="콘텐츠를 불러오지 못했어요">

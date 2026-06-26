@@ -54,11 +54,10 @@ export function SearchBar() {
         placeholder="제목·요약으로 검색"
         aria-label="콘텐츠 검색"
       />
-      {active && (
-        <button type="button" className="search-clear" onClick={() => push("")} aria-label="검색 지우기">
-          지우기
-        </button>
-      )}
+      {/* 엔터와 동일 동작 — 검색을 모르는 사용자를 위한 명시적 버튼 */}
+      <button type="submit" className="search-go" aria-label="검색">
+        검색
+      </button>
     </form>
   );
 }
