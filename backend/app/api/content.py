@@ -11,7 +11,7 @@ from typing import Optional
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, defer
 
 from app.api.auth import get_current_user
@@ -91,6 +91,7 @@ def list_content(
     source: Optional[str] = None,
     node_id: Optional[int] = None,
     difficulty: Optional[str] = None,
+    q: Optional[str] = Query(None, max_length=100),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -113,9 +114,35 @@ def list_content(
     if difficulty is not None:
         query = query.filter(Content.difficulty == difficulty)
 
+    # 검색(HIVE-94): 제목 + 가공 요약(synthesis.one_liner) ILIKE. 영문 제목 콘텐츠도
+    # 한글 요약으로 잡히게 둘 다 본다. LIKE 와일드카드(%, _)는 리터럴로 이스케이프.
+    if q is not None:
+        term = q.strip()
+        if term:
+            like = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            query = query.filter(
+                or_(
+                    Content.title.ilike(like, escape="\\"),
+                    Content.synthesis["one_liner"].astext.ilike(like, escape="\\"),
+                )
+            )
+
     total = query.count()
+    # 첫인상 정렬(HIVE-94): 순수 최신순이면 영어 arXiv 크롤이 첫 화면을 도배하고
+    # '읽기' 모달도 대부분 빈 카드가 된다. 경험·가공(synthesis)·한글·직접 올린 글을
+    # 우선순위 점수로 끌어올린 뒤, 같은 티어 안에서는 최신순을 유지한다.
+    feed_priority = (
+        case((Content.content_type == "experience", 2), else_=0)
+        + case((Content.synthesis.isnot(None), 2), else_=0)   # 가공됨 → 모달이 안 빔
+        + case((Content.source == "user", 1), else_=0)        # 직접 올린 경험
+        + case((Content.language == "ko", 1), else_=0)        # 영어 도배 완화
+    )
     rows = (
-        query.order_by(func.coalesce(Content.published_at, Content.created_at).desc().nullslast(), Content.id.desc())
+        query.order_by(
+            feed_priority.desc(),
+            func.coalesce(Content.published_at, Content.created_at).desc().nullslast(),
+            Content.id.desc(),
+        )
         .offset(offset)
         .limit(limit)
         .all()
