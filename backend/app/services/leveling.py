@@ -11,7 +11,11 @@
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.services.constants import LEVEL_ORDER, LEVEL_UP_THRESHOLD
+from app.services.constants import (
+    LEVEL_ORDER,
+    LEVEL_UP_ENGAGED_FLOOR,
+    LEVEL_UP_THRESHOLD,
+)
 from app.services.knowledge_tracing import estimate_mastery
 
 
@@ -46,11 +50,16 @@ def check_and_level_up(user_id: int, db: Session) -> dict | None:
             text("SELECT id FROM curriculum_nodes WHERE parent_id IS NULL")
         ).fetchall()
     }
-    top_masteries = [v for nid, v in mastery.items() if nid in top_node_ids]
+    # HIVE-95: "읽음으로 학습한" 대주제(mastery > 온보딩 상한)만 평균낸다.
+    # 전체 대주제 평균은 일부만 깊게 판 유저(예: read27·mastery 0.895)를 입문에 고착시킨다.
+    # 온보딩만 있고 안 읽은 토픽(≤0.2)은 분모에서 제외 → 실제 학습한 영역으로 판정.
+    top_masteries = [
+        v for nid, v in mastery.items()
+        if nid in top_node_ids and v > LEVEL_UP_ENGAGED_FLOOR
+    ]
     if not top_masteries:
-        return None
+        return None  # 아직 읽음으로 학습한 대주제 없음 → 승급 보류
 
-    # 전 대주제를 골고루 익혔을 때 승급 (보수적)
     avg_mastery = sum(top_masteries) / len(top_masteries)
     if avg_mastery < threshold:
         return None
