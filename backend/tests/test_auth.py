@@ -18,6 +18,7 @@ settings.jwt_secret = "test-secret-hive100"
 from app.api.auth import get_current_user
 from app.api.auth import router as auth_router
 from app.database import get_db
+from app.services.rate_limit import reset_all_for_testing
 from app.services.security import (
     create_access_token,
     decode_access_token,
@@ -107,6 +108,13 @@ def test_get_current_user_forged_token_401():
 
 _authapp = FastAPI()
 _authapp.include_router(auth_router)
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    reset_all_for_testing()
+    yield
+    reset_all_for_testing()
 
 
 def _login_client(db_user):
