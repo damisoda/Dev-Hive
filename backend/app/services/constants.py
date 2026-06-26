@@ -60,6 +60,14 @@ PERSONA_ONBOARDING: dict[str, dict] = {
 # 보수적으로(현재 레벨 주제를 확실히 익혔을 때만) 둔다. mastery는 HIVE-23 산출물 재사용.
 LEVEL_UP_THRESHOLD: dict[str, float] = {"입문": 0.6, "중급": 0.75}
 LEVEL_ORDER: list[str] = ["입문", "중급", "고급"]
+# HIVE-95: 레벨업은 "읽음으로 학습한"(mastery > 온보딩 상한) 대주제만 평균낸다.
+# 전체 7대주제 평균은 일부만 깊게 판 유저(집중 학습자)를 영원히 고착시킨다.
+LEVEL_UP_ENGAGED_FLOOR: float = 0.2   # 온보딩 상한(0.2) 초과 = 읽음 신호 있는 토픽
+
+# HIVE-95: 콜드스타트 난이도 정렬 — 미학습(온보딩만) 토픽은 선언 레벨 기준 난이도로 매칭.
+# difficulty norm(입문0.0/중급0.5/고급1.0)과 같은 스케일로 onboarding mastery(≤0.2) 입문편향 해소.
+LEVEL_MASTERY_FLOOR: dict[str, float] = {"입문": 0.1, "중급": 0.5, "고급": 0.85}
+ONBOARDING_MASTERY_CEILING: float = 0.2
 
 
 # ── 피드백 / influence_score (HIVE-37) ────────────────────────────────

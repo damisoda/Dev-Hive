@@ -28,6 +28,10 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.services.constants import (
+    LEVEL_MASTERY_FLOOR,
+    ONBOARDING_MASTERY_CEILING,
+)
+from app.services.constants import (
     FEEDBACK_WANT_MORE_GRAPHRAG_WEIGHT as W_FB,
     LEVEL_ORDER,
     MASTERY_TOO_HARD_DELTA,
@@ -125,6 +129,13 @@ def _difficulty_fit(content_difficulty: str | None, mastery: float) -> float:
     return 1.0 - abs(d - mastery)
 
 
+def _difficulty_target(node_mastery: float, level_floor: float) -> float:
+    """난이도 매칭 기준치(HIVE-95). 미학습(온보딩만, ≤상한) 토픽은 선언 레벨 floor로 올려
+    onboarding mastery(≤0.2) 때문에 중·고급 유저가 입문 콘텐츠로 쏠리던 편향을 해소한다.
+    읽음으로 학습한(상한 초과) 토픽은 실제 node mastery를 그대로 써 적응을 유지한다."""
+    return node_mastery if node_mastery > ONBOARDING_MASTERY_CEILING else max(node_mastery, level_floor)
+
+
 def _path_score(
     node_id: int | None,
     prereq_map: dict[int, list[tuple[int, float]]],
@@ -196,6 +207,7 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
 
     profile = _parse_vec(urow.pv)
     use_recency = (urow.current_level or "입문") in _RECENCY_LEVELS
+    level_floor = LEVEL_MASTERY_FLOOR.get(urow.current_level or "입문", 0.0)  # HIVE-95 콜드스타트 정렬
     mastery = estimate_mastery(user_id, db)  # {node_id: 0~1}
 
     # 피드백 → 토픽별 mastery 조정(HIVE-48). 전역 난이도 감점 대신 대표 토픽 단위로 정교하게.
@@ -263,7 +275,7 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
             rel = (float(np.dot(pc, ec) / denom) + 1.0) / 2.0
         else:
             rel = float(r.quality_score) if r.quality_score is not None else 0.5
-        diff = _difficulty_fit(r.difficulty, mastery.get(r.node_id, 0.0))
+        diff = _difficulty_fit(r.difficulty, _difficulty_target(mastery.get(r.node_id, 0.0), level_floor))
         # want_more 보너스: 별도 항(4성분과 무관). centered 코사인(0~1) × W_FB. 신호 없으면 0.
         if wmc is not None and ec is not None:
             wm_denom = float(np.linalg.norm(wmc) * np.linalg.norm(ec)) or 1.0

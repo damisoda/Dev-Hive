@@ -102,3 +102,17 @@ def test_path_score_weighted_average():
 def test_path_score_missing_prereq_in_mastery_treated_zero():
     # 선행 노드가 mastery dict에 없으면 0.0(미학습)으로 — KeyError 없음
     assert _path_score(2, {2: [(1, 1.0)]}, {}) == 0.0
+
+
+def test_difficulty_target_level_floor_hive95():
+    # HIVE-95: 미학습(온보딩만 ≤0.2) 토픽은 선언 레벨 floor로 올라가 입문편향 해소.
+    from app.recommend.graphrag import _difficulty_target, _difficulty_fit
+    assert _difficulty_target(0.1, 0.5) == 0.5    # 중급 floor 적용
+    assert _difficulty_target(0.0, 0.85) == 0.85  # 고급 floor
+    assert _difficulty_target(0.1, 0.1) == 0.1    # 입문
+    # 읽음으로 학습한(>0.2) 토픽은 실제 mastery 유지(floor 무시).
+    assert _difficulty_target(0.7, 0.85) == 0.7
+    assert _difficulty_target(0.3, 0.5) == 0.3
+    # 중급 미학습 토픽 → 중급 콘텐츠 적합도 > 입문 콘텐츠(편향 해소 검증).
+    m = _difficulty_target(0.1, 0.5)
+    assert _difficulty_fit("중급", m) > _difficulty_fit("입문", m)
