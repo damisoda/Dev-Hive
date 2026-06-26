@@ -315,6 +315,44 @@ a.rec-title:hover { color: var(--accent-ink); }
 .state p { margin: 0 auto; max-width: 420px; font-size: 14px; }
 .state code { background: var(--accent-wash); color: var(--accent-ink); padding: 1px 6px; border-radius: 6px; font-size: 13px; }
 
+/* ───────── 에러 경계 액션 (HIVE-94) ───────── */
+.state-actions { display: flex; gap: 8px; justify-content: center; margin-top: 18px; }
+.btn-retry {
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  padding: 9px 18px; border-radius: 10px; border: none;
+  background: var(--accent); color: #fff;
+}
+.btn-retry:hover { background: var(--accent-ink); }
+.btn-ghost {
+  display: inline-flex; align-items: center;
+  font-size: 14px; font-weight: 600;
+  padding: 9px 16px; border-radius: 10px;
+  border: 1px solid var(--border-strong); color: var(--text-muted);
+}
+.btn-ghost:hover { background: var(--surface-sunken); }
+
+/* ───────── 로딩 스켈레톤 (HIVE-94) ───────── */
+@keyframes sk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.skeleton { background: var(--surface-sunken); border-radius: 10px; animation: sk-pulse 1.2s ease-in-out infinite; }
+.sk-line { height: 14px; display: block; max-width: 100%; }
+.sk-canvas { height: 60vh; margin-top: 16px; }
+.sk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 8px; }
+.sk-stat { height: 76px; }
+.load-center {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 90px 20px; color: var(--text-subtle); font-size: 14px;
+}
+.spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid var(--surface-sunken); border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@media (max-width: 560px) { .sk-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton, .spinner { animation-duration: 0s; }
+}
+
 /* ───────── 섹션 헤더(디스커버·커리큘럼) ───────── */
 .sec-head { margin-bottom: 16px; }
 .sec-head h2 { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 5px; }
