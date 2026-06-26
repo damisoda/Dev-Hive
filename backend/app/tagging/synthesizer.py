@@ -240,11 +240,16 @@ def _parse_card(raw_text: str) -> dict:
 
 
 # LLM이 null 대신 "원문에서 명시되지 않음" 같은 위장 텍스트를 쓰는 패턴 감지.
-# - 첫 번째 브랜치: "원문에서" + 동사 + 부정형(되지 않/안 됨/없음)만 매칭 — 양성형 오탐 방지
-# - 두 번째 브랜치: 영문 부정형
+# - 한글: 원문(에/에서) + 동사(명시/언급/설명/나타나/등장/기재/제시/확인/존재) + 부정형(되지않/안됨/없음/않음),
+#   '명시되지 않음' 단독형·'원문에 없음'·'찾을 수 없음'까지 포착. 양성형("원문에서 언급된 X")은 부정형이 없어 미매칭.
+# - 영문: not (found/present/mentioned/specified) / not in the (original/source/text)
 _PHANTOM_PATTERNS = re.compile(
-    r"원문에서\s*(명시|언급|설명|나타나|등장)\s*(되지\s*않|안\s*됨|없음)|"
-    r"not\s*(mentioned|specified|provided|stated)\s*in",
+    r"원문(?:에서|에)?\s*\S*\s*(?:명시|언급|설명|나타나|등장|기재|제시|확인|존재)\S*\s*(?:되지\s*않|안\s*[됨돼]|없[음다습]|않[음다습])"
+    r"|원문(?:에서|에)\s*(?:없[음다습]|찾을\s*수\s*없)"
+    r"|(?:명시|언급|기재|제시|설명)되지\s*않(?:음|았|습)"
+    r"|찾을\s*수\s*없[음다습]"
+    r"|not\s+(?:found|present|mentioned|specified)"
+    r"|not\s+in\s+the\s+(?:original|source|text)",
     re.IGNORECASE,
 )
 

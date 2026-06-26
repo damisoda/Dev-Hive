@@ -500,3 +500,15 @@ def test_trailing_comment_after_json_parsed():
     out = synthesize(_ITEM, {"content_type": "discussion"}, client)
     assert out is not None
     assert out["claim"] == "c"
+
+
+def test_is_phantom_catches_korean_variants_hive104():
+    # HIVE-104 회귀: 기존에 놓치던 phantom-dodge 변형들도 잡는다.
+    from app.tagging.synthesizer import _is_phantom
+    for p in ["원문에 나타나지 않음", "원문에서 찾을 수 없음", "명시되지 않음",
+              "이 정보는 원문에 없음", "원문에 언급되지 않음", "not specified in the source"]:
+        assert _is_phantom(p), p
+    # 긍정형/정상 텍스트는 phantom 아님(과매칭 방지)
+    for ok in ["원문에서 언급된 RAG 기법", "벡터 검색으로 관련 문서를 찾을 수 있다",
+               "명시적 캐싱을 사용한다", "원문은 설치 방법을 설명한다"]:
+        assert not _is_phantom(ok), ok
