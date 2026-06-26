@@ -11,7 +11,7 @@ from typing import Optional
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session, defer
 
 from app.api.auth import get_current_user
@@ -87,8 +87,21 @@ def list_content(
         query = query.filter(Content.difficulty == difficulty)
 
     total = query.count()
+    # 첫인상 정렬(HIVE-94): 순수 최신순이면 영어 arXiv 크롤이 첫 화면을 도배하고
+    # '읽기' 모달도 대부분 빈 카드가 된다. 경험·가공(synthesis)·한글·직접 올린 글을
+    # 우선순위 점수로 끌어올린 뒤, 같은 티어 안에서는 최신순을 유지한다.
+    feed_priority = (
+        case((Content.content_type == "experience", 2), else_=0)
+        + case((Content.synthesis.isnot(None), 2), else_=0)   # 가공됨 → 모달이 안 빔
+        + case((Content.source == "user", 1), else_=0)        # 직접 올린 경험
+        + case((Content.language == "ko", 1), else_=0)        # 영어 도배 완화
+    )
     rows = (
-        query.order_by(func.coalesce(Content.published_at, Content.created_at).desc().nullslast(), Content.id.desc())
+        query.order_by(
+            feed_priority.desc(),
+            func.coalesce(Content.published_at, Content.created_at).desc().nullslast(),
+            Content.id.desc(),
+        )
         .offset(offset)
         .limit(limit)
         .all()
