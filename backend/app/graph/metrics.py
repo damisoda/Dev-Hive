@@ -264,6 +264,83 @@ def label_cluster_agreement(true_labels: list, cluster_labels: list) -> dict:
             "completeness": comp, "baseline": v_base}
 
 
+# ── HIVE-58: precedes 링크 평가 + 단일 목적함수 J ────────────────────────────
+
+def precedes_link_metrics(predicted, golden) -> dict:
+    """precedes 링크 예측 품질(방향성 유지). HIVE-58.
+
+    node_links 전 행 = precedes(source->target). 골든셋과 비교해 방향까지 채점한다.
+    predicted: 예측 엣지 (source,target) iterable.
+    golden:    골든셋 (source,target) iterable — label==1(참 precedes)만.
+    reversed_rate: 예측 중 방향이 뒤집힌 비율 = (t,s)∈gold 이고 (s,t)∉gold.
+    0쌍(빈 predicted 또는 golden)에도 NaN/0div 없이 0.0.
+    """
+    pred = {(int(s), int(t)) for s, t in predicted}
+    gold = {(int(s), int(t)) for s, t in golden}
+    tp = len(pred & gold)
+    precision = tp / len(pred) if pred else 0.0
+    recall = tp / len(gold) if gold else 0.0
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+    rev = sum(1 for (s, t) in pred if (t, s) in gold and (s, t) not in gold)
+    reversed_rate = rev / len(pred) if pred else 0.0
+    return {
+        "n_pred": len(pred), "n_golden": len(gold), "tp": tp,
+        "precision": round(precision, 4), "recall": round(recall, 4),
+        "f1": round(f1, 4), "reversed_rate": round(reversed_rate, 4),
+    }
+
+
+# 단일 목적함수 J 가중치 — 좋을수록 J↑(≈0~1). 합=1.
+OBJECTIVE_WEIGHTS = {
+    "coverage_ratio": 0.25,     # semantic.coverage_ratio (↑ 좋음)
+    "purity_weighted": 0.25,    # semantic.tag_purity_topic.purity_weighted (↑)
+    "v_measure": 0.25,          # semantic.v_measure_topic.v_measure (↑)
+    "orphan_ratio": 0.15,       # metrics.orphan_ratio (↓ 좋음 → 1-x)
+    "depth": 0.10,              # metrics.max_topic_depth (얕을수록 ↑)
+}
+_DEPTH_OK = 2     # 이 깊이 이하 만점, 초과분만 선형 감점(6단계 폭)
+
+
+def compute_objective(snapshot: dict) -> dict:
+    """eval 스냅샷에서 정확키를 뽑아 단일 목적함수 J 계산(HIVE-58).
+
+    정확키: semantic.coverage_ratio / semantic.tag_purity_topic.purity_weighted /
+            semantic.v_measure_topic.v_measure / metrics.orphan_ratio / metrics.max_topic_depth
+    누락/None/비수치 키는 0으로 안전 처리(구버전 스냅샷·0쌍에도 죽지 않음).
+    """
+    sem = snapshot.get("semantic") or {}
+    met = snapshot.get("metrics") or {}
+
+    def _num(x) -> float:
+        return float(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else 0.0
+
+    coverage = _num(sem.get("coverage_ratio"))
+    purity = _num((sem.get("tag_purity_topic") or {}).get("purity_weighted"))
+    vmeasure = _num((sem.get("v_measure_topic") or {}).get("v_measure"))
+    orphan = _num(met.get("orphan_ratio"))
+    depth = _num(met.get("max_topic_depth"))
+
+    depth_score = 1.0 if depth <= _DEPTH_OK else max(0.0, 1.0 - (depth - _DEPTH_OK) / 6.0)
+    w = OBJECTIVE_WEIGHTS
+    j = (w["coverage_ratio"] * coverage
+         + w["purity_weighted"] * purity
+         + w["v_measure"] * vmeasure
+         + w["orphan_ratio"] * (1.0 - orphan)
+         + w["depth"] * depth_score)
+    return {
+        "J": round(j, 4),
+        "components": {
+            "coverage_ratio": round(coverage, 4),
+            "purity_weighted": round(purity, 4),
+            "v_measure": round(vmeasure, 4),
+            "orphan_ratio": round(orphan, 4),
+            "max_topic_depth": depth,
+            "depth_score": round(depth_score, 4),
+        },
+        "weights": dict(w),
+    }
+
+
 def compute_metrics(g: nx.MultiDiGraph, *, betweenness_top: int = 5) -> dict:
     """그래프 자기조직화 지표를 계산해 dict로 반환한다.
 

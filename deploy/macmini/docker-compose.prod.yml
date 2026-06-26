@@ -32,6 +32,7 @@ services:
       DATABASE_URL: postgresql://devhive:${POSTGRES_PASSWORD}@db:5432/devhive
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?}
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
+      JWT_SECRET: ${JWT_SECRET:?}   # HIVE-100 인증 — .env에 설정
       ENABLE_SCHEDULER: "false"   # 결정사항: 끄고 시작 — 재크롤은 수동 트리거
     ports:
       - "127.0.0.1:8000:8000"     # 외부 노출은 터널(cloudflared/tailscale)로만
