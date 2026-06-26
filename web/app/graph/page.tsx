@@ -1,8 +1,9 @@
 // 지식그래프 — /graph 실데이터를 인터랙티브 포스그래프로. 서버에서 fetch(브라우저 CORS 회피) 후 클라 캔버스에 주입.
 
-import { getGraph, ApiError } from "@/lib/api";
+import { getGraph, getMastery, ApiError } from "@/lib/api";
 import { GraphCanvas, type GraphHighlight } from "@/components/GraphCanvas";
 import { StateView } from "@/components/StateView";
+import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "지식그래프 · Dev-Hive" };
@@ -40,7 +41,23 @@ export default async function GraphPage({
 }: {
   searchParams?: Promise<SearchParams>;
 }) {
-  const highlight = graphHighlight(searchParams ? await searchParams : {});
+  const [highlight, session] = await Promise.all([
+    searchParams ? searchParams.then(graphHighlight) : Promise.resolve(undefined),
+    getSession(),
+  ]);
+
+  // 로그인 유저의 학습 경로 노드: mastery > 0 인 topic nodeId 집합
+  let pathIds: string[] = [];
+  if (session?.token) {
+    try {
+      const m = await getMastery(session.token);
+      pathIds = Object.entries(m.mastery)
+        .filter(([, v]) => v > 0)
+        .map(([k]) => k);
+    } catch {
+      // mastery 실패 시 조용히 무시 — 그래프는 계속 렌더됨
+    }
+  }
 
   try {
     const data = await getGraph();
@@ -63,7 +80,7 @@ export default async function GraphPage({
             <span className="lg"><i style={{ background: "#CBD0DA" }} />콘텐츠</span>
           </div>
         </div>
-        <GraphCanvas data={{ ...data, edges }} highlight={highlight} />
+        <GraphCanvas data={{ ...data, edges }} highlight={highlight} loggedIn={!!session} pathIds={pathIds} />
         <p className="graph-foot">노드를 드래그·줌하며 탐색하세요. 콘텐츠는 소속 주제 주변으로 모입니다.</p>
       </main>
     );
