@@ -15,17 +15,24 @@ export function ReadModal({
   title,
   url,
   loggedIn,
+  titleKo,
 }: {
   contentId: number;
   title: string;
   url?: string | null;
   loggedIn: boolean;
+  titleKo?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [synth, setSynth] = useState<Synth | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [levelUp, setLevelUp] = useState<string | null>(null);
+  const [koOpen, setKoOpen] = useState(false);
+
+  // 영문 제목 + 번역 토글(HIVE-66) — title_ko가 있고 원문과 다를 때만(피드 카드와 동일 판단).
+  const ko = titleKo?.trim();
+  const showTitleToggle = Boolean(ko && ko !== title.trim());
 
   async function load() {
     setLoading(true);
@@ -86,7 +93,19 @@ export function ReadModal({
             <button className="modal-close" type="button" onClick={() => setOpen(false)} aria-label="닫기">
               ✕
             </button>
-            <h3 className="modal-title">{title}</h3>
+            <h3 className="modal-title">
+              {title}
+              {showTitleToggle && (
+                <button
+                  type="button"
+                  className="title-tr-toggle"
+                  onClick={() => setKoOpen((o) => !o)}
+                >
+                  {koOpen ? "접기" : "번역 보기"}
+                </button>
+              )}
+            </h3>
+            {showTitleToggle && koOpen && <p className="modal-title-ko">{ko}</p>}
             {levelUp && <span className="level-up">레벨 업! → {levelUp}</span>}
 
             <div className="modal-body">
@@ -109,7 +128,8 @@ export function ReadModal({
 
 function SynthBody({ synth }: { synth: Synth }) {
   const takeaways = Array.isArray(synth.key_takeaways) ? synth.key_takeaways : [];
-  const skip = new Set(["one_liner", "key_takeaways", "content_type"]);
+  // title_ko(제목 번역)는 본문 섹션이 아니라 제목용이므로 바디 나열에서 제외(HIVE-66).
+  const skip = new Set(["one_liner", "key_takeaways", "content_type", "title_ko"]);
   const body = Object.entries(synth).filter(([k, v]) => {
     if (skip.has(k) || v == null) return false;
     if (typeof v === "string") return v.trim().length > 0;

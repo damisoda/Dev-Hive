@@ -29,8 +29,10 @@ MODEL = "claude-haiku-4-5-20251001"
 MAX_OUTPUT_TOKENS = 3072
 
 # 공통헤더(전 타입 공통) — 피드 카드에 노출. 펼치면 타입별 바디.
+# title_ko: 제목 번역(HIVE-66). 원문(title)을 번역하는 것이므로 본문 근거 규칙의 예외다.
 _COMMON_HEADER = (
     "공통 헤더(모든 타입):\n"
+    '  "title_ko": 글 제목(title)을 자연스러운 한국어로 번역. 제목이 이미 한국어면 원문 그대로 둔다. (string)\n'
     '  "one_liner": 이 글이 주는 핵심 가치를 한 문장으로 (string)\n'
     '  "key_takeaways": 독자가 가져갈 핵심 3~5개 (string 배열)\n'
 )
@@ -78,7 +80,7 @@ _BODY_SPECS: dict[str, str] = {
 }
 
 # 타입별 기대 키(검증/형태 보정용). 헤더 키는 공통.
-_HEADER_KEYS = ("one_liner", "key_takeaways")
+_HEADER_KEYS = ("one_liner", "key_takeaways", "title_ko")
 _BODY_KEYS: dict[str, tuple[str, ...]] = {
     "experience": ("context", "findings", "pitfalls", "numbers", "verdict"),
     "tool": ("what", "when_to_use", "how", "requirements", "gotchas"),
@@ -238,6 +240,9 @@ def _coerce_card(parsed: dict, content_type: str) -> dict | None:
     card: dict = {"content_type": content_type}
 
     # 공통 헤더
+    # title_ko(제목 번역)는 제목을 옮긴 것이라 본문 grounding 필터 대상이 아니다(아래 _apply_grounding 미포함).
+    title_ko = parsed.get("title_ko")
+    card["title_ko"] = title_ko if isinstance(title_ko, str) and title_ko.strip() else None
     one_liner = parsed.get("one_liner")
     card["one_liner"] = one_liner if isinstance(one_liner, str) else None
     takeaways = parsed.get("key_takeaways")

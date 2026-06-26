@@ -46,6 +46,8 @@ class ContentItem(BaseModel):
     created_at: Optional[datetime] = None
     # 요약본 = 캐시된 synthesis.one_liner(있을 때만). 카드 기본 노출용. 미생성이면 null.
     summary: Optional[str] = None
+    # 제목 한글 번역 = 캐시된 synthesis.title_ko (HIVE-66). 영문 제목 '번역 보기' 토글용. 미생성이면 null.
+    title_ko: Optional[str] = None
 
     class Config:
         from_attributes = True

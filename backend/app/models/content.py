@@ -53,3 +53,14 @@ class Content(Base):
             one = self.synthesis.get("one_liner")
             return one if isinstance(one, str) and one.strip() else None
         return None
+
+    @property
+    def title_ko(self) -> str | None:
+        """제목 한글 번역 = 캐시된 synthesis의 title_ko (HIVE-66). 미생성이면 None.
+
+        피드 카드의 '번역 보기' 토글에 쓴다(영문 제목일 때만 프론트가 노출).
+        """
+        if isinstance(self.synthesis, dict):
+            t = self.synthesis.get("title_ko")
+            return t if isinstance(t, str) and t.strip() else None
+        return None

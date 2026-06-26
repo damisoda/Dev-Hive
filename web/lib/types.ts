@@ -17,6 +17,7 @@ export interface ContentItem {
   published_at?: string | null;
   created_at?: string | null;
   summary?: string | null; // 캐시된 synthesis.one_liner(요약본), 미생성이면 null
+  title_ko?: string | null; // 캐시된 synthesis.title_ko(제목 한글 번역), 미생성이면 null (HIVE-66)
 }
 
 export interface ContentListResponse {
