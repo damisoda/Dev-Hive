@@ -36,7 +36,7 @@ def ensure_synthesis(content_id: int, db: Session, client: anthropic.Anthropic |
     if client is None:
         return None  # ANTHROPIC 키 없음 → 가공 생략, 추천 자체는 정상 반환
 
-    item = {"title": row.title, "body": row.body}
+    item = {"title": row.title, "body": row.body or ""}
     tags = {"content_type": row.content_type}
     try:
         card = synthesize(item, tags, client)
