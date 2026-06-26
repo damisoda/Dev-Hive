@@ -1,13 +1,47 @@
 // 지식그래프 — /graph 실데이터를 인터랙티브 포스그래프로. 서버에서 fetch(브라우저 CORS 회피) 후 클라 캔버스에 주입.
 
 import { getGraph, ApiError } from "@/lib/api";
-import { GraphCanvas } from "@/components/GraphCanvas";
+import { GraphCanvas, type GraphHighlight } from "@/components/GraphCanvas";
 import { StateView } from "@/components/StateView";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "지식그래프 · Dev-Hive" };
 
-export default async function GraphPage() {
+type SearchParamValue = string | string[] | undefined;
+type SearchParams = Record<string, SearchParamValue>;
+
+function firstParam(value: SearchParamValue) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function graphNodeId(value: SearchParamValue, fallbackKind?: "content" | "topic") {
+  const raw = firstParam(value);
+  if (!raw) return undefined;
+  if (/^(content|topic):\d+$/.test(raw)) return raw;
+  if (fallbackKind && /^\d+$/.test(raw)) return `${fallbackKind}:${raw}`;
+  return undefined;
+}
+
+function graphHighlight(params: SearchParams): GraphHighlight | undefined {
+  const contentId = graphNodeId(params.content, "content");
+  const topicId = graphNodeId(params.topic, "topic");
+  const focusId = graphNodeId(params.focus) ?? topicId ?? contentId;
+  if (!focusId && !contentId && !topicId) return undefined;
+  return {
+    focusId,
+    contentId,
+    topicId,
+    isNew: firstParam(params.new) === "1",
+  };
+}
+
+export default async function GraphPage({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
+  const highlight = graphHighlight(searchParams ? await searchParams : {});
+
   try {
     const data = await getGraph();
     // similar_to(콘텐츠-콘텐츠)는 1200+라 헤어볼 → 강한 연결(≥0.65)만, belongs_to/precedes는 전부 유지.
@@ -29,7 +63,7 @@ export default async function GraphPage() {
             <span className="lg"><i style={{ background: "#CBD0DA" }} />콘텐츠</span>
           </div>
         </div>
-        <GraphCanvas data={{ ...data, edges }} />
+        <GraphCanvas data={{ ...data, edges }} highlight={highlight} />
         <p className="graph-foot">노드를 드래그·줌하며 탐색하세요. 콘텐츠는 소속 주제 주변으로 모입니다.</p>
       </main>
     );
