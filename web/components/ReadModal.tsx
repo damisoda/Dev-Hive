@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SYNTH_BODY_LABELS } from "@/lib/viewmodel";
+import { SYNTH_BODY_LABELS, contentTypeLabel } from "@/lib/viewmodel";
 
 type Synth = Record<string, unknown> & {
   one_liner?: string;
   key_takeaways?: string[];
+  content_type?: string;
 };
 
 // '읽기' → 현재 페이지 위에 모달(오버레이 카드)로 재가공본을 띄운다. 이동 아님.
 // 열 때 BFF /api/read 1회: 재가공본(캐시 우선) + 로그인 시 읽음 처리.
+// 레이아웃(재디자인): 헤더(타입 배지·제목·한 줄 요약) 고정 + 본문(아이콘 스파인) 스크롤 + 푸터('원문 보기' 우하단).
 export function ReadModal({
   contentId,
   title,
@@ -85,6 +87,8 @@ export function ReadModal({
     };
   }, [open]);
 
+  const ct = synth?.content_type;
+
   return (
     <>
       {renderTrigger ? (
@@ -104,25 +108,32 @@ export function ReadModal({
             aria-label={title}
             onClick={(e) => e.stopPropagation()}
           >
-            <button className="modal-close" type="button" onClick={() => setOpen(false)} aria-label="닫기">
-              ✕
-            </button>
-            <h3 className="modal-title">
-              {title}
-              {showTitleToggle && (
-                <button
-                  type="button"
-                  className="title-tr-toggle"
-                  onClick={() => setKoOpen((o) => !o)}
-                >
-                  {koOpen ? "접기" : "번역 보기"}
+            <div className="modal-head">
+              <div className="modal-head-row">
+                {ct && (
+                  <span className="synth-badge">
+                    <Icon name="spark" size={13} />
+                    {contentTypeLabel(ct)}
+                  </span>
+                )}
+                <button className="modal-close" type="button" onClick={() => setOpen(false)} aria-label="닫기">
+                  <Icon name="close" size={18} />
                 </button>
-              )}
-            </h3>
-            {showTitleToggle && koOpen && <p className="modal-title-ko">{ko}</p>}
-            {levelUp && <span className="level-up">레벨 업! → {levelUp}</span>}
+              </div>
+              <h3 className="modal-title">
+                {title}
+                {showTitleToggle && (
+                  <button type="button" className="title-tr-toggle" onClick={() => setKoOpen((o) => !o)}>
+                    {koOpen ? "접기" : "번역 보기"}
+                  </button>
+                )}
+              </h3>
+              {showTitleToggle && koOpen && <p className="modal-title-ko">{ko}</p>}
+              {levelUp && <span className="level-up">레벨 업! → {levelUp}</span>}
+              {synth?.one_liner && <p className="modal-lead">{synth.one_liner}</p>}
+            </div>
 
-            <div className="modal-body">
+            <div className="modal-body mc-scroll">
               {loading && <p className="synth-err">여는 중…</p>}
               {err && <p className="synth-err">{err}</p>}
               {synthPending && (
@@ -142,9 +153,11 @@ export function ReadModal({
             </div>
 
             {originUrl && !synthPending && (
-              <a className="modal-origin" href={originUrl} target="_blank" rel="noopener noreferrer">
-                원문 보기 ↗
-              </a>
+              <div className="modal-foot">
+                <a className="modal-origin" href={originUrl} target="_blank" rel="noopener noreferrer">
+                  원문 보기 <Icon name="ext" size={14} />
+                </a>
+              </div>
             )}
           </div>
         </div>
@@ -153,10 +166,28 @@ export function ReadModal({
   );
 }
 
+// 섹션 키 → 시각 처리(kind)·아이콘. 값 타입과 키로 결정한다.
+const WARN_KEYS = new Set(["pitfalls", "gotchas", "counterpoints"]);
+const CLOCK_KEYS = new Set(["when_to_use", "when_matters"]);
+
+type Kind = "key" | "warn" | "chips" | "bullets" | "para";
+
+function sectionKind(key: string, value: unknown): { kind: Kind; icon: IconName } {
+  if (key === "key_takeaways") return { kind: "key", icon: "spark" };
+  if (WARN_KEYS.has(key)) return { kind: "warn", icon: "warn" };
+  if (key === "requirements") return { kind: "chips", icon: "doc" };
+  if (Array.isArray(value)) return { kind: "bullets", icon: "list" };
+  if (CLOCK_KEYS.has(key)) return { kind: "para", icon: "clock" };
+  return { kind: "para", icon: "info" };
+}
+
 function SynthBody({ synth }: { synth: Synth }) {
   const takeaways = Array.isArray(synth.key_takeaways) ? synth.key_takeaways : [];
-  // title_ko(제목 번역)는 본문 섹션이 아니라 제목용이므로 바디 나열에서 제외(HIVE-66).
-  const skip = new Set(["one_liner", "key_takeaways", "content_type", "title_ko"]);
+  // 본문 섹션이 아닌 키(요약·태그성)는 스파인에서 제외.
+  const skip = new Set([
+    "one_liner", "key_takeaways", "content_type", "title_ko",
+    "language", "quality_score", "off_topic", "relevance", "difficulty",
+  ]);
   const body = Object.entries(synth).filter(([k, v]) => {
     if (skip.has(k) || v == null) return false;
     if (typeof v === "string") return v.trim().length > 0;
@@ -164,33 +195,118 @@ function SynthBody({ synth }: { synth: Synth }) {
     return false;
   });
 
+  const sections: [string, unknown][] = [];
+  if (takeaways.length > 0) sections.push(["key_takeaways", takeaways]);
+  sections.push(...body);
+
   return (
-    <>
-      {synth.one_liner && <p className="modal-lead">{synth.one_liner}</p>}
-      {takeaways.length > 0 && (
-        <div className="synth-block">
-          <h4>핵심 정리</h4>
-          <ul>
-            {takeaways.map((t, i) => (
-              <li key={i}>{t}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {body.map(([k, v]) => (
-        <div className="synth-block" key={k}>
-          <h4>{SYNTH_BODY_LABELS[k] ?? k}</h4>
-          {Array.isArray(v) ? (
-            <ul>
-              {v.map((x, i) => (
-                <li key={i}>{String(x)}</li>
-              ))}
-            </ul>
-          ) : (
-            <p>{String(v)}</p>
-          )}
-        </div>
+    <div className="synth-spine">
+      {sections.map(([k, v]) => {
+        const { kind, icon } = sectionKind(k, v);
+        const label = k === "key_takeaways" ? "핵심 정리" : SYNTH_BODY_LABELS[k] ?? k;
+        const nodeClass = kind === "key" ? "is-key" : kind === "warn" ? "is-warn" : "is-def";
+        return (
+          <div className="synth-row" key={k}>
+            <span className={`synth-node ${nodeClass}`} aria-hidden>
+              <Icon name={icon} size={kind === "key" ? 15 : 16} />
+            </span>
+            <div className="synth-col">
+              <div className={`synth-h${kind === "warn" ? " is-warn" : ""}`}>{label}</div>
+              <SectionContent kind={kind} value={v} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SectionContent({ kind, value }: { kind: Kind; value: unknown }) {
+  const items = Array.isArray(value) ? value.map((x) => String(x)) : [];
+
+  if (kind === "key") {
+    return (
+      <div className="synth-hl">
+        {items.map((t, i) => (
+          <div className="synth-hl-item" key={i}>
+            <span className="synth-check" aria-hidden>
+              <Icon name="check" size={15} />
+            </span>
+            <span>{t}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (kind === "warn") {
+    return (
+      <div className="synth-warn">
+        {items.map((t, i) => (
+          <div className="synth-warn-item" key={i}>
+            <span className="synth-wdot" aria-hidden />
+            <span>{t}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (kind === "chips") {
+    return (
+      <div className="synth-chips">
+        {items.map((t, i) => (
+          <span className="synth-chip" key={i}>
+            {t}
+          </span>
+        ))}
+      </div>
+    );
+  }
+  if (kind === "bullets") {
+    return (
+      <div className="synth-bullets">
+        {items.map((t, i) => (
+          <div className="synth-bullet" key={i}>
+            <span className="synth-dot" aria-hidden />
+            <span>{t}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return <p className="synth-para">{String(value)}</p>;
+}
+
+// ── 인라인 아이콘(스파인 노드·배지·체크) ──
+type IconName = "spark" | "info" | "clock" | "list" | "warn" | "doc" | "check" | "close" | "ext";
+
+const PATHS: Record<IconName, { d: string; w?: number }> = {
+  spark: { d: "M12 4l1.5 4.1L18 9.6l-4.5 1.5L12 16l-1.5-4.9L6 9.6l4.5-1.5L12 4z" },
+  info: { d: "M12 3a9 9 0 100 18 9 9 0 000-18zM12 16v-4M12 8h.01" },
+  clock: { d: "M12 3a9 9 0 100 18 9 9 0 000-18zM12 7.5V12l3 2" },
+  list: { d: "M11 6h9M11 12h9M11 18h9M3.5 6.2l1.2 1.2 2.3-2.4M3.5 12.2l1.2 1.2 2.3-2.4M3.5 18.2l1.2 1.2 2.3-2.4" },
+  warn: { d: "M12 4.5l8.5 15h-17l8.5-15zM12 10v4M12 17.5h.01" },
+  doc: { d: "M8 5h8a2 2 0 012 2v12a2 2 0 01-2 2H8a2 2 0 01-2-2V7a2 2 0 012-2zM9.5 11h5M9.5 15h5" },
+  check: { d: "M4.5 12.5l4.5 4.5 10.5-11", w: 2.4 },
+  close: { d: "M6 6l12 12M18 6L6 18", w: 1.8 },
+  ext: { d: "M7 17L17 7M8 7h9v9", w: 2 },
+};
+
+function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
+  const { d, w } = PATHS[name];
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={w ?? 1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {d.split("M").filter(Boolean).map((seg, i) => (
+        <path key={i} d={"M" + seg} />
       ))}
-    </>
+    </svg>
   );
 }
