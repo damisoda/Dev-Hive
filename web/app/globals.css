@@ -242,6 +242,7 @@ a.post-title-tr:hover { color: var(--accent-ink); }
 .synth-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: #E4C98A; margin-top: 8px; }
 .synth-chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .synth-chip { background: #FCF7EE; color: #8A5E0A; font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 999px; }
+.synth-code { background: #F6F1E6; color: #8A5E0A; border-radius: 5px; padding: 1px 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 .synth-err, .synth-pending { margin: 0; font-size: 13.5px; color: var(--text-muted); }
 .synth-pending a { color: #8A5E0A; font-weight: 600; text-decoration: none; }
 .synth-pending a:hover { text-decoration: underline; }

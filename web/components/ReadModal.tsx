@@ -232,7 +232,7 @@ function SectionContent({ kind, value }: { kind: Kind; value: unknown }) {
             <span className="synth-check" aria-hidden>
               <Icon name="check" size={15} />
             </span>
-            <span>{t}</span>
+            <span>{renderInline(t)}</span>
           </div>
         ))}
       </div>
@@ -244,7 +244,7 @@ function SectionContent({ kind, value }: { kind: Kind; value: unknown }) {
         {items.map((t, i) => (
           <div className="synth-warn-item" key={i}>
             <span className="synth-wdot" aria-hidden />
-            <span>{t}</span>
+            <span>{renderInline(t)}</span>
           </div>
         ))}
       </div>
@@ -267,13 +267,54 @@ function SectionContent({ kind, value }: { kind: Kind; value: unknown }) {
         {items.map((t, i) => (
           <div className="synth-bullet" key={i}>
             <span className="synth-dot" aria-hidden />
-            <span>{t}</span>
+            <span>{renderInline(t)}</span>
           </div>
         ))}
       </div>
     );
   }
-  return <p className="synth-para">{String(value)}</p>;
+  return <RichText text={String(value)} />;
+}
+
+// 인라인 마크다운: `code` → <code> 스타일.
+function renderInline(s: string): React.ReactNode {
+  return s.split(/(`[^`]+`)/g).map((p, i) =>
+    p.length > 2 && p.startsWith("`") && p.endsWith("`") ? (
+      <code className="synth-code" key={i}>
+        {p.slice(1, -1)}
+      </code>
+    ) : (
+      p
+    )
+  );
+}
+
+// 문단에 인라인 리스트(" - " / 줄머리 "- ·")가 섞여 오면 불릿으로 분리하고, 백틱은 코드로 렌더.
+function RichText({ text }: { text: string }) {
+  const norm = text.replace(/\s+[-•]\s+/g, "\n- ").trim();
+  const lines = norm.split("\n");
+  const lead: string[] = [];
+  const items: string[] = [];
+  for (const ln of lines) {
+    const m = ln.match(/^[-•]\s+(.*)/);
+    if (m) items.push(m[1].trim());
+    else lead.push(ln);
+  }
+  if (items.length < 2) return <p className="synth-para">{renderInline(text)}</p>;
+  const leadText = lead.join(" ").trim();
+  return (
+    <>
+      {leadText && <p className="synth-para">{renderInline(leadText)}</p>}
+      <div className="synth-bullets" style={{ marginTop: leadText ? 10 : 0 }}>
+        {items.map((it, i) => (
+          <div className="synth-bullet" key={i}>
+            <span className="synth-dot" aria-hidden />
+            <span>{renderInline(it)}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
 }
 
 // ── 인라인 아이콘(스파인 노드·배지·체크) ──
