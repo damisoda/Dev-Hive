@@ -34,6 +34,13 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
       JWT_SECRET: ${JWT_SECRET:?}   # HIVE-100 인증 — .env에 설정
       ENABLE_SCHEDULER: "false"   # 결정사항: 끄고 시작 — 재크롤은 수동 트리거
+      # LLM 백엔드 토글: 로컬 EXAONE(ollama)로 전환해 크레딧 의존 제거. ollama는 호스트에서 네이티브
+      # 실행(Metal 가속) → 컨테이너는 host.docker.internal로 접속. anthropic으로 되돌리려면 .env에서 변경.
+      LLM_BACKEND: ${LLM_BACKEND:-anthropic}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-hf.co/LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct-GGUF:Q4_K_M}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # colima/Linux에서 컨테이너→호스트 ollama 접속
     ports:
       - "127.0.0.1:8000:8000"     # 외부 노출은 터널(cloudflared/tailscale)로만
 

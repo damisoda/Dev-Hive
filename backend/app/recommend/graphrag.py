@@ -180,10 +180,10 @@ def _template_reason(c: dict) -> str:
 def _rationale(user_state: str, item: dict) -> str | None:
     """top-1 근거 한 문장(Haiku). 키 없거나 실패 시 None → 템플릿 폴백."""
     try:
-        import anthropic
-
-        key = settings.anthropic_api_key or None
-        client = anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
+        from app.services.llm import get_llm_client, llm_available
+        if not llm_available():
+            return None
+        client = get_llm_client(settings.anthropic_api_key)
         msg = client.messages.create(
             model=_HAIKU_MODEL,
             max_tokens=200,
