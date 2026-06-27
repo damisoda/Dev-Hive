@@ -45,10 +45,7 @@ async function TopicSection({ token }: { token: string }) {
     const topics = g.nodes
       .filter((n) => n.kind === "topic")
       .map((n) => ({ id: n.id, label: n.label, parent: n.parent ?? null, auto: n.auto }));
-    const belongsTo = g.edges
-      .filter((e) => e.rel === "belongs_to")
-      .map((e) => ({ source: e.source, target: e.target }));
-    const rows = topicProgressRows(topics, belongsTo, readRes.items);
+    const rows = topicProgressRows(topics, readRes.items);
 
     if (rows.length === 0) {
       return <p className="sec-foot" style={{ marginTop: 0 }}>주제 정보를 불러오지 못했어요.</p>;
@@ -60,8 +57,8 @@ async function TopicSection({ token }: { token: string }) {
           <div className="tp-row" key={r.id}>
             <span className="tp-name">{r.name}</span>
             <span className="tp-cells" aria-hidden>
-              {Array.from({ length: TOPIC_CELLS }).map((_, i) => (
-                <span key={i} className={`tp-hex${i < r.filled ? " on" : ""}`} />
+              {r.cells.map((t, i) => (
+                <span key={i} className={`tp-hex t${t}`} />
               ))}
             </span>
             <span className="tp-status">{r.status}</span>

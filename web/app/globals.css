@@ -344,7 +344,10 @@ a.rec-title:hover { color: var(--accent-ink); }
 .tp-name { flex: 0 0 150px; font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
 .tp-cells { display: inline-flex; gap: 3px; flex: 1; }
 .tp-hex { width: 14px; height: 16px; clip-path: var(--hex); background: #E9EAEE; }
-.tp-hex.on { background: #EFD08A; }
+.tp-hex.t1 { background: #F7E9C8; } /* 진행 중(연한 꿀색) */
+.tp-hex.t2 { background: #EFD08A; } /* 10건 누적 */
+.tp-hex.t3 { background: #E4B45E; } /* 100건 누적 */
+.tp-hex.t4 { background: #D49C3A; } /* 1000건+ */
 .tp-status { flex: 0 0 auto; font-size: 12.5px; font-weight: 600; color: var(--text-subtle); min-width: 56px; text-align: right; }
 
 @media (max-width: 640px) {
