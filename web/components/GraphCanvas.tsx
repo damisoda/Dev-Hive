@@ -64,8 +64,7 @@ function linkNodeId(node: string | { id?: string }) {
 }
 
 function baseNodeVal(n: GraphNode) {
-  if (n.kind === "topic") return 14;
-  if (n.auto) return 3;
+  if (n.kind === "topic") return n.auto ? 4 : 14; // 대주제 크게 / auto 하위노드 작게
   return 1.5;
 }
 
@@ -129,7 +128,7 @@ export function GraphCanvas({
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg || !FG) return;
-    fg.d3Force("charge")?.strength((n: any) => (n.kind === "topic" ? -480 : -55));
+    fg.d3Force("charge")?.strength((n: any) => (n.kind === "topic" && !n.auto ? -480 : -55));
     const link = fg.d3Force("link");
     if (link) {
       link
@@ -138,7 +137,7 @@ export function GraphCanvas({
     }
     fg.d3Force(
       "collide",
-      forceCollide((n: any) => (n.kind === "topic" ? 48 : n.auto ? 10 : 6)).strength(0.9)
+      forceCollide((n: any) => (n.kind === "topic" && !n.auto ? 48 : n.auto ? 10 : 6)).strength(0.9)
     );
     fg.d3ReheatSimulation?.();
   }, [FG, graph]);
@@ -217,7 +216,7 @@ export function GraphCanvas({
     if (n.id === highlight?.focusId) return C.urlFocus;
     if (pathIdsSet.has(n.id)) return C.path;
     if (highlightIds.has(n.id)) return C.urlHL;
-    const base = NODE_COLORS[n.kind] ?? (n.auto ? NODE_COLORS.auto : NODE_COLORS.content);
+    const base = n.auto ? NODE_COLORS.auto : (NODE_COLORS[n.kind] ?? NODE_COLORS.content);
     return hoveredNodeRef.current !== null ? hexRgba(base, 0.7) : base;
   }
 
