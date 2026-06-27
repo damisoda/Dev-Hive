@@ -63,8 +63,8 @@ function linkNodeId(node: string | { id?: string }) {
 }
 
 function baseNodeVal(n: GraphNode) {
-  if (n.kind === "topic") return n.auto ? 7 : 16; // 대주제 굵게 / 하위 중간
-  return 2.5; // 콘텐츠 얇게
+  if (n.kind === "topic") return n.auto ? 4.5 : 9; // 대주제 굵게 / 하위 중간
+  return 2; // 콘텐츠 얇게
 }
 
 function parseContentId(nodeId: string): number | undefined {
@@ -254,8 +254,8 @@ export function GraphCanvas({
   }
 
   function getNodeVal(n: GraphNode): number {
-    if (n.id === highlight?.focusId) return n.kind === "topic" ? 18 : 5;
-    if (highlightIds.has(n.id)) return n.kind === "topic" ? 16 : 3.5;
+    if (n.id === highlight?.focusId) return n.kind === "topic" ? 11 : 4;
+    if (highlightIds.has(n.id)) return n.kind === "topic" ? 10 : 3;
     return baseNodeVal(n);
   }
 
@@ -275,7 +275,7 @@ export function GraphCanvas({
     scale: number,
     isFocus: boolean
   ) {
-    const fs = (n.kind === "topic" ? 13 : 12) / scale;
+    const fs = (n.kind === "topic" ? (n.auto ? 10 : 11.5) : 9) / scale; // 대주제 11.5 / 하위 10 / 콘텐츠 9
     ctx.font = `700 ${fs}px Pretendard, -apple-system, sans-serif`;
     const tw = ctx.measureText(n.label).width;
     const padX = 6 / scale;
