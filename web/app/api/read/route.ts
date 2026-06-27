@@ -16,12 +16,18 @@ export async function POST(req: Request) {
 
   let synthesis: unknown = null;
   let content_type: string | null = null;
+  let url: string | null = null;
   try {
     const r = await fetch(`${API}/content/${cid}/synthesis`, { cache: "no-store" });
     if (r.ok) {
-      const d = (await r.json()) as { synthesis?: unknown; content_type?: string | null };
+      const d = (await r.json()) as {
+        synthesis?: unknown;
+        content_type?: string | null;
+        url?: string | null;
+      };
       synthesis = d.synthesis ?? null;
       content_type = d.content_type ?? null;
+      url = d.url ?? null;
     }
   } catch {
     /* 재가공본 실패는 graceful — 아래 읽음은 계속 */
@@ -48,5 +54,5 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ synthesis, content_type, leveled_up, new_level });
+  return NextResponse.json({ synthesis, content_type, url, leveled_up, new_level });
 }

@@ -224,6 +224,7 @@ def upload_content(
 class SynthesisResponse(BaseModel):
     content_id: int
     content_type: Optional[str] = None
+    url: Optional[str] = None            # 원문 링크 — '읽기' 모달의 '원문 보기'용(그래프 진입 포함)
     synthesis: Optional[dict] = None     # {one_liner, key_takeaways[], ...타입별 바디}
 
 
@@ -246,7 +247,7 @@ def get_synthesis(
     )
 
     row = (
-        db.query(Content.id, Content.content_type)
+        db.query(Content.id, Content.content_type, Content.url)
         .filter(Content.id == content_id)
         .first()
     )
@@ -255,4 +256,6 @@ def get_synthesis(
 
     client = get_llm_client(settings.anthropic_api_key) if llm_available() else None
     card = ensure_synthesis(content_id, db, client)
-    return SynthesisResponse(content_id=content_id, content_type=row.content_type, synthesis=card)
+    return SynthesisResponse(
+        content_id=content_id, content_type=row.content_type, url=row.url, synthesis=card
+    )
