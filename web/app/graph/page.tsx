@@ -80,7 +80,7 @@ export default async function GraphPage({
           </div>
         </div>
         <GraphCanvas data={{ ...data, edges }} highlight={highlight} loggedIn={!!session} pathIds={readIds} />
-        <p className="graph-foot">노드를 드래그·줌하며 탐색하세요. 콘텐츠는 소속 주제 주변으로 모입니다.</p>
+        <p className="graph-foot">대주제·하위주제 구조를 한눈에. <strong>주제를 클릭하면 그 주제의 콘텐츠가 펼쳐집니다.</strong> 드래그·줌으로 탐색하세요.</p>
       </main>
     );
   } catch (e) {
