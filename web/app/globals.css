@@ -25,7 +25,7 @@
   --tag-fg: #51555E;  --tag-bg: #F2F3F5;
 
   --rail-w: 74px;
-  --feed-max: 680px;
+  --feed-max: min(1280px, 100%);   /* 유동 폭: 창을 따라 차되 가독성 상한 1280 */
   --radius: 12px;
 }
 
@@ -91,9 +91,9 @@ a { color: inherit; text-decoration: none; }
 .link-btn:hover { color: var(--accent-ink); }
 .topbar-cta {
   padding: 8px 15px; border-radius: 999px;
-  background: var(--accent); color: #fff; font-size: 13.5px; font-weight: 600;
+  background: var(--text); color: #fff; font-size: 13.5px; font-weight: 600;
 }
-.topbar-cta:hover { background: var(--accent-ink); }
+.topbar-cta:hover { background: #2D313C; }
 
 /* 피드 컬럼 */
 .feed {
@@ -113,9 +113,12 @@ a { color: inherit; text-decoration: none; }
 .hero p { margin: 0; font-size: 13.5px; color: rgba(255, 255, 255, 0.85); }
 .hero .deco { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); font-size: 76px; opacity: 0.85; }
 
-/* ───────── 포스트(보더 없이 디바이더로 구분) ───────── */
-.post { padding: 20px 4px; border-bottom: 1px solid var(--border); }
-.post:last-child { border-bottom: 0; }
+/* ───────── 포스트(RocketPunch식 보더 카드) ───────── */
+.post {
+  padding: 18px 20px; border: 1px solid var(--border); border-radius: 14px;
+  background: var(--surface); margin-bottom: 12px;
+}
+.post:last-child { margin-bottom: 0; }
 
 .post-head { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; }
 .src-tile {
@@ -129,9 +132,9 @@ a { color: inherit; text-decoration: none; }
 .src-sub .dot { margin: 0 5px; opacity: 0.6; }
 
 .type-chip {
-  display: inline-flex; align-items: center; gap: 5px;
+  display: inline-flex; align-items: center; gap: 5px; height: 24px;
   background: var(--surface-sunken); color: var(--text); border-radius: 8px;
-  padding: 4px 10px; font-size: 12.5px; font-weight: 600; margin-bottom: 9px;
+  padding: 0 10px; font-size: 12.5px; font-weight: 600;
 }
 .type-chip .spark { color: var(--accent); font-size: 12px; }
 
@@ -159,7 +162,7 @@ a.post-title-tr:hover { color: var(--accent-ink); }
   display: block; font-size: 14px; color: var(--text-muted); line-height: 1.5; margin-top: 3px;
 }
 
-.pill { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.pill { display: inline-flex; align-items: center; height: 24px; font-size: 12px; font-weight: 600; padding: 0 10px; border-radius: 999px; white-space: nowrap; }
 .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .tag-chip {
   font-size: 12.5px; font-weight: 500; color: var(--tag-fg);
@@ -190,6 +193,7 @@ a.post-title-tr:hover { color: var(--accent-ink); }
 }
 .read-wrap { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .read-btn {
+  margin-top: 12px;
   font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
   padding: 6px 14px; border-radius: 8px; color: var(--accent-ink);
   border: 1px solid var(--accent); background: var(--accent-wash);
@@ -241,7 +245,7 @@ a.rec-title:hover { color: var(--accent-ink); }
 .up-input:focus, .up-textarea:focus { outline: none; border-color: var(--accent); }
 .up-textarea { resize: vertical; line-height: 1.6; }
 .up-err { margin: 0; font-size: 13.5px; color: #b42318; }
-.up-submit { align-self: flex-start; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; padding: 11px 22px; border-radius: 10px; color: #fff; background: var(--accent); border: none; transition: opacity 0.12s ease; }
+.up-submit { align-self: flex-start; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; padding: 11px 22px; border-radius: 10px; color: #fff; background: var(--text); border: none; transition: opacity 0.12s ease; }
 .up-submit:hover:not(:disabled) { opacity: 0.9; }
 .up-submit:disabled { opacity: 0.6; cursor: default; }
 .up-result { padding: 22px; border: 1px solid #D9DEE9; border-radius: 14px; background: #FFFFFF; box-shadow: 0 10px 26px rgba(42, 54, 92, 0.06); }
@@ -351,9 +355,9 @@ a.rec-title:hover { color: var(--accent-ink); }
 .btn-retry {
   font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
   padding: 9px 18px; border-radius: 10px; border: none;
-  background: var(--accent); color: #fff;
+  background: var(--text); color: #fff;
 }
-.btn-retry:hover { background: var(--accent-ink); }
+.btn-retry:hover { background: #2D313C; }
 .btn-ghost {
   display: inline-flex; align-items: center;
   font-size: 14px; font-weight: 600;
@@ -509,9 +513,9 @@ a.path-name:hover { text-decoration: underline; }
 .ob-error { margin: 0; font-size: 13.5px; color: #C81E1E; font-weight: 600; }
 .ob-submit {
   height: 48px; border: 0; border-radius: 12px; font-family: inherit;
-  background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+  background: var(--text); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
 }
-.ob-submit:hover:not(:disabled) { background: var(--accent-ink); }
+.ob-submit:hover:not(:disabled) { background: #2D313C; }
 .ob-submit:disabled { opacity: 0.6; cursor: default; }
 .ob-note { margin: -6px 0 0; font-size: 12.5px; color: var(--text-subtle); }
 
