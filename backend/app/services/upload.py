@@ -21,6 +21,7 @@ from app.tagging.embedder import embed_content
 from app.tagging.loader import load_content
 from app.tagging.synthesizer import synthesize
 from app.tagging.tagger import tag_content
+from app.services.llm import get_llm_client, llm_available
 
 
 # 사용자 업로드 품질 하한 — 크롤(loader 기본 0.5)보다 완화. 짧은 경험글은 받되 명백한 junk는 거름. (튜닝 가능)
@@ -39,7 +40,7 @@ def upload_user_content(
     db: Session,
 ) -> dict:
     """업로드 콘텐츠를 파이프라인에 태워 그래프에 편입하고 결과를 반환한다."""
-    if not settings.anthropic_api_key:
+    if not llm_available():
         raise UploadError("ANTHROPIC_API_KEY 미설정 — 태깅/Auto-HKG 불가")
     if not settings.openai_api_key:
         raise UploadError("OPENAI_API_KEY 미설정 — 임베딩 불가")
@@ -63,7 +64,7 @@ def upload_user_content(
         reason = next(iter(_report["by_reason"]), "거부됨")
         raise UploadError(f"업로드가 품질 게이트에서 거부됐어요 (사유: {reason}).")
 
-    anthropic_client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    anthropic_client = get_llm_client(settings.anthropic_api_key)
     openai_client = OpenAI(api_key=settings.openai_api_key)
 
     tags = tag_content(item, anthropic_client)

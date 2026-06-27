@@ -178,18 +178,32 @@ def ingest_items(
         logger.info("QC 게이트 통과 항목이 없습니다.")
         return stats
 
-    # 1. 태깅 배치 — 신규 제출 또는 기존 배치 재접속
-    if batch_id:
-        logger.info("기존 배치 재접속: %s (대상 %s건, 재태깅 없음)", batch_id, len(items))
+    # 1. 태깅 — ollama 백엔드는 배치 API가 없어 건별 동기 태깅, 그 외는 Message Batches(50% 할인)
+    from app.services.llm import is_local
+
+    if is_local():
+        from app.tagging.tagger import tag_content
+        logger.info("처리 대상: %s건 (로컬 LLM 동기 태깅)", len(items))
+        tags_by_idx, tag_failed = {}, 0
+        for i, item in enumerate(items):
+            try:
+                tags_by_idx[i] = tag_content(item, anthropic_client)
+            except Exception as e:
+                tag_failed += 1
+                logger.info("[%03d] 태깅 실패(로컬): %s", i, str(e)[:70])
+        stats["tag_failed"] = tag_failed
     else:
-        logger.info("처리 대상: %s건 (Message Batches, 50%% 할인)", len(items))
-        batch_id = submit_batch(anthropic_client, items)
+        if batch_id:
+            logger.info("기존 배치 재접속: %s (대상 %s건, 재태깅 없음)", batch_id, len(items))
+        else:
+            logger.info("처리 대상: %s건 (Message Batches, 50%% 할인)", len(items))
+            batch_id = submit_batch(anthropic_client, items)
 
-    wait_for_batch(anthropic_client, batch_id)
+        wait_for_batch(anthropic_client, batch_id)
 
-    # 2. 결과 수거 (index -> tags)
-    tags_by_idx, tag_failed = collect_tags(anthropic_client, batch_id)
-    stats["tag_failed"] = tag_failed
+        # 2. 결과 수거 (index -> tags)
+        tags_by_idx, tag_failed = collect_tags(anthropic_client, batch_id)
+        stats["tag_failed"] = tag_failed
 
     # 3. 임베딩 + 적재 (건별 트랜잭션 — 한 건 실패가 배치 전체를 롤백하지 않음)
     for i, item in enumerate(items):

@@ -21,6 +21,7 @@ from app.models.content import Content
 from app.models.mapping import ContentNodeMapping
 from app.models.user import User
 from app.services.lazy_synthesis import ensure_synthesis
+from app.services.llm import get_llm_client, llm_available
 from app.services.rate_limit import check_rate_limit, log_llm_call
 from app.services.upload import UploadError, upload_user_content
 
@@ -252,7 +253,6 @@ def get_synthesis(
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="콘텐츠를 찾을 수 없습니다.")
 
-    key = settings.anthropic_api_key
-    client = anthropic.Anthropic(api_key=key) if key else None
+    client = get_llm_client(settings.anthropic_api_key) if llm_available() else None
     card = ensure_synthesis(content_id, db, client)
     return SynthesisResponse(content_id=content_id, content_type=row.content_type, synthesis=card)

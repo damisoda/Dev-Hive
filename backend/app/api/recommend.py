@@ -21,6 +21,7 @@ from app.recommend.rule_based import recommend_next as _rule_based_recommend
 from app.services.content_topic import top_topic_for_contents
 from app.services.knowledge_tracing import build_user_state, estimate_mastery
 from app.services.instrumentation import log_click, log_impressions
+from app.services.llm import get_llm_client, llm_available
 from app.services.lazy_synthesis import ensure_synthesis
 from app.services.rate_limit import check_rate_limit
 
@@ -31,7 +32,7 @@ def _synthesize_in_background(content_ids: list[int], api_key: str) -> None:
     동기로 하면 top-N LLM 호출이 추천 응답을 수초 블로킹해 프론트 타임아웃을 넘긴다.
     그래서 추천은 캐시된 요약만 즉시 반환하고, 미캐시분은 여기서 만들어 다음 로드에 노출한다.
     """
-    client = anthropic.Anthropic(api_key=api_key)
+    client = get_llm_client(api_key)
     db = SessionLocal()
     try:
         for cid in content_ids:
@@ -147,7 +148,7 @@ def recommend(
         ))
 
     # 미캐시 가공은 응답 후 백그라운드로(다음 추천/새로고침 시 요약 노출). 키 있을 때만.
-    if uncached and settings.anthropic_api_key:
+    if uncached and llm_available():
         background_tasks.add_task(_synthesize_in_background, uncached, settings.anthropic_api_key)
 
     return RecommendResponse(recommendations=recs)
