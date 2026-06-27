@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SYNTH_BODY_LABELS, contentTypeLabel } from "@/lib/viewmodel";
+import { SYNTH_BODY_LABELS, contentTypeLabel, externalUrl } from "@/lib/viewmodel";
 
 type Synth = Record<string, unknown> & {
   one_liner?: string;
@@ -37,7 +37,11 @@ export function ReadModal({
   const [koOpen, setKoOpen] = useState(false);
   // 호출처가 url을 안 넘기는 경우(예: 지식그래프 노드)를 위해 /api/read 응답의 url을 폴백으로 쓴다.
   const [fetchedUrl, setFetchedUrl] = useState<string | null>(null);
-  const originUrl = (url ?? fetchedUrl) || null;
+  // 사용자 업로드 원문(외부 링크 없음) — 있으면 '원문 보기'로 펼쳐 보여준다.
+  const [originBody, setOriginBody] = useState<string | null>(null);
+  const [originOpen, setOriginOpen] = useState(false);
+  // user:// 같은 합성 url은 외부 링크로 쓰지 않는다(http/https만 통과).
+  const originUrl = externalUrl(url ?? fetchedUrl);
 
   // 영문 제목 + 번역 토글(HIVE-66) — title_ko가 있고 원문과 다를 때만(피드 카드와 동일 판단).
   const ko = titleKo?.trim();
@@ -55,6 +59,7 @@ export function ReadModal({
       });
       const data = await res.json();
       if (data?.url) setFetchedUrl(data.url as string);
+      if (data?.body) setOriginBody(data.body as string); // 사용자 업로드 원문
       if (!res.ok) setErr(data.error ?? "재가공본을 불러오지 못했어요.");
       else if (data.synthesis) {
         setSynth(data.synthesis as Synth);
@@ -150,6 +155,21 @@ export function ReadModal({
                 </p>
               )}
               {synth && <SynthBody synth={synth} />}
+
+              {/* 사용자 업로드: 외부 원문이 없으므로 업로드한 원문을 모달 안에서 펼쳐 보여준다. */}
+              {originBody && (
+                <div className="origin-block">
+                  <button
+                    type="button"
+                    className="modal-origin as-toggle"
+                    aria-expanded={originOpen}
+                    onClick={() => setOriginOpen((o) => !o)}
+                  >
+                    {originOpen ? "원문 접기" : "원문 보기"} <Icon name="doc" size={14} />
+                  </button>
+                  {originOpen && <p className="origin-body">{originBody}</p>}
+                </div>
+              )}
             </div>
 
             {originUrl && !synthPending && (

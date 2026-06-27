@@ -459,6 +459,14 @@ a.rec-title:hover { color: var(--accent-ink); }
 .mc-scroll::-webkit-scrollbar { width: 9px; }
 .mc-scroll::-webkit-scrollbar-thumb { background: #E2DDD0; border-radius: 9px; border: 2px solid var(--surface); }
 .mc-scroll::-webkit-scrollbar-track { background: transparent; }
+/* 사용자 업로드 원문 펼치기(외부 링크 대신) — 링크와 같은 톤의 버튼 */
+.modal-origin.as-toggle { font-family: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.origin-block { display: block; width: 100%; }
+.origin-body {
+  margin: 10px 0 0; padding: 14px 16px; white-space: pre-wrap; word-break: break-word;
+  font-size: 14px; line-height: 1.7; color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2, #fafafa);
+}
 @media (max-width: 640px) {
   .modal-overlay { padding: 16px 12px; }
   .modal-card { max-height: calc(100vh - 32px); }

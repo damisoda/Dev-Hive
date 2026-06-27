@@ -4,7 +4,7 @@
 
 import { Suspense } from "react";
 import { getGraph, getMastery, getReadHistory, recommend, listFeedback, ApiError } from "@/lib/api";
-import { curriculumRows, contentPath } from "@/lib/viewmodel";
+import { curriculumRows, contentPath, externalUrl } from "@/lib/viewmodel";
 import { StateView } from "@/components/StateView";
 import { RecommendationCard } from "@/components/RecommendationCard";
 import { ReadLink } from "@/components/ReadLink";
@@ -55,9 +55,9 @@ async function PathAndRecs({ token }: { token: string }) {
                   <div className="path-body">
                     <div className="path-row">
                       {s.status === "done" ? (
-                        // 이미 읽음 — 원문 링크만(재로깅 불필요)
-                        s.url ? (
-                          <a className="path-name" href={s.url} target="_blank" rel="noopener noreferrer">
+                        // 이미 읽음 — 외부 원문 링크만(user:// 합성 url 제외, 재로깅 불필요)
+                        externalUrl(s.url) ? (
+                          <a className="path-name" href={externalUrl(s.url)!} target="_blank" rel="noopener noreferrer">
                             {s.title}
                           </a>
                         ) : (
