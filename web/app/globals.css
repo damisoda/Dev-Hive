@@ -146,6 +146,14 @@ a { color: inherit; text-decoration: none; }
 a.post-title:hover { color: var(--accent-ink); }
 .post-title .ext { font-size: 12.5px; font-weight: 500; color: var(--text-subtle); margin-left: 6px; white-space: nowrap; }
 
+/* 제목을 클릭 트리거(읽기 모달)로 — 버튼 기본 스타일만 제거하고 타이포는 .post-title/.post-title-tr가 담당 */
+.post-title-btn {
+  font-family: inherit; background: none; border: 0; padding: 0;
+  text-align: left; cursor: pointer; color: inherit;
+}
+.post-title-btn:hover { color: var(--accent-ink); }
+button.post-title.post-title-btn { width: 100%; }  /* 2줄 클램프 줄바꿈 위해 폭 확보 */
+
 /* 제목 번역 토글 (HIVE-66) — 영문 제목 + 같은 줄 '번역 보기' 인라인 링크 + 펼침 시 한글 한 줄 */
 .post-title-block { margin: 0 0 10px; line-height: 1.45; }
 .post-title-tr {
@@ -229,6 +237,12 @@ a.post-title-tr:hover { color: var(--accent-ink); }
 .rec-title { display: inline-flex; align-items: baseline; gap: 6px; font-size: 15.5px; font-weight: 700; color: var(--text); line-height: 1.4; text-decoration: none; }
 a.rec-title:hover { color: var(--accent-ink); }
 .rec-title .ext { font-size: 12px; font-weight: 500; color: var(--text-subtle); white-space: nowrap; }
+/* 추천 카드 제목 클릭 트리거(읽기 모달) — 타이포는 .rec-title 컨테이너에서 상속 */
+.rec-title-text {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0;
+  text-align: left; cursor: pointer;
+}
+.rec-title-text:hover { color: var(--accent-ink); }
 .rec-summary { margin: 6px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--text-muted); }
 .rec-pending { margin: 6px 0 0; font-size: 12.5px; color: var(--text-subtle); font-style: italic; }
 .rec-reason { margin: 8px 0 0; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--accent-wash); border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.55; color: var(--text); }

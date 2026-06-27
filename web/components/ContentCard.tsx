@@ -70,15 +70,23 @@ export function ContentCard({
         </div>
       )}
 
-      {showTitleToggle ? (
-        <TitleTranslateToggle title={item.title} titleKo={titleKo!} url={item.url} />
-      ) : hasUrl ? (
-        <a className="post-title" href={item.url ?? "#"} target="_blank" rel="noopener noreferrer">
-          {item.title}
-        </a>
-      ) : (
-        <h2 className="post-title">{item.title}</h2>
-      )}
+      {/* 제목 클릭 = 상세 카드(읽기 모달) 열기. 원문 이동은 아래 인게이지 행의 '원문 ↗'로 분리. */}
+      <ReadModal
+        contentId={item.id}
+        title={item.title}
+        url={item.url}
+        loggedIn={loggedIn}
+        titleKo={item.title_ko}
+        renderTrigger={(open) =>
+          showTitleToggle ? (
+            <TitleTranslateToggle title={item.title} titleKo={titleKo!} onTitleClick={open} />
+          ) : (
+            <button type="button" className="post-title post-title-btn" onClick={open}>
+              {item.title}
+            </button>
+          )
+        }
+      />
 
       {item.summary && <p className="post-summary">{item.summary}</p>}
 
@@ -108,8 +116,6 @@ export function ContentCard({
           </a>
         )}
       </div>
-
-      <ReadModal contentId={item.id} title={item.title} url={item.url} loggedIn={loggedIn} titleKo={item.title_ko} />
 
       {loggedIn && <FeedbackButtons contentId={item.id} current={feedback} />}
     </article>

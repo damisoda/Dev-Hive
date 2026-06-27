@@ -30,21 +30,31 @@ export function RecommendationCard({
             </span>
           ))}
         </div>
-        {vm.url ? (
-          <a className="rec-title" href={vm.url} target="_blank" rel="noopener noreferrer">
-            {vm.title}
-            <span className="ext">원문 ↗</span>
-          </a>
-        ) : (
-          <h3 className="rec-title">{vm.title}</h3>
-        )}
+        {/* 제목 클릭 = 상세 카드(읽기 모달) 열기. 원문 이동은 제목 옆 '원문 ↗' 링크로 분리. */}
+        <ReadModal
+          contentId={vm.content_id}
+          title={vm.title}
+          url={vm.url}
+          loggedIn={loggedIn}
+          renderTrigger={(open) => (
+            <h3 className="rec-title">
+              <button type="button" className="rec-title-text" onClick={open}>
+                {vm.title}
+              </button>
+              {vm.url && (
+                <a className="ext" href={vm.url} target="_blank" rel="noopener noreferrer">
+                  원문 ↗
+                </a>
+              )}
+            </h3>
+          )}
+        />
         {vm.summary ? (
           <p className="rec-summary">{vm.summary}</p>
         ) : (
           vm.summary_pending && <p className="rec-pending">AI 요약 준비 중 — 잠시 후 새로고침하면 표시됩니다.</p>
         )}
         {vm.reason && <blockquote className="rec-reason">{vm.reason}</blockquote>}
-        <ReadModal contentId={vm.content_id} title={vm.title} url={vm.url} loggedIn={loggedIn} />
         {loggedIn && <FeedbackButtons contentId={vm.content_id} current={feedback} />}
       </div>
     </article>
