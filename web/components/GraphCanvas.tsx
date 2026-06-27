@@ -1,7 +1,6 @@
 "use client";
 
 import { forceCollide } from "d3-force";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GraphResponse } from "@/lib/types";
 import { ReadModal } from "@/components/ReadModal";
@@ -64,8 +63,8 @@ function linkNodeId(node: string | { id?: string }) {
 }
 
 function baseNodeVal(n: GraphNode) {
-  if (n.kind === "topic") return n.auto ? 4 : 14; // 대주제 크게 / auto 하위노드 작게
-  return 1.5;
+  if (n.kind === "topic") return n.auto ? 7 : 16; // 대주제 굵게 / 하위 중간
+  return 2.5; // 콘텐츠 얇게
 }
 
 function parseContentId(nodeId: string): number | undefined {
@@ -84,7 +83,7 @@ export function GraphCanvas({
   loggedIn?: boolean;
   pathIds?: string[];
 }) {
-  const router = useRouter();
+  const [openTopic, setOpenTopic] = useState<string | null>(null); // 드릴다운: 펼친 주제
   const wrapRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(null);
   const [size, setSize] = useState({ w: 900, h: 620 });
@@ -117,13 +116,46 @@ export function GraphCanvas({
     [highlight?.contentId, highlight?.focusId, highlight?.topicId]
   );
 
-  const graph = useMemo(
-    () => ({
-      nodes: data.nodes.map((n) => ({ ...n })),
-      links: data.edges.map((e) => ({ source: e.source, target: e.target, rel: e.rel, weight: e.weight })),
-    }),
-    [data]
-  );
+  // structure-first: 기본은 토픽(대주제+하위) + 위계(하위→대주제) + precedes만 그린다.
+  // 1251개 전체(콘텐츠 1157 포함)는 헤어볼이라, 콘텐츠는 주제 클릭(openTopic) 시에만 펼친다.
+  const graph = useMemo(() => {
+    const byId = new Map(data.nodes.map((n) => [n.id, n]));
+    const contentBelongs = new Map<string, string[]>();
+    for (const e of data.edges)
+      if (e.rel === "belongs_to") {
+        const arr = contentBelongs.get(e.source) ?? [];
+        arr.push(e.target);
+        contentBelongs.set(e.source, arr);
+      }
+    // 펼칠 대상 노드 집합: openTopic 자신 + (대주제면) 그 하위노드들
+    const expand = new Set<string>();
+    if (openTopic) {
+      expand.add(openTopic);
+      const ot = byId.get(openTopic);
+      if (ot && ot.kind === "topic" && !ot.auto)
+        for (const n of data.nodes) if (n.parent === openTopic) expand.add(n.id);
+    }
+    const nodes = data.nodes
+      .filter((n) => {
+        if (n.kind === "topic") return true; // 토픽은 항상
+        if (!openTopic) return false; // 기본: 콘텐츠 숨김
+        const bs = contentBelongs.get(n.id);
+        return !!bs && bs.some((t) => expand.has(t));
+      })
+      .map((n) => ({ ...n }));
+    const shown = new Set(nodes.map((n) => n.id));
+    const links: { source: string; target: string; rel: string; weight: number }[] = [];
+    for (const n of data.nodes) // 위계: 하위 → 대주제
+      if (n.kind === "topic" && n.parent && shown.has(n.id) && shown.has(n.parent))
+        links.push({ source: n.id, target: n.parent, rel: "child_of", weight: 0.5 });
+    for (const e of data.edges) {
+      if (e.rel === "precedes" && shown.has(e.source) && shown.has(e.target))
+        links.push({ source: e.source, target: e.target, rel: "precedes", weight: e.weight });
+      else if (openTopic && e.rel === "belongs_to" && shown.has(e.source) && shown.has(e.target))
+        links.push({ source: e.source, target: e.target, rel: "belongs_to", weight: e.weight });
+    }
+    return { nodes, links };
+  }, [data, openTopic]);
 
   useEffect(() => {
     const fg = fgRef.current;
@@ -199,8 +231,9 @@ export function GraphCanvas({
     if (e && e.stopPropagation) e.stopPropagation();
     if (e && e.preventDefault) e.preventDefault();
 
-    if (n.kind === "topic" && !n.auto) {
-      router.push(`/discover?topic=${encodeURIComponent(n.id)}`);
+    if (n.kind === "topic") {
+      // 주제 클릭 = 드릴다운 토글(그 주제의 콘텐츠 펼침/접음)
+      setOpenTopic((cur) => (cur === n.id ? null : n.id));
       return;
     }
     setSelectedNode({ id: n.id, label: n.label, kind: n.kind, contentId: parseContentId(n.id) });
