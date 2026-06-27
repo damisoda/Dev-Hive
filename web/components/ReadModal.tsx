@@ -16,12 +16,15 @@ export function ReadModal({
   url,
   loggedIn,
   titleKo,
+  renderTrigger,
 }: {
   contentId: number;
   title: string;
   url?: string | null;
   loggedIn: boolean;
   titleKo?: string | null;
+  // 트리거를 외부에서 주입(예: 카드 제목 클릭). 없으면 기존 '읽기 →' 버튼을 그대로 렌더(그래프 등).
+  renderTrigger?: (open: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [synth, setSynth] = useState<Synth | null>(null);
@@ -84,9 +87,13 @@ export function ReadModal({
 
   return (
     <>
-      <button className="read-btn" type="button" onClick={openModal}>
-        {loggedIn ? "읽기 →" : "자세히 →"}
-      </button>
+      {renderTrigger ? (
+        renderTrigger(openModal)
+      ) : (
+        <button className="read-btn" type="button" onClick={openModal}>
+          {loggedIn ? "읽기 →" : "자세히 →"}
+        </button>
+      )}
 
       {open && (
         <div className="modal-overlay" onClick={() => setOpen(false)}>
