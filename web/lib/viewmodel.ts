@@ -189,6 +189,87 @@ export function curriculumRows(
   return rows;
 }
 
+// ── 프로필 리디자인 — 레벨 메달 색 + 주제별 진행 현황 ──
+// 메달은 배경 칩 없이 아이콘 '색만' 레벨별로 다르게(spec). 레벨 체계는 HIVE-36(입문/중급/고급).
+// 동(입문)→은(중급)→금(고급)으로, 위로 갈수록 귀금속 — 직관적 위계.
+const LEVEL_MEDAL_COLORS: Record<string, string> = {
+  입문: "#B97A56", // 동(bronze)
+  중급: "#9AA3AF", // 은(silver)
+  고급: "#D9A441", // 금(gold, 프로젝트 허니골드와 동일 계열)
+};
+export function levelMedalColor(level: string | null | undefined): string {
+  return (level && LEVEL_MEDAL_COLORS[level]) || LEVEL_MEDAL_COLORS["입문"];
+}
+
+// 주제별 진행 현황 — 7대주제 행. 각 행 고정 10칸(진도율), 읽음 여부만.
+// 콘텐츠↔대주제는 belongs_to 엣지로 연결되며 콘텐츠는 '가장 구체적' 노드(서브토픽)에 붙으므로
+// 서브토픽→부모 대주제로 롤업해 집계한다(읽음이력 topic은 이미 대주제명으로 롤업되어 옴).
+export interface TopicProgressRow {
+  id: string;
+  name: string;
+  read: number; // 읽은 콘텐츠 수
+  total: number; // 주제 전체 콘텐츠 수
+  filled: number; // 채울 칸 수(0~10)
+  status: string; // "N건 완료" | "미학습"
+}
+
+const TOPIC_CELLS = 10;
+
+export function topicProgressRows(
+  topics: { id: string; label: string; parent: string | null; auto: boolean }[],
+  belongsTo: { source: string; target: string }[], // rel === 'belongs_to'만 넘긴다
+  readItems: { topic: string | null }[]
+): TopicProgressRow[] {
+  // 노드 id(숫자문자열) → 부모 대주제 id(숫자문자열|null)
+  const parentOf = new Map<string, string | null>();
+  for (const t of topics) {
+    const nid = t.id.includes(":") ? t.id.split(":")[1] : t.id;
+    parentOf.set(nid, t.parent ? t.parent.split(":")[1] : null);
+  }
+  // 임의 토픽 id → 소속 대주제 id(서브토픽이면 부모로, 대주제면 자기 자신)
+  const resolveTop = (nid: string): string => parentOf.get(nid) ?? nid;
+
+  // 대주제(parent 없음 · Auto-HKG 아님) — 그래프 순서 유지, 7개
+  const tops = topics.filter((t) => t.parent === null && !t.auto);
+
+  // 대주제별 콘텐츠 집합(서브토픽 콘텐츠 롤업, content 중복 제거)
+  const totalSets = new Map<string, Set<string>>();
+  for (const e of belongsTo) {
+    const tnum = e.target.includes(":") ? e.target.split(":")[1] : e.target;
+    const top = resolveTop(tnum);
+    (totalSets.get(top) ?? totalSets.set(top, new Set()).get(top)!).add(e.source);
+  }
+
+  // 읽음 수 — 대주제명별 집계(읽음이력 topic = 대주제명)
+  const readByName = new Map<string, number>();
+  for (const r of readItems) {
+    if (!r.topic) continue;
+    readByName.set(r.topic, (readByName.get(r.topic) ?? 0) + 1);
+  }
+
+  return tops.map((t) => {
+    const nid = t.id.includes(":") ? t.id.split(":")[1] : t.id;
+    const total = totalSets.get(nid)?.size ?? 0;
+    const read = readByName.get(t.label) ?? 0;
+    let filled =
+      total === 0
+        ? 0
+        : total <= TOPIC_CELLS
+          ? Math.min(read, total)
+          : Math.round((read / total) * TOPIC_CELLS);
+    filled = Math.max(0, Math.min(TOPIC_CELLS, filled));
+    if (read > 0 && filled === 0) filled = 1; // 읽었으면 최소 한 칸은 보이게
+    return {
+      id: t.id,
+      name: t.label || "?",
+      read,
+      total,
+      filled,
+      status: read > 0 ? `${read}건 완료` : "미학습",
+    };
+  });
+}
+
 // ── 학습 경로(콘텐츠 단계형) — HIVE-65 ──
 // 읽은 자료(완료) + 추천 자료(예정)를 한 줄로 이어 '지나온 길 → 지금 → 앞길'을 보여준다.
 // 단계 텍스트 = 콘텐츠 제목, 메타 = [상태 · 소속 주제]. 진행도 = 읽음 / (읽음 + 추천).

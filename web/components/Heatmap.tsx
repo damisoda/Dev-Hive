@@ -1,13 +1,16 @@
-// 학습 잔디 — 최근 26주 읽기 히트맵. {YYYY-MM-DD: 읽은 수} → 주(열)×요일(행) 그리드.
+// 학습 활동 — 최근 14주 읽기 히트맵을 벌집(육각) 셀로 렌더. {YYYY-MM-DD: 읽은 수}.
+// 시간축(언제 얼마나 읽었는지). 5단계 꿀색 스케일 · 짝수행 offset으로 벌집 인터록.
 // 서버 컴포넌트(일반 Node 런타임이라 new Date 사용 OK).
 
-const WEEKS = 26;
+const WEEKS = 14;
 
+// 0~4단계(꿀색 스케일). 0=없음.
 function level(count: number): number {
   if (count <= 0) return 0;
   if (count === 1) return 1;
   if (count <= 3) return 2;
-  return 3;
+  if (count <= 5) return 3;
+  return 4;
 }
 
 export function Heatmap({ data }: { data: Record<string, number> }) {
@@ -20,15 +23,20 @@ export function Heatmap({ data }: { data: Record<string, number> }) {
     const key = d.toISOString().slice(0, 10);
     days.push({ date: key, count: data[key] ?? 0 });
   }
-  const weeks: { date: string; count: number }[][] = [];
-  for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
+  // 7행(요일축) × WEEKS열(주). row r = 각 주의 같은 위치 셀.
+  const rows: { date: string; count: number }[][] = [];
+  for (let r = 0; r < 7; r++) {
+    const row: { date: string; count: number }[] = [];
+    for (let w = 0; w < WEEKS; w++) row.push(days[w * 7 + r]);
+    rows.push(row);
+  }
 
   return (
-    <div className="hm" role="img" aria-label="최근 26주 학습 기록">
-      {weeks.map((w, i) => (
-        <div className="hm-col" key={i}>
-          {w.map((d) => (
-            <span key={d.date} className={`hm-cell lv${level(d.count)}`} title={`${d.date} · ${d.count}개`} />
+    <div className="hivemap" role="img" aria-label="최근 14주 학습 기록">
+      {rows.map((row, r) => (
+        <div className={`hive-row${r % 2 === 1 ? " odd" : ""}`} key={r}>
+          {row.map((d) => (
+            <span key={d.date} className={`hive-cell lv${level(d.count)}`} title={`${d.date} · ${d.count}개`} />
           ))}
         </div>
       ))}

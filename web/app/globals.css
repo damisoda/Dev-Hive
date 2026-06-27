@@ -273,20 +273,84 @@ a.rec-title:hover { color: var(--accent-ink); }
 .up-again { font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; padding: 6px 14px; border-radius: 8px; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); }
 .up-again:hover { color: var(--text); border-color: var(--border-strong); }
 
-/* 프로필 — 스탯·학습 잔디·학습 현황 */
-.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 6px; }
-.stat-card { padding: 16px 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
-.stat-value { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); font-variant-numeric: tabular-nums; }
-.stat-label { margin-top: 4px; font-size: 12.5px; color: var(--text-muted); }
-.hm { display: flex; gap: 3px; flex-wrap: wrap; }
-.hm-col { display: flex; flex-direction: column; gap: 3px; }
-.hm-cell { width: 11px; height: 11px; border-radius: 3px; background: var(--border); }
-.hm-cell.lv0 { background: color-mix(in srgb, var(--border) 55%, transparent); }
-.hm-cell.lv1 { background: color-mix(in srgb, var(--accent) 35%, #fff); }
-.hm-cell.lv2 { background: color-mix(in srgb, var(--accent) 65%, #fff); }
-.hm-cell.lv3 { background: var(--accent); }
-.user-state { white-space: pre-wrap; font-size: 14px; line-height: 1.7; color: var(--text); margin: 0; padding: 16px 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
-@media (max-width: 640px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+/* 프로필 리디자인 — 신원·스탯·벌집 히트맵·주제별 진행 */
+:root { --hex: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); }
+
+/* (i) hover 툴팁 (CSS-only) */
+.info-tip { position: relative; display: inline-flex; align-items: center; vertical-align: middle; cursor: help; color: var(--text-subtle); }
+.info-tip svg { width: 14px; height: 14px; }
+.info-tip::after {
+  content: attr(data-tip); position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%);
+  background: var(--text); color: #fff; font-size: 12px; font-weight: 500; line-height: 1.4;
+  padding: 6px 10px; border-radius: 8px; white-space: nowrap;
+  opacity: 0; pointer-events: none; transition: opacity 0.12s ease; z-index: 20;
+}
+.info-tip:hover::after, .info-tip:focus-visible::after { opacity: 1; }
+
+/* ① 신원 블록 */
+.ident { display: flex; align-items: center; gap: 16px; margin-bottom: 22px; }
+.ident-avatar {
+  width: 56px; height: 56px; flex: 0 0 56px; clip-path: var(--hex);
+  background: var(--accent-wash); color: var(--accent-ink);
+  display: grid; place-items: center; font-size: 22px; font-weight: 800;
+}
+.ident-body { flex: 1; min-width: 0; }
+.ident-name { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 4px; }
+.ident-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; font-size: 13.5px; color: var(--text-muted); }
+.ident-meta > * { white-space: nowrap; }
+.ident-persona { font-weight: 600; color: var(--text); }
+.ident-change {
+  font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  padding: 2px 9px; border-radius: 999px; color: var(--text-muted);
+  border: 1px solid var(--border); background: var(--surface);
+}
+.ident-change:hover { border-color: var(--border-strong); color: var(--text); }
+.ident-dot { color: var(--text-subtle); opacity: 0.6; }
+.ident-level { font-weight: 700; color: var(--text); }
+.ident-edit {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 5px;
+  font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  color: var(--accent-ink); background: none; border: 0; padding: 4px 2px;
+}
+.ident-edit:hover { color: var(--accent); }
+
+/* ② 스탯 3개 — 박스 없이 파란 세로 구분선 + 가운데 정렬 */
+.pstat-row { display: flex; align-items: stretch; margin-bottom: 8px; }
+.pstat { flex: 1; text-align: center; padding: 8px 6px; }
+.pstat + .pstat { border-left: 1px solid #B6C2EA; }
+.pstat-value { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); font-variant-numeric: tabular-nums; }
+.pstat-label { margin-top: 4px; font-size: 12.5px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; }
+
+/* 섹션 제목(프로필) — (i) 정렬용 */
+.sec-sub.psec { display: flex; align-items: center; gap: 5px; }
+
+/* ③ 학습 활동 — 벌집(육각) 히트맵 */
+.hivemap-wrap { display: flex; justify-content: center; padding: 4px 0 8px; }
+.hivemap { display: flex; flex-direction: column; align-items: flex-start; }
+.hive-row { display: flex; gap: 2px; }
+.hive-row + .hive-row { margin-top: -3px; }
+.hive-row.odd { margin-left: 8.5px; }
+.hive-cell { width: 15px; height: 17px; clip-path: var(--hex); background: #EDEEF0; }
+.hive-cell.lv0 { background: #EDEEF0; }
+.hive-cell.lv1 { background: #F7E9C8; }
+.hive-cell.lv2 { background: #EFD08A; }
+.hive-cell.lv3 { background: #E4B45E; }
+.hive-cell.lv4 { background: #D49C3A; }
+
+/* ④ 주제별 진행 현황 */
+.topic-prog { display: flex; flex-direction: column; }
+.tp-row { display: flex; align-items: center; gap: 14px; padding: 11px 4px; border-bottom: 1px solid var(--border); }
+.tp-row:last-child { border-bottom: 0; }
+.tp-name { flex: 0 0 150px; font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.tp-cells { display: inline-flex; gap: 3px; flex: 1; }
+.tp-hex { width: 14px; height: 16px; clip-path: var(--hex); background: #E9EAEE; }
+.tp-hex.on { background: #EFD08A; }
+.tp-status { flex: 0 0 auto; font-size: 12.5px; font-weight: 600; color: var(--text-subtle); min-width: 56px; text-align: right; }
+
+@media (max-width: 640px) {
+  .tp-name { flex-basis: 96px; font-size: 13px; }
+  .tp-cells { flex-wrap: wrap; }
+}
 
 /* 피드 필터 + 페이지네이션 */
 /* 검색 + 필터 한 줄(HIVE-94). 좁아지면 검색이 먼저 전체폭으로 내려감 */

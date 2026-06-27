@@ -1,13 +1,95 @@
-// 프로필 — 레벨·영향력·연속학습·학습 잔디·학습 현황(자연어). 비로그인은 시작하기 게이트.
+// 프로필 — 신원 블록 + 스탯 3개 + 학습 활동(벌집 히트맵) + 주제별 진행 현황.
+// 비로그인은 시작하기 게이트.
 
-import { getProfile, getStats, getUserStateText } from "@/lib/api";
-import type { Profile, Stats, UserStateResponse } from "@/lib/types";
+import { Suspense } from "react";
+import { getProfile, getStats, getGraph, getReadHistory } from "@/lib/api";
+import type { Profile, Stats } from "@/lib/types";
+import { levelMedalColor, topicProgressRows } from "@/lib/viewmodel";
 import { Heatmap } from "@/components/Heatmap";
 import { StateView } from "@/components/StateView";
+import { InfoTip } from "@/components/InfoTip";
 import { getSession } from "@/lib/session";
 
 export const metadata = { title: "프로필 · Dev-Hive" };
 export const dynamic = "force-dynamic";
+
+const TOPIC_CELLS = 10;
+
+// 메달 아이콘(배경 칩 없이 색만 — spec). 레벨별 색은 levelMedalColor.
+function Medal({ level }: { level: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24" fill="none" stroke={levelMedalColor(level)} strokeWidth="1.8"
+      strokeLinecap="round" strokeLinejoin="round" width={17} height={17} aria-hidden
+    >
+      <path d="M8.5 3.5 7 9l5 2 5-2-1.5-5.5" />
+      <circle cx="12" cy="15.5" r="5" />
+      <path d="M12 13.2l0.9 1.9 2 .3-1.5 1.4.4 2-1.8-1-1.8 1 .4-2-1.5-1.4 2-.3z" fill={levelMedalColor(level)} stroke="none" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" width={15} height={15} aria-hidden>
+      <path d="M4 20h4l10-10-4-4L4 16z" />
+      <path d="M13.5 6.5 17.5 10.5" />
+    </svg>
+  );
+}
+
+// 주제별 진행 현황 — /graph(주제·belongs_to) + /progress(읽음). graph가 느려 별도 스트리밍.
+async function TopicSection({ token }: { token: string }) {
+  try {
+    const [g, readRes] = await Promise.all([getGraph(true), getReadHistory(token)]);
+    const topics = g.nodes
+      .filter((n) => n.kind === "topic")
+      .map((n) => ({ id: n.id, label: n.label, parent: n.parent ?? null, auto: n.auto }));
+    const belongsTo = g.edges
+      .filter((e) => e.rel === "belongs_to")
+      .map((e) => ({ source: e.source, target: e.target }));
+    const rows = topicProgressRows(topics, belongsTo, readRes.items);
+
+    if (rows.length === 0) {
+      return <p className="sec-foot" style={{ marginTop: 0 }}>주제 정보를 불러오지 못했어요.</p>;
+    }
+
+    return (
+      <div className="topic-prog">
+        {rows.map((r) => (
+          <div className="tp-row" key={r.id}>
+            <span className="tp-name">{r.name}</span>
+            <span className="tp-cells" aria-hidden>
+              {Array.from({ length: TOPIC_CELLS }).map((_, i) => (
+                <span key={i} className={`tp-hex${i < r.filled ? " on" : ""}`} />
+              ))}
+            </span>
+            <span className="tp-status">{r.status}</span>
+          </div>
+        ))}
+      </div>
+    );
+  } catch {
+    return <p className="sec-foot" style={{ marginTop: 0 }}>주제별 진행 현황을 불러오지 못했어요.</p>;
+  }
+}
+
+function TopicSkeleton() {
+  return (
+    <div className="topic-prog">
+      {Array.from({ length: 7 }).map((_, i) => (
+        <div className="tp-row" key={i}>
+          <span className="tp-name skeleton sk-line" style={{ width: 120 }} />
+          <span className="tp-cells" aria-hidden>
+            {Array.from({ length: TOPIC_CELLS }).map((_, j) => (
+              <span key={j} className="tp-hex" />
+            ))}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default async function ProfilePage() {
   const session = await getSession();
@@ -25,56 +107,81 @@ export default async function ProfilePage() {
   }
 
   // 일부 실패(예: 통계)해도 나머지는 보여준다.
-  const [profileR, statsR, stateR] = await Promise.allSettled([
+  const [profileR, statsR] = await Promise.allSettled([
     getProfile(session.userId),
     getStats(session.token),
-    getUserStateText(session.token),
   ]);
   const profile: Profile | null = profileR.status === "fulfilled" ? profileR.value : null;
   const stats: Stats | null = statsR.status === "fulfilled" ? statsR.value : null;
-  const state: UserStateResponse | null = stateR.status === "fulfilled" ? stateR.value : null;
+
+  const name = profile?.display_name ?? session.displayName ?? "프로필";
+  const persona = profile?.persona ?? "개발자";
+  const level = profile?.current_level ?? "입문";
+  const initial = name.trim().slice(0, 1) || "🐝";
 
   const readTotal = stats ? Object.values(stats.heatmap).reduce((a, b) => a + b, 0) : 0;
-  const cards = [
-    { label: "현재 레벨", value: profile?.current_level ?? "입문" },
-    { label: "영향력 점수", value: stats?.influence_score ?? 0 },
-    { label: "읽은 글 (최근 1년)", value: readTotal },
-    { label: "연속 학습", value: `${stats?.streak ?? 0}일` },
-  ];
+  const streak = stats?.streak ?? 0;
+  const influence = stats?.influence_score ?? 0;
 
   return (
     <main className="feed">
-      <header className="sec-head">
-        <h2>{profile?.display_name ?? session.displayName ?? "프로필"}</h2>
-        <p>{profile?.persona ?? "개발자"} · 읽기·기여 활동으로 레벨과 영향력이 올라갑니다.</p>
-      </header>
-
-      <div className="stat-grid">
-        {cards.map((c) => (
-          <div className="stat-card" key={c.label}>
-            <div className="stat-value">{c.value}</div>
-            <div className="stat-label">{c.label}</div>
+      {/* ① 신원 블록 */}
+      <section className="ident">
+        <div className="ident-avatar" aria-hidden>{initial}</div>
+        <div className="ident-body">
+          <h2 className="ident-name">{name}</h2>
+          <div className="ident-meta">
+            <span className="ident-persona">{persona}</span>
+            <button type="button" className="ident-change">변경</button>
+            <span className="ident-dot">·</span>
+            <span className="ident-level">{level}</span>
+            <Medal level={level} />
           </div>
-        ))}
+        </div>
+        <button type="button" className="ident-edit">
+          <EditIcon /> 정보 수정
+        </button>
+      </section>
+
+      {/* ② 스탯 3개 — 박스 없이 파란 세로 구분선 + 가운데 정렬 */}
+      <div className="pstat-row">
+        <div className="pstat">
+          <div className="pstat-value">{streak}일</div>
+          <div className="pstat-label">연속 학습</div>
+        </div>
+        <div className="pstat">
+          <div className="pstat-value">{readTotal}</div>
+          <div className="pstat-label">
+            읽은 글 <InfoTip text="최근 1년간 읽은 글 수예요" />
+          </div>
+        </div>
+        <div className="pstat">
+          <div className="pstat-value">{influence}</div>
+          <div className="pstat-label">영향력 점수</div>
+        </div>
       </div>
 
-      <h3 className="sec-sub">학습 잔디</h3>
+      {/* ③ 학습 활동 — 벌집(육각) 히트맵 */}
+      <h3 className="sec-sub psec">
+        학습 활동 <InfoTip text="최근 14주 · 진할수록 그날 많이 읽음" />
+      </h3>
       {stats && readTotal > 0 ? (
-        <Heatmap data={stats.heatmap} />
+        <div className="hivemap-wrap">
+          <Heatmap data={stats.heatmap} />
+        </div>
       ) : (
         <p className="sec-foot" style={{ marginTop: 0 }}>
           콘텐츠를 읽으면 여기에 학습 기록이 채워집니다. <a href="/">홈에서 둘러보기 →</a>
         </p>
       )}
 
-      <h3 className="sec-sub">내 학습 현황</h3>
-      {state?.user_state ? (
-        <p className="user-state">{state.user_state}</p>
-      ) : (
-        <p className="sec-foot" style={{ marginTop: 0 }}>
-          콘텐츠를 읽으면 레벨·관심 분야·읽음 이력이 여기에 정리됩니다.
-        </p>
-      )}
+      {/* ④ 주제별 진행 현황 — 항상 펼침 */}
+      <h3 className="sec-sub psec">
+        주제별 진행 현황 <InfoTip text="커리큘럼 7대 주제 · 읽은 콘텐츠" />
+      </h3>
+      <Suspense fallback={<TopicSkeleton />}>
+        <TopicSection token={session.token} />
+      </Suspense>
     </main>
   );
 }
