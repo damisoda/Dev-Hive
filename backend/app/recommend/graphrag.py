@@ -170,10 +170,25 @@ def _path_score(
 
 
 def _template_reason(c: dict) -> str:
-    # profile_vector 기반 관련성이 실제로 계산됐을 때만 '관심 적합' 표기(quality 폴백을 관심으로 오표기 방지)
-    reason = f"난이도 적합 {c['diff']:.0%}"
+    # LLM 없이도 의미있는 근거: 가장 강한 신호로 '왜 추천인지' 설명 문장 생성.
+    # 신호가 다 약하면 기존 수치 폴백(profile_vector 관련성 실측 때만 '관심' 표기).
+    diff = c.get("diff", 0.0)
+    rel = c.get("rel", 0.0)
+    path = c.get("path", _NEUTRAL_PATH)
+    parts: list[str] = []
+    if path >= 0.65:
+        parts.append("선행 개념을 익혀 지금 이어 배우기 좋아요")
+    if c.get("rel_real") and rel >= 0.62:
+        parts.append("최근 관심사와 이어지는 주제예요")
+    if diff >= 0.85:
+        parts.append("지금 수준에 딱 맞아요")
+    elif diff >= 0.65 and not parts:
+        parts.append("난이도가 무난해요")
+    if parts:
+        return " · ".join(parts[:2])
+    reason = f"난이도 적합 {diff:.0%}"
     if c.get("rel_real"):
-        reason += f" · 관심 적합 {c['rel']:.0%}"
+        reason += f" · 관심 적합 {rel:.0%}"
     return reason
 
 
