@@ -234,7 +234,7 @@ export function topicCellTiers(read: number): number[] {
 
 export function topicProgressRows(
   topics: { id: string; label: string; parent: string | null; auto: boolean }[],
-  readItems: { topic: string | null }[]
+  readItems: { topic?: string | null }[]
 ): TopicProgressRow[] {
   // 읽음 수 — 대주제명별 집계(읽음이력 topic = 대주제명)
   const readByName = new Map<string, number>();
