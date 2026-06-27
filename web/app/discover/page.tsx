@@ -22,8 +22,15 @@ export default async function DiscoverPage({
 
   try {
     const g = await getGraph();
+    // belongs_to는 '가장 구체적인' 노드(하위노드)를 가리키므로, 소속 대주제로 롤업해 합산한다.
+    const parentOf: Record<string, string> = {};
+    for (const n of g.nodes) if (n.kind === "topic") parentOf[n.id] = n.parent ?? n.id;
     const counts: Record<string, number> = {};
-    for (const e of g.edges) if (e.rel === "belongs_to") counts[e.target] = (counts[e.target] ?? 0) + 1;
+    for (const e of g.edges) {
+      if (e.rel !== "belongs_to") continue;
+      const top = parentOf[e.target] ?? e.target;
+      counts[top] = (counts[top] ?? 0) + 1;
+    }
     topics = g.nodes
       .filter((n) => n.kind === "topic" && !n.auto)
       .map((n) => ({ id: n.id, label: n.label, count: counts[n.id] ?? 0 }))
