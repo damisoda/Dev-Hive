@@ -648,6 +648,14 @@ a.path-name:hover { text-decoration: underline; }
 .ob-submit:disabled { opacity: 0.6; cursor: default; }
 .ob-note { margin: -6px 0 0; font-size: 12.5px; color: var(--text-subtle); }
 
+.profile-edit-actions { display: flex; align-items: center; gap: 10px; }
+.profile-edit-actions .ob-submit { flex: 1 1 auto; }
+.profile-edit-cancel {
+  height: 48px; padding: 0 18px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-muted);
+  font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.profile-edit-cancel:hover { border-color: var(--border-strong); color: var(--text); }
 /* ───────── 반응형 ───────── */
 @media (max-width: 640px) {
   :root { --rail-w: 60px; }

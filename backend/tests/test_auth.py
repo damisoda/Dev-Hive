@@ -161,3 +161,50 @@ def test_login_legacy_null_hash_401():
     client = _login_client(legacy)
     res = client.post("/auth/login", json={"username": "legacy", "password": "whatever"})
     assert res.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_get_me_returns_editable_profile():
+    user = _fake_user()
+    user.onboarding_answers = {"ai_tool_usage": 2, "llm_understanding": 1}
+    client = _login_client(user)
+
+    res = client.get("/auth/me", headers={"Authorization": f"Bearer {create_access_token(1)}"})
+
+    assert res.status_code == status.HTTP_200_OK
+    body = res.json()
+    assert body["display_name"] == "Alice"
+    assert body["onboarding_answers"] == {"ai_tool_usage": 2, "llm_understanding": 1}
+
+
+def test_update_me_recomputes_level_and_profile_vector(monkeypatch):
+    user = _fake_user()
+    user.onboarding_answers = {"ai_tool_usage": 0}
+    calls = []
+    monkeypatch.setattr("app.api.auth.update_from_read_history", lambda user_id, db: calls.append(user_id))
+    client = _login_client(user)
+
+    payload = {
+        "display_name": "Bob",
+        "persona": "개발자",
+        "onboarding_answers": {
+            "ai_tool_usage": 2,
+            "llm_understanding": 2,
+            "advanced_topics": 0,
+            "dev_career": 3,
+            "prod_experience": 1,
+        },
+    }
+    res = client.patch(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {create_access_token(1)}"},
+        json=payload,
+    )
+
+    assert res.status_code == status.HTTP_200_OK
+    body = res.json()
+    assert body["display_name"] == "Bob"
+    assert body["current_level"] == "고급"
+    assert body["onboarding_answers"] == payload["onboarding_answers"]
+    assert user.display_name == "Bob"
+    assert user.current_level == "고급"
+    assert calls == [1]

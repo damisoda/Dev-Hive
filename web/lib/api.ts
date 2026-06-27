@@ -8,6 +8,7 @@ import type {
   MasteryResponse,
   ReadHistoryResponse,
   Profile,
+  EditableProfile,
   Stats,
   UserStateResponse,
 } from "./types";
@@ -147,6 +148,9 @@ export function getProfile(userId: number): Promise<Profile> {
   return request<Profile>(`/auth/profile/${userId}`);
 }
 
+export function getEditableProfile(token: string): Promise<EditableProfile> {
+  return request<EditableProfile>("/auth/me", { headers: authHeader(token) });
+}
 export function getStats(token: string): Promise<Stats> {
   return request<Stats>("/stats", { headers: authHeader(token), timeoutMs: 15_000 });
 }
