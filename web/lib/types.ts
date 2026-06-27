@@ -62,6 +62,7 @@ export interface GraphNode {
   kind: string; // topic | content | ...
   label: string;
   auto: boolean;
+  parent?: string | null; // 하위노드의 소속 대주제 "topic:<id>" (대주제는 null)
 }
 export interface GraphEdge {
   source: string;

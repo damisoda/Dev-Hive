@@ -19,6 +19,7 @@ class GraphNode(BaseModel):
     kind: str            # topic | content
     label: str
     auto: bool = False   # Auto-HKG 생성 노드 (topic에만 의미)
+    parent: str | None = None  # 하위노드의 소속 대주제 "topic:<id>" (대주제는 None)
 
 
 class GraphEdge(BaseModel):
@@ -40,11 +41,13 @@ def serialize_graph(g: nx.MultiDiGraph) -> dict:
     for n, d in g.nodes(data=True):
         kind = d.get("kind", "")
         label = d.get("name") if kind == "topic" else (d.get("title") or "")
+        parent_id = d.get("parent_id")
         nodes.append({
             "id": str(n),
             "kind": kind,
             "label": (label or "")[:80],
             "auto": bool(d.get("auto", False)),
+            "parent": f"topic:{parent_id}" if parent_id is not None else None,
         })
     edges = [
         {
