@@ -64,7 +64,8 @@ export function AuthForm() {
         setBusy(false);
         return;
       }
-      window.location.href = "/"; // 쿠키 반영된 채로 홈 재진입
+      // 가입은 환영 페이지, 로그인은 홈으로 (둘 다 쿠키 반영된 채 재진입)
+      window.location.href = mode === "signup" ? "/welcome" : "/";
     } catch {
       setError("네트워크 오류가 발생했습니다.");
       setBusy(false);
