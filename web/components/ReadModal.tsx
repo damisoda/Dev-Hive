@@ -30,6 +30,9 @@ export function ReadModal({
   const [synthPending, setSynthPending] = useState(false);
   const [levelUp, setLevelUp] = useState<string | null>(null);
   const [koOpen, setKoOpen] = useState(false);
+  // 호출처가 url을 안 넘기는 경우(예: 지식그래프 노드)를 위해 /api/read 응답의 url을 폴백으로 쓴다.
+  const [fetchedUrl, setFetchedUrl] = useState<string | null>(null);
+  const originUrl = (url ?? fetchedUrl) || null;
 
   // 영문 제목 + 번역 토글(HIVE-66) — title_ko가 있고 원문과 다를 때만(피드 카드와 동일 판단).
   const ko = titleKo?.trim();
@@ -46,6 +49,7 @@ export function ReadModal({
         body: JSON.stringify({ content_id: contentId }),
       });
       const data = await res.json();
+      if (data?.url) setFetchedUrl(data.url as string);
       if (!res.ok) setErr(data.error ?? "재가공본을 불러오지 못했어요.");
       else if (data.synthesis) {
         setSynth(data.synthesis as Synth);
@@ -117,10 +121,10 @@ export function ReadModal({
               {synthPending && (
                 <p className="synth-pending">
                   재가공본을 준비 중이에요.
-                  {url && (
+                  {originUrl && (
                     <>
                       {" "}
-                      <a href={url} target="_blank" rel="noopener noreferrer">
+                      <a href={originUrl} target="_blank" rel="noopener noreferrer">
                         원문에서 직접 확인해 보세요 ↗
                       </a>
                     </>
@@ -130,8 +134,8 @@ export function ReadModal({
               {synth && <SynthBody synth={synth} />}
             </div>
 
-            {url && !synthPending && (
-              <a className="modal-origin" href={url} target="_blank" rel="noopener noreferrer">
+            {originUrl && !synthPending && (
+              <a className="modal-origin" href={originUrl} target="_blank" rel="noopener noreferrer">
                 원문 보기 ↗
               </a>
             )}
