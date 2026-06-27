@@ -293,7 +293,9 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
             wm_sim = (float(np.dot(wmc, ec) / wm_denom) + 1.0) / 2.0
         else:
             wm_sim = 0.0
-        path = _path_score(topic_of.get(r.node_id, r.node_id), prereq_map, mastery)
+        # precedes: 하위노드 자체 선행을 우선(정밀), 없으면 대주제로 폴백(HIVE-56 확장).
+        pnode = r.node_id if r.node_id in prereq_map else topic_of.get(r.node_id, r.node_id)
+        path = _path_score(pnode, prereq_map, mastery)
         recency = W_RECENCY * _recency_score(r.published_at, r.created_at) if use_recency else 0.0
         # 품질 보너스: 프로필 유저만(콜드스타트는 rel=quality라 중복 방지). 저가치 콘텐츠 demote.
         q = float(r.quality_score) if r.quality_score is not None else 0.5
