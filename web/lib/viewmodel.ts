@@ -189,6 +189,75 @@ export function curriculumRows(
   return rows;
 }
 
+// ── 프로필 리디자인 — 레벨 메달 색 + 주제별 진행 현황 ──
+// 메달은 배경 칩 없이 아이콘 '색만' 레벨별로 다르게(spec). 레벨 체계는 HIVE-36(입문/중급/고급).
+// 동(입문)→은(중급)→금(고급)으로, 위로 갈수록 귀금속 — 직관적 위계.
+const LEVEL_MEDAL_COLORS: Record<string, string> = {
+  입문: "#B97A56", // 동(bronze)
+  중급: "#9AA3AF", // 은(silver)
+  고급: "#D9A441", // 금(gold, 프로젝트 허니골드와 동일 계열)
+};
+export function levelMedalColor(level: string | null | undefined): string {
+  return (level && LEVEL_MEDAL_COLORS[level]) || LEVEL_MEDAL_COLORS["입문"];
+}
+
+// 주제별 진행 현황 — 7대주제 행. 각 행 고정 10칸을 '읽은 수 오도미터'로 표현.
+// 읽음이력 topic은 백엔드에서 이미 대주제명으로 롤업되어 오므로 대주제명으로만 매칭한다.
+export interface TopicProgressRow {
+  id: string;
+  name: string;
+  read: number; // 읽은 콘텐츠 수
+  cells: number[]; // 길이 10, 각 칸의 강도 0~4 (CSS .t0~.t4)
+  status: string; // "N건 완료" | "미학습"
+}
+
+const TOPIC_CELLS = 10;
+const TOPIC_MAX_TIER = 4;
+
+// 읽은 수 → 10칸 강도 배열(오도미터):
+//   · 1읽음=1칸씩 왼쪽부터 연한 꿀색(t1)으로 채움 → 10읽음이면 10칸이 참
+//   · 10읽음마다 왼쪽부터 1칸씩 '진한 꿀색(t2)'으로 올림(carry) → 100읽음이면 10칸 전부 t2
+//   · 그 위(100읽음 단위)부터 다시 왼쪽부터 한 단계 더 진하게(t3→t4) 반복
+// 즉 칸 = 읽은 수를 10진 누적으로 시각화. 더 많이 읽은 주제일수록 진하게.
+export function topicCellTiers(read: number): number[] {
+  const tens = Math.floor(read / 10); // 올림된 '십' 개수(누적 진한 칸)
+  const units = read % 10; // 진행 중인 '일' (현재 채우는 연한 칸)
+  const frontier = tens % 10; // 현재 sweep에서 진해진 칸 수
+  const sweepBase = Math.floor(tens / 10); // 10칸 전체를 몇 바퀴 진하게 올렸는지(100읽음=1바퀴)
+  return Array.from({ length: TOPIC_CELLS }, (_, i) => {
+    const darkLayers = sweepBase + (i < frontier ? 1 : 0); // 이 칸에 쌓인 '십' 횟수
+    if (darkLayers > 0) return Math.min(darkLayers + 1, TOPIC_MAX_TIER); // 진한 꿀색 t2~t4
+    const isUnit = i >= frontier && i < frontier + units; // 진행 중 연한 칸
+    return isUnit ? 1 : 0; // t1(연한 꿀색) / t0(빈칸)
+  });
+}
+
+export function topicProgressRows(
+  topics: { id: string; label: string; parent: string | null; auto: boolean }[],
+  readItems: { topic?: string | null }[]
+): TopicProgressRow[] {
+  // 읽음 수 — 대주제명별 집계(읽음이력 topic = 대주제명)
+  const readByName = new Map<string, number>();
+  for (const r of readItems) {
+    if (!r.topic) continue;
+    readByName.set(r.topic, (readByName.get(r.topic) ?? 0) + 1);
+  }
+
+  // 대주제(parent 없음 · Auto-HKG 아님) — 그래프 순서 유지, 7개
+  return topics
+    .filter((t) => t.parent === null && !t.auto)
+    .map((t) => {
+      const read = readByName.get(t.label) ?? 0;
+      return {
+        id: t.id,
+        name: t.label || "?",
+        read,
+        cells: topicCellTiers(read),
+        status: read > 0 ? `${read}건 완료` : "미학습",
+      };
+    });
+}
+
 // ── 학습 경로(콘텐츠 단계형) — HIVE-65 ──
 // 읽은 자료(완료) + 추천 자료(예정)를 한 줄로 이어 '지나온 길 → 지금 → 앞길'을 보여준다.
 // 단계 텍스트 = 콘텐츠 제목, 메타 = [상태 · 소속 주제]. 진행도 = 읽음 / (읽음 + 추천).
