@@ -19,10 +19,10 @@ const C = {
   urlFocus: "#D9A441",
   urlFocusSoft: "#FFF3D8",
   urlHL: "#E7BD62",
-  path: "#6366f1",          // 학습 경로 상시 색상
-  pathHover: "#818cf8",     // 학습 경로 노드 호버 시 더 진한 인디고
-  pathGlow: "rgba(99,102,241,0.55)",
-  pathGlowHover: "rgba(99,102,241,0.85)",
+  path: "#E1483B",          // 읽은 콘텐츠 / 추천 경로 — 빨강
+  pathHover: "#C9352A",     // 읽은 콘텐츠 노드 호버 시 더 진한 빨강
+  pathGlow: "rgba(225,72,59,0.55)",
+  pathGlowHover: "rgba(225,72,59,0.85)",
   hover: "#fbbf24",         // 비경로 노드 호버 색상 (앰버/골드)
   hoverGlow: "rgba(251,191,36,0.65)",
 } as const;
@@ -83,7 +83,7 @@ export function GraphCanvas({
   loggedIn?: boolean;
   pathIds?: string[];
 }) {
-  const [openTopic, setOpenTopic] = useState<string | null>(null); // 드릴다운: 펼친 주제
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set()); // 접힌 노드(그 하위 콘텐츠 숨김). 초기 빈 셋 = 전부 표시
   const wrapRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(null);
   const [size, setSize] = useState({ w: 900, h: 620 });
@@ -116,10 +116,10 @@ export function GraphCanvas({
     [highlight?.contentId, highlight?.focusId, highlight?.topicId]
   );
 
-  // structure-first: 기본은 토픽(대주제+하위) + 위계(하위→대주제) + precedes만 그린다.
-  // 1251개 전체(콘텐츠 1157 포함)는 헤어볼이라, 콘텐츠는 주제 클릭(openTopic) 시에만 펼친다.
+  // 전체 표시: 대주제 + auto 하위노드 + 콘텐츠 서브노드를 한 번에. (초기 = 전부 보임)
+  // 노드(대주제·auto)를 클릭하면 collapsed에 담겨 그에 속한 콘텐츠만 접힌다(토픽 노드는 항상 표시).
+  // 엣지: 위계(하위→대주제 child_of) + belongs_to(콘텐츠→노드) + precedes(학습 순서).
   const graph = useMemo(() => {
-    const byId = new Map(data.nodes.map((n) => [n.id, n]));
     const contentBelongs = new Map<string, string[]>();
     for (const e of data.edges)
       if (e.rel === "belongs_to") {
@@ -127,35 +127,23 @@ export function GraphCanvas({
         arr.push(e.target);
         contentBelongs.set(e.source, arr);
       }
-    // 펼칠 대상 노드 집합: openTopic 자신 + (대주제면) 그 하위노드들
-    const expand = new Set<string>();
-    if (openTopic) {
-      expand.add(openTopic);
-      const ot = byId.get(openTopic);
-      if (ot && ot.kind === "topic" && !ot.auto)
-        for (const n of data.nodes) if (n.parent === openTopic) expand.add(n.id);
-    }
-    const nodes = data.nodes
-      .filter((n) => {
-        if (n.kind === "topic") return true; // 토픽은 항상
-        if (!openTopic) return false; // 기본: 콘텐츠 숨김
-        const bs = contentBelongs.get(n.id);
-        return !!bs && bs.some((t) => expand.has(t));
-      })
-      .map((n) => ({ ...n }));
+    const isHidden = (n: GraphNode) => {
+      if (n.kind !== "content") return false; // 토픽(대주제·auto)은 항상 표시
+      const bs = contentBelongs.get(n.id);
+      if (!bs || bs.length === 0) return false; // 소속 없는 콘텐츠는 표시(고아 방지)
+      return bs.every((t) => collapsed.has(t)); // 소속 노드가 모두 접힘 → 숨김
+    };
+    const nodes = data.nodes.filter((n) => !isHidden(n)).map((n) => ({ ...n }));
     const shown = new Set(nodes.map((n) => n.id));
     const links: { source: string; target: string; rel: string; weight: number }[] = [];
     for (const n of data.nodes) // 위계: 하위 → 대주제
       if (n.kind === "topic" && n.parent && shown.has(n.id) && shown.has(n.parent))
         links.push({ source: n.id, target: n.parent, rel: "child_of", weight: 0.5 });
-    for (const e of data.edges) {
-      if (e.rel === "precedes" && shown.has(e.source) && shown.has(e.target))
-        links.push({ source: e.source, target: e.target, rel: "precedes", weight: e.weight });
-      else if (openTopic && e.rel === "belongs_to" && shown.has(e.source) && shown.has(e.target))
-        links.push({ source: e.source, target: e.target, rel: "belongs_to", weight: e.weight });
-    }
+    for (const e of data.edges)
+      if ((e.rel === "precedes" || e.rel === "belongs_to") && shown.has(e.source) && shown.has(e.target))
+        links.push({ source: e.source, target: e.target, rel: e.rel, weight: e.weight });
     return { nodes, links };
-  }, [data, openTopic]);
+  }, [data, collapsed]);
 
   useEffect(() => {
     const fg = fgRef.current;
@@ -231,12 +219,24 @@ export function GraphCanvas({
     if (e && e.stopPropagation) e.stopPropagation();
     if (e && e.preventDefault) e.preventDefault();
 
-    if (n.kind === "topic") {
-      // 주제 클릭 = 드릴다운 토글(그 주제의 콘텐츠 펼침/접음)
-      setOpenTopic((cur) => (cur === n.id ? null : n.id));
+    if (n.kind === "content") {
+      setSelectedNode({ id: n.id, label: n.label, kind: n.kind, contentId: parseContentId(n.id) });
       return;
     }
-    setSelectedNode({ id: n.id, label: n.label, kind: n.kind, contentId: parseContentId(n.id) });
+    // 대주제·auto 노드 클릭 = 그에 속한 콘텐츠 접기/펴기 토글
+    // auto면 자신만, 대주제면 자신 + auto 자식 전부를 한 번에 토글
+    setCollapsed((cur) => {
+      const next = new Set(cur);
+      const targets = n.auto
+        ? [n.id]
+        : [n.id, ...data.nodes.filter((x) => x.parent === n.id).map((x) => x.id)];
+      const anyOpen = targets.some((t) => !next.has(t));
+      for (const t of targets) {
+        if (anyOpen) next.add(t);
+        else next.delete(t);
+      }
+      return next;
+    });
   }
 
   /**
@@ -390,19 +390,22 @@ export function GraphCanvas({
             const src = linkNodeId(l.source);
             const tgt = linkNodeId(l.target);
             const anyHover = hoveredNodeRef.current !== null;
-            // 읽은 콘텐츠 ↔ 연관 콘텐츠(similar_to) 간선 — 한쪽이라도 읽은 글이면 강조(호버 시 약간 dim)
-            if (src && tgt && l.rel === "similar_to" && (pathIdsSet.has(src) || pathIdsSet.has(tgt)))
-              return anyHover ? "rgba(99,102,241,0.46)" : "rgba(99,102,241,0.65)";
+            // 추천 경로 — 읽은 콘텐츠에 닿는 precedes 간선을 빨강으로 강조
+            if (src && tgt && l.rel === "precedes" && (pathIdsSet.has(src) || pathIdsSet.has(tgt)))
+              return anyHover ? "rgba(225,72,59,0.55)" : "rgba(225,72,59,0.82)";
+            // 그 외 precedes(학습 순서 구조) — 옅은 빨강
+            if (l.rel === "precedes") return "rgba(225,72,59,0.3)";
             // URL-하이라이트 간선
             if (src && tgt && highlightIds.has(src) && highlightIds.has(tgt))
               return "rgba(217,164,65,0.56)";
-            // 일반 간선 — 호버 활성 시 opacity 0.7 수준으로 dim
-            return anyHover ? "rgba(120,132,156,0.08)" : "rgba(120,132,156,0.11)";
+            // 일반 간선 — 호버 활성 시 dim
+            return anyHover ? "rgba(120,132,156,0.07)" : "rgba(120,132,156,0.1)";
           }}
           linkWidth={(l: GraphLink) => {
             const src = linkNodeId(l.source);
             const tgt = linkNodeId(l.target);
-            if (src && tgt && l.rel === "similar_to" && (pathIdsSet.has(src) || pathIdsSet.has(tgt))) return 2.5;
+            if (src && tgt && l.rel === "precedes" && (pathIdsSet.has(src) || pathIdsSet.has(tgt))) return 2.6;
+            if (l.rel === "precedes") return 1.4;
             if (src && tgt && highlightIds.has(src) && highlightIds.has(tgt)) return 2.2;
             return Math.max(0.3, l.weight ?? 0.3);
           }}
