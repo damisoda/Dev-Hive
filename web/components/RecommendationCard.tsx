@@ -1,6 +1,6 @@
 import type { Recommendation } from "@/lib/types";
 import { recommendationView } from "@/lib/viewmodel";
-import { ReadModal } from "./ReadModal";
+import { ReadableTitle } from "./ReadableTitle";
 import { FeedbackButtons } from "./FeedbackButtons";
 
 // 커리큘럼 '다음 학습 자료' — /recommend(GraphRAG) 한 건. 순위·매치%·pill·요약·근거.
@@ -31,23 +31,12 @@ export function RecommendationCard({
           ))}
         </div>
         {/* 제목 클릭 = 상세 카드(읽기 모달) 열기. 원문 이동은 제목 옆 '원문 ↗' 링크로 분리. */}
-        <ReadModal
+        <ReadableTitle
+          variant="rec"
           contentId={vm.content_id}
           title={vm.title}
           url={vm.url}
           loggedIn={loggedIn}
-          renderTrigger={(open) => (
-            <h3 className="rec-title">
-              <button type="button" className="rec-title-text" onClick={open}>
-                {vm.title}
-              </button>
-              {vm.url && (
-                <a className="ext" href={vm.url} target="_blank" rel="noopener noreferrer">
-                  원문 ↗
-                </a>
-              )}
-            </h3>
-          )}
         />
         {vm.summary ? (
           <p className="rec-summary">{vm.summary}</p>
