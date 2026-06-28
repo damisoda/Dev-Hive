@@ -29,11 +29,9 @@ export const SYNTH_BODY_LABELS: Record<string, string> = {
 // source 내부 값 → 표시 라벨
 export const SOURCE_LABELS: Record<string, string> = {
   reddit: "Reddit",
-  hn: "Hacker News",
   github_trending: "GitHub Trending",
   huggingface: "Hugging Face",
   velog: "Velog",
-  tistory: "Tistory",
   x: "X (Twitter)",
   user: "사용자 업로드",
 };
@@ -41,9 +39,7 @@ export const SOURCE_LABELS: Record<string, string> = {
 // source → 뱃지 이모지. 미등록 소스는 기본 📄.
 export const SOURCE_EMOJI: Record<string, string> = {
   velog: "✍️",
-  tistory: "📝",
   reddit: "👽",
-  hn: "📰",
   github_trending: "⭐",
   huggingface: "🤗",
   x: "🐦",
