@@ -38,8 +38,13 @@ def upload_user_content(
     url: str | None,
     user_id: int | None,
     db: Session,
+    defer_synthesis: bool = False,
 ) -> dict:
-    """업로드 콘텐츠를 파이프라인에 태워 그래프에 편입하고 결과를 반환한다."""
+    """업로드 콘텐츠를 파이프라인에 태워 그래프에 편입하고 결과를 반환한다.
+
+    defer_synthesis=True면 가공(synthesis)을 여기서 만들지 않는다(업로드 응답 ≈5s 단축).
+    호출부가 백그라운드로 생성하며, 읽기 시 lazy 생성 폴백도 있어 synthesis는 결국 제공된다.
+    """
     if not llm_available():
         raise UploadError("ANTHROPIC_API_KEY 미설정 — 태깅/Auto-HKG 불가")
     if not settings.openai_api_key:
@@ -69,10 +74,14 @@ def upload_user_content(
 
     tags = tag_content(item, anthropic_client)
     # 가공(태깅 후·적재 전): content_type별 카드 생성. 실패(None)는 비차단 — 가공 없이 적재.
-    try:
-        synthesis = synthesize(item, tags, anthropic_client)
-    except Exception:
+    # defer_synthesis면 여기서 만들지 않고(업로드 응답 단축) 백그라운드/lazy로 미룬다.
+    if defer_synthesis:
         synthesis = None
+    else:
+        try:
+            synthesis = synthesize(item, tags, anthropic_client)
+        except Exception:
+            synthesis = None
     # 임베딩은 원문 고정(가공본 임베딩 X). 가공본은 synthesis 컬럼에만 저장.
     embedding = embed_content(item, openai_client)
 
