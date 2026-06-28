@@ -357,7 +357,8 @@ a.rec-title:hover { color: var(--accent-ink); }
 .hive-cell.lv2 { background: #EFD08A; }
 .hive-cell.lv3 { background: #E4B45E; }
 .hive-cell.lv4 { background: #D49C3A; }
-.hive-tip { position: absolute; transform: translate(-50%, -118%); background: #14161C; color: #fff; font-size: 11.5px; font-weight: 600; padding: 5px 9px; border-radius: 7px; white-space: nowrap; pointer-events: none; z-index: 6; box-shadow: 0 6px 16px rgba(0,0,0,.2); }
+.hive-empty { visibility: hidden; }
+.hive-tip { position: absolute; background: #14161C; color: #fff; font-size: 11.5px; font-weight: 600; padding: 5px 9px; border-radius: 7px; white-space: nowrap; pointer-events: none; z-index: 6; box-shadow: 0 6px 16px rgba(0,0,0,.2); }
 
 /* ④ 주제별 진행 현황 */
 .topic-prog { display: flex; flex-direction: column; }
