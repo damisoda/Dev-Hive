@@ -165,7 +165,7 @@ export function ReadModal({
                     aria-expanded={originOpen}
                     onClick={() => setOriginOpen((o) => !o)}
                   >
-                    {originOpen ? "원문 접기" : "원문 보기"} <Icon name="doc" size={14} />
+                    {originOpen ? "업로드 원문 접기" : "업로드 원문 보기"} <Icon name="doc" size={14} />
                   </button>
                   {originOpen && <p className="origin-body">{originBody}</p>}
                 </div>
