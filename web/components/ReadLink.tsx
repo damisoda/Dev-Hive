@@ -1,5 +1,7 @@
 "use client";
 
+import { externalUrl } from "@/lib/viewmodel";
+
 // 학습경로 단계용 '읽음 처리 링크'(HIVE-97). 제목 클릭 시 원문을 새 탭으로 열면서
 // 동시에 읽음 처리(POST /api/read, fire-and-forget)한다 — 추천받은 글을 경로에서 바로
 // '완료'로 만들 수 있게. 무거운 ReadModal 대신 링크+로깅만(경로는 한눈 요약이라 가볍게).
@@ -28,9 +30,11 @@ export function ReadLink({
     }).catch(() => {});
   }
 
-  if (!url) return <span className={className}>{children}</span>;
+  // user:// 같은 합성 url은 외부 링크로 못 쓴다 → 원문 링크 없는 글은 그냥 텍스트.
+  const ext = externalUrl(url);
+  if (!ext) return <span className={className}>{children}</span>;
   return (
-    <a className={className} href={url} target="_blank" rel="noopener noreferrer" onClick={markRead}>
+    <a className={className} href={ext} target="_blank" rel="noopener noreferrer" onClick={markRead}>
       {children}
     </a>
   );

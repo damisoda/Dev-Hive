@@ -2,6 +2,7 @@
 
 import { ReadModal } from "./ReadModal";
 import { TitleTranslateToggle } from "./TitleTranslateToggle";
+import { externalUrl } from "@/lib/viewmodel";
 
 // 카드 제목을 '읽기 모달' 트리거로 묶는 클라이언트 섬.
 // 서버 컴포넌트(ContentCard/RecommendationCard)는 함수 prop(renderTrigger)을 클라이언트로
@@ -24,6 +25,7 @@ export function ReadableTitle({
 }) {
   const ko = titleKo?.trim();
   const showTitleToggle = Boolean(ko && ko !== title.trim());
+  const ext = externalUrl(url); // 외부 원문만 링크(user:// 합성 url 제외)
 
   return (
     <ReadModal
@@ -38,8 +40,8 @@ export function ReadableTitle({
             <button type="button" className="rec-title-text" onClick={open}>
               {title}
             </button>
-            {url && (
-              <a className="ext" href={url} target="_blank" rel="noopener noreferrer">
+            {ext && (
+              <a className="ext" href={ext} target="_blank" rel="noopener noreferrer">
                 원문 ↗
               </a>
             )}

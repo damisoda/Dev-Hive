@@ -225,6 +225,8 @@ class SynthesisResponse(BaseModel):
     content_id: int
     content_type: Optional[str] = None
     url: Optional[str] = None            # 원문 링크 — '읽기' 모달의 '원문 보기'용(그래프 진입 포함)
+    source: Optional[str] = None         # 출처. source='user'는 외부 url 없이 합성 url(user://) — 프론트 '원문' 분기용
+    body: Optional[str] = None           # 사용자 업로드 원문(source='user'만). 외부 출처 본문은 노출하지 않음.
     synthesis: Optional[dict] = None     # {one_liner, key_takeaways[], ...타입별 바디}
 
 
@@ -247,7 +249,7 @@ def get_synthesis(
     )
 
     row = (
-        db.query(Content.id, Content.content_type, Content.url)
+        db.query(Content.id, Content.content_type, Content.url, Content.source, Content.body)
         .filter(Content.id == content_id)
         .first()
     )
@@ -256,6 +258,10 @@ def get_synthesis(
 
     client = get_llm_client(settings.anthropic_api_key) if llm_available() else None
     card = ensure_synthesis(content_id, db, client)
+    # 사용자 업로드는 외부 원문 링크가 없으므로(합성 user:// url) 원문 = 업로드한 본문.
+    # 외부 출처 본문(크롤 전문)은 노출하지 않는다 — user 업로드만 body를 내려준다.
+    body = row.body if row.source == "user" else None
     return SynthesisResponse(
-        content_id=content_id, content_type=row.content_type, url=row.url, synthesis=card
+        content_id=content_id, content_type=row.content_type, url=row.url,
+        source=row.source, body=body, synthesis=card,
     )

@@ -58,6 +58,13 @@ export function sourceBadge(source: string): string {
   return `${SOURCE_EMOJI[source] ?? "📄"} ${sourceLabel(source)}`;
 }
 
+// 외부 원문 링크로 쓸 수 있는 url만 통과(http/https). 사용자 업로드의 합성 url(user://)·빈값은 null.
+// (업로드 글은 외부 원문이 없어 url에 user://{uid}/{hash}가 들어감 — 이걸 링크로 걸면 깨진다.)
+export function externalUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return /^https?:\/\//i.test(url) ? url : null;
+}
+
 // ── 디자인 토큰: pill 색 매핑 (순수 표시 데이터) ──
 
 export interface PillSpec {

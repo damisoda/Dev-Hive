@@ -5,6 +5,7 @@ import {
   contentTypeLabel,
   difficultyPill,
   contentTags,
+  externalUrl,
 } from "@/lib/viewmodel";
 import { FeedbackButtons } from "./FeedbackButtons";
 import { ReadableTitle } from "./ReadableTitle";
@@ -33,7 +34,8 @@ export function ContentCard({
   const glyph = SOURCE_EMOJI[item.source] ?? "📄";
   const src = sourceLabel(item.source);
   const tags = contentTags(item).slice(0, 5);
-  const hasUrl = Boolean(item.url);
+  // 외부 원문 링크만(user:// 합성 url은 제외). 사용자 업로드 원문은 제목 클릭→읽기 모달에서 본다.
+  const ext = externalUrl(item.url);
   const author = item.author_name;
   const diff = item.difficulty ? difficultyPill(item.difficulty) : null;
 
@@ -97,8 +99,8 @@ export function ContentCard({
           {item.engagement_comments ?? 0}
         </span>
         {item.quality_score != null && <span className="item">품질 {item.quality_score.toFixed(2)}</span>}
-        {hasUrl && (
-          <a className="origin" href={item.url ?? "#"} target="_blank" rel="noopener noreferrer">
+        {ext && (
+          <a className="origin" href={ext} target="_blank" rel="noopener noreferrer">
             원문 ↗
           </a>
         )}
