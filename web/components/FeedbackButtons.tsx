@@ -2,61 +2,46 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { FEEDBACK_BUTTONS } from "@/lib/viewmodel";
 
-interface FeedbackButtonsProps {
-  content_id: string;
-  value: string | null;
-  userName?: string;
-}
+// 각 버튼이 추천에 어떻게 작용하는지 설명하는 툴팁(커스텀 CSS, data-tip 속성).
+const TOOLTIPS: Record<string, string> = {
+  understood: "이 토픽의 이해도를 올려 더 심화된 글을 추천해요. (이 글은 추천에서 제외)",
+  too_hard: "이 토픽을 더 쉬운 기초 자료 위주로 다시 추천해요.",
+  want_more: "이 글과 비슷한 글의 추천 가중치를 실시간으로 높여요.",
+  not_interested: "이 글을 추천에서 빼고 새 추천을 불러와요.",
+};
 
-function getTooltipText(key: string, displayName: string): string {
-  switch (key) {
-    case "understood":
-      return "이해했어요: 이 토픽의 이해도를 높여 더 심화된 콘텐츠를 추천합니다. (현재 추천 풀에선 제외)";
-    case "too_hard":
-      return "어려워요: 이 토픽의 난이도를 하향 조정하여 더 쉬운 기초 자료 위주로 커리큘럼을 다시 구성합니다.";
-    case "want_more":
-      return "더 보고 싶어요: 이 자료와 유사한 핵심 키워드를 분석하여 AI 추천 가중치를 실시간으로 높입니다.";
-    case "not_interested":
-      return `관심없어요: 해당 콘텐츠를 추천 풀에서 영구 제외하고 ${displayName}님의 새 추천 라인업을 불러옵니다.`;
-    default:
-      return "";
-  }
-}
-
-const BUTTONS = [
-  { key: "understood",    label: "이해했어요" },
-  { key: "too_hard",      label: "어려워요" },
-  { key: "want_more",     label: "더 보고 싶어요" },
-  { key: "not_interested", label: "관심없어요" },
-];
-
-export default function FeedbackButtons({ content_id, value, userName }: FeedbackButtonsProps) {
+// 콘텐츠 피드백 4종 토글. 같은 버튼 재클릭 = 해제(DELETE). BFF(/api/feedback)로만 호출.
+export function FeedbackButtons({ contentId, current }: { contentId: number; current: string | null }) {
   const router = useRouter();
-  const [currentValue, setCurrentValue] = useState<string | null>(value);
+  const [value, setValue] = useState<string | null>(current);
   const [busy, setBusy] = useState(false);
-  const displayName = userName?.trim() || "회원";
 
+  // 서버 새로고침으로 current가 바뀌면 로컬 상태 동기화.
   useEffect(() => {
-    setCurrentValue(value);
-  }, [value]);
+    setValue(current);
+  }, [current]);
 
   async function toggle(key: string) {
     if (busy) return;
-    const active = currentValue === key;
-    const prev = currentValue;
+    const active = value === key;
+    const prev = value;
     setBusy(true);
-    setCurrentValue(active ? null : key);
+    setValue(active ? null : key); // 낙관적 업데이트
     try {
       const res = await fetch("/api/feedback", {
         method: active ? "DELETE" : "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(active ? { content_id } : { content_id, feedback: key }),
+        body: JSON.stringify(active ? { content_id: contentId } : { content_id: contentId, feedback: key }),
       });
-      if (!res.ok) setCurrentValue(prev);
-      else router.refresh();
+      if (!res.ok) {
+        setValue(prev); // 롤백
+      } else {
+        router.refresh(); // 서버 상태 동기화(추천 반영 등)
+      }
     } catch {
-      setCurrentValue(prev);
+      setValue(prev);
     } finally {
       setBusy(false);
     }
@@ -64,18 +49,19 @@ export default function FeedbackButtons({ content_id, value, userName }: Feedbac
 
   return (
     <div className="fb-row" role="group" aria-label="이 콘텐츠 피드백">
-      {BUTTONS.map((btn) => (
+      {FEEDBACK_BUTTONS.map((b) => (
         <button
-          key={btn.key}
+          key={b.key}
           type="button"
-          title={getTooltipText(btn.key, displayName)}
-          className={`fb-btn${currentValue === btn.key ? " active" : ""}`}
-          onClick={() => toggle(btn.key)}
+          data-tip={TOOLTIPS[b.key]}
+          aria-label={`${b.label} — ${TOOLTIPS[b.key]}`}
+          className={`fb-btn${value === b.key ? " active" : ""}`}
+          onClick={() => toggle(b.key)}
           disabled={busy}
-          aria-pressed={currentValue === btn.key}
+          aria-pressed={value === b.key}
         >
-          {currentValue === btn.key ? "✓ " : ""}
-          {btn.label}
+          {value === b.key ? "✓ " : ""}
+          {b.label}
         </button>
       ))}
     </div>

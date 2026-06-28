@@ -1,7 +1,7 @@
 import type { Recommendation } from "@/lib/types";
 import { recommendationView } from "@/lib/viewmodel";
 import { ReadableTitle } from "./ReadableTitle";
-import FeedbackButtons from "./FeedbackButtons";
+import { FeedbackButtons } from "./FeedbackButtons";
 
 // 커리큘럼 '다음 학습 자료' — /recommend(GraphRAG) 한 건. 순위·매치%·pill·요약·근거.
 // 읽기(ReadModal) 시 읽음 처리되어 학습 경로 '완료'로 반영된다 (HIVE-97).
@@ -44,7 +44,7 @@ export function RecommendationCard({
           vm.summary_pending && <p className="rec-pending">AI 요약 준비 중 — 잠시 후 새로고침하면 표시됩니다.</p>
         )}
         {vm.reason && <blockquote className="rec-reason">{vm.reason}</blockquote>}
-        {loggedIn && <FeedbackButtons content_id={String(vm.content_id)} value={feedback} />}
+        {loggedIn && <FeedbackButtons contentId={vm.content_id} current={feedback} />}
       </div>
     </article>
   );
