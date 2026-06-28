@@ -1,10 +1,8 @@
 "use client";
 
-// 학습 활동 — 최근 14주 읽기 히트맵을 벌집(육각) 셀로. {YYYY-MM-DD: 읽은 수}.
-// 셀에 마우스를 올리면 날짜 + 읽은 글 수 툴팁을 띄운다. 5단계 꿀색 스케일.
+// 학습 활동 — 올해(1월 1일~오늘) 읽기 히트맵을 벌집(육각) 셀로. {YYYY-MM-DD: 읽은 수}.
+// 셀에 마우스를 올리면 날짜 + 읽은 글 수 툴팁. 가장자리 셀은 잘리지 않게 위치 보정.
 import { useState } from "react";
-
-const WEEKS = 36;
 
 function level(count: number): number {
   if (count <= 0) return 0;
@@ -14,49 +12,79 @@ function level(count: number): number {
   return 4;
 }
 
-export function Heatmap({ data }: { data: Record<string, number> }) {
-  const [tip, setTip] = useState<{ label: string; left: number; top: number } | null>(null);
+type Day = { date: string; count: number };
+type Tip = { label: string; cx: number; cleft: number; top: number; h: number; below: boolean; leftEdge: boolean };
 
+export function Heatmap({ data }: { data: Record<string, number> }) {
+  const [tip, setTip] = useState<Tip | null>(null);
+
+  // 올해 날짜들만: 1월 1일 ~ 오늘.
   const today = new Date();
-  const totalDays = WEEKS * 7;
-  const days: { date: string; count: number }[] = [];
+  const start = new Date(today.getFullYear(), 0, 1);
+  const totalDays = Math.round((today.getTime() - start.getTime()) / 86400000) + 1;
+
+  const days: Day[] = [];
   for (let i = totalDays - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
     const key = d.toISOString().slice(0, 10);
     days.push({ date: key, count: data[key] ?? 0 });
   }
-  const rows: { date: string; count: number }[][] = [];
+  // 7행(요일축) × N주. 마지막 주가 부분이면 null로 채워 정렬 유지.
+  const weeks = Math.ceil(days.length / 7);
+  const rows: (Day | null)[][] = [];
   for (let r = 0; r < 7; r++) {
-    const row: { date: string; count: number }[] = [];
-    for (let w = 0; w < WEEKS; w++) row.push(days[w * 7 + r]);
+    const row: (Day | null)[] = [];
+    for (let w = 0; w < weeks; w++) {
+      const idx = w * 7 + r;
+      row.push(idx < days.length ? days[idx] : null);
+    }
     rows.push(row);
   }
 
-  const label = (d: { date: string; count: number }) => {
+  const label = (d: Day) => {
     const dt = new Date(d.date);
     return `${dt.getMonth() + 1}월 ${dt.getDate()}일 · ${d.count > 0 ? `${d.count}건 읽음` : "학습 없음"}`;
   };
 
   return (
-    <div className="hivemap" role="img" aria-label="최근 8개월 학습 기록">
+    <div className="hivemap" role="img" aria-label="올해 학습 기록">
       {rows.map((row, r) => (
         <div className={`hive-row${r % 2 === 1 ? " odd" : ""}`} key={r}>
-          {row.map((d) => (
-            <span
-              key={d.date}
-              className={`hive-cell lv${level(d.count)}`}
-              onMouseEnter={(e) => {
-                const t = e.currentTarget;
-                setTip({ label: label(d), left: t.offsetLeft + t.offsetWidth / 2, top: t.offsetTop });
-              }}
-              onMouseLeave={() => setTip(null)}
-            />
-          ))}
+          {row.map((d, w) =>
+            d ? (
+              <span
+                key={d.date}
+                className={`hive-cell lv${level(d.count)}`}
+                onMouseEnter={(e) => {
+                  const t = e.currentTarget;
+                  setTip({
+                    label: label(d),
+                    cx: t.offsetLeft + t.offsetWidth / 2,
+                    cleft: t.offsetLeft,
+                    top: t.offsetTop,
+                    h: t.offsetHeight,
+                    below: t.offsetTop < 40, // 상단 행 → 툴팁을 아래로(위 잘림 방지)
+                    leftEdge: t.offsetLeft < 64, // 좌측 끝 → 왼쪽 정렬(좌 잘림 방지)
+                  });
+                }}
+                onMouseLeave={() => setTip(null)}
+              />
+            ) : (
+              <span key={`e${r}-${w}`} className="hive-cell hive-empty" aria-hidden />
+            )
+          )}
         </div>
       ))}
       {tip && (
-        <div className="hive-tip" style={{ left: tip.left, top: tip.top }}>
+        <div
+          className="hive-tip"
+          style={{
+            left: tip.leftEdge ? tip.cleft : tip.cx,
+            top: tip.below ? tip.top + tip.h + 6 : tip.top,
+            transform: `translate(${tip.leftEdge ? "0" : "-50%"}, ${tip.below ? "0" : "-118%"})`,
+          }}
+        >
           {tip.label}
         </div>
       )}

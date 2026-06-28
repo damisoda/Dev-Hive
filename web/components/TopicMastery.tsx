@@ -42,13 +42,14 @@ export function TopicMastery({
   articlesByTopic: Record<string, TopicArticle[]>;
   loggedIn: boolean;
 }) {
-  const [openId, setOpenId] = useState<string | null>(null);
+  // 여러 주제를 동시에 펼칠 수 있게 Set으로 관리(하나 열면 다른 게 닫히지 않도록).
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
 
   return (
     <div className="pf-topic-grid">
       {rows.map((r) => {
         const arts = articlesByTopic[r.name] ?? [];
-        const isOpen = openId === r.id;
+        const isOpen = openIds.has(r.id);
         const tier = levelTier(r.read);
         const bi = barInfo(r.read);
         const canOpen = arts.length > 0;
@@ -57,7 +58,15 @@ export function TopicMastery({
             <button
               type="button"
               className="pf-topic-head"
-              onClick={() => canOpen && setOpenId(isOpen ? null : r.id)}
+              onClick={() =>
+                canOpen &&
+                setOpenIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(r.id)) next.delete(r.id);
+                  else next.add(r.id);
+                  return next;
+                })
+              }
               aria-expanded={isOpen}
               data-static={canOpen ? undefined : "1"}
             >

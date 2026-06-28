@@ -184,8 +184,8 @@ export default async function ProfilePage() {
       {/* ③ 학습 활동 — 히트맵 + 요약 */}
       <section className="pf-card">
         <div className="pf-sec-head">
-          <h3>학습 활동 <InfoTip text="최근 8개월 · 진할수록 그날 많이 읽음" /></h3>
-          <span className="pf-sec-note">최근 8개월 · 하루에 읽은 양</span>
+          <h3>학습 활동 <InfoTip text="올해 · 진할수록 그날 많이 읽음" /></h3>
+          <span className="pf-sec-note">올해 · 하루에 읽은 양</span>
         </div>
         {stats && readTotal > 0 ? (
           <div className="pf-heat">
