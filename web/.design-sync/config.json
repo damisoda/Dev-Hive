@@ -1,0 +1,22 @@
+{
+  "projectId": "12734c0f-1dcb-49c3-8338-bf63b435295f",
+  "shape": "package",
+  "pkg": "dev-hive-web",
+  "globalName": "DevHive",
+  "srcDir": "components",
+  "tsconfig": "./tsconfig.json",
+  "cssEntry": "app/globals.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "runtimeFontPrefixes": ["Pretendard", "Apple SD Gothic Neo"],
+  "componentSrcMap": {
+    "ContentCard": "components/ContentCard.tsx",
+    "StateView": "components/StateView.tsx",
+    "ComingSoon": "components/ComingSoon.tsx",
+    "RouteError": "components/RouteError.tsx",
+    "Heatmap": "components/Heatmap.tsx",
+    "AuthForm": null, "FeedbackButtons": null, "FilterBar": null, "GraphCanvas": null,
+    "LeftRail": null, "Pagination": null, "ReadLink": null, "ReadModal": null,
+    "RecommendationCard": null, "SearchBar": null, "TitleTranslateToggle": null,
+    "TopBar": null, "UploadForm": null
+  }
+}

@@ -73,9 +73,11 @@ class _FakeRow:
 class _FakeInfluenceConn:
     """compute_influence_score용 가짜 conn: 레벨 + 난이도별 읽음수."""
 
-    def __init__(self, level, diff_counts):
+    def __init__(self, level, diff_counts, uploads=0, consumed=0):
         self._level = level
         self._diff_counts = diff_counts  # {difficulty: count}
+        self._uploads = uploads          # HIVE-96: 내 업로드 수
+        self._consumed = consumed        # HIVE-96: 내 업로드를 남이 소비한 횟수
 
     def execute(self, clause, params=None):
         sql = str(clause)
@@ -83,6 +85,8 @@ class _FakeInfluenceConn:
             return _Result([_FakeRow(current_level=self._level)])
         if "GROUP BY c.difficulty" in sql:
             return _Result([_FakeRow(difficulty=d, cnt=c) for d, c in self._diff_counts.items()])
+        if "uploaded_by" in sql:  # HIVE-96 기여 쿼리
+            return _Result([_FakeRow(uploads=self._uploads, consumed=self._consumed)])
         raise AssertionError(f"예상치 못한 쿼리: {sql}")
 
 
@@ -117,3 +121,19 @@ def test_influence_null_difficulty(monkeypatch):
     _patch_streak(monkeypatch, 0)
     db = _FakeInfluenceConn("입문", {None: 1})
     assert influence.compute_influence_score(1, db) == 1
+
+
+def test_influence_contribution(monkeypatch):
+    # HIVE-96: 업로드 2 + 남이 소비 3 → 기여 = 2*3 + 3*2 = 12.
+    # 입문 1건(읽음 1) + streak0 + 입문(×1.0) = (1 + 0 + 12)*1.0 = 13
+    _patch_streak(monkeypatch, 0)
+    db = _FakeInfluenceConn("입문", {"입문": 1}, uploads=2, consumed=3)
+    assert influence.compute_influence_score(1, db) == 13
+
+
+def test_influence_pure_contributor(monkeypatch):
+    # HIVE-96 핵심: 읽음 0(소비 0)이어도 업로드 1편으로 점수 발생 → 기여 반영(thesis 심장).
+    # 기여 = 1*3 + 0*2 = 3. (0 + 0 + 3)*1.0 = 3
+    _patch_streak(monkeypatch, 0)
+    db = _FakeInfluenceConn("입문", {}, uploads=1, consumed=0)
+    assert influence.compute_influence_score(1, db) == 3

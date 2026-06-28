@@ -4,6 +4,10 @@ import logging
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -101,3 +105,13 @@ def upload_to_drive(file_path: str | Path) -> str:
             logger.warning("Failed to transfer file ownership to %s: %s", owner_email, e)
 
     return file_id
+
+
+if __name__ == "__main__":
+    import sys
+    from datetime import date
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    path = sys.argv[1] if len(sys.argv) > 1 else str(BACKEND_ROOT / "data" / "raw" / f"_{date.today().strftime('%Y%m%d')}.json")
+    fid = upload_to_drive(path)
+    print(f"업로드 완료: {fid}")

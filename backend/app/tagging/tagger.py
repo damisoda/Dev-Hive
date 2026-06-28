@@ -98,6 +98,9 @@ def _validate_schema(result: dict) -> None:
         raise ValueError(f"content_type 값 오류: {result.get('content_type')}")
     if result.get("language") not in valid_langs:
         raise ValueError(f"language 값 오류: {result.get('language')}")
+    # off_topic: AI 7주제 무관 판정(스코프 게이트). 누락 시 false(하위호환), 있으면 bool.
+    if not isinstance(result.get("off_topic", False), bool):
+        raise ValueError(f"off_topic 값 오류: {result.get('off_topic')}")
 
 
 if __name__ == "__main__":

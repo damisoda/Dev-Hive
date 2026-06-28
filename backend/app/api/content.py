@@ -8,13 +8,21 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import anthropic
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, defer
 
-from app.database import get_db
+from app.api.auth import get_current_user
+from app.config import settings
+from app.database import SessionLocal, get_db
 from app.models.content import Content
 from app.models.mapping import ContentNodeMapping
+from app.models.user import User
+from app.services.lazy_synthesis import ensure_synthesis
+from app.services.llm import get_llm_client, llm_available
+from app.services.rate_limit import check_rate_limit, log_llm_call
 from app.services.upload import UploadError, upload_user_content
 
 router = APIRouter(prefix="/content", tags=["content"])
@@ -22,6 +30,32 @@ logger = logging.getLogger(__name__)
 
 # node_id 필터링 시 매핑 관련도 임계값
 RELEVANCE_THRESHOLD = 0.5
+
+
+def _get_client_ip(request: Request) -> str:
+    """실제 클라이언트 IP를 반환한다.
+
+    리버스 프록시(nginx/Tailscale) 환경에서 X-Forwarded-For가 없으면
+    모든 요청이 프록시 IP로 묶여 하나의 버킷을 공유하므로 헤더를 우선 확인한다.
+    """
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _validate_upload_size(title: str, body: str) -> None:
+    """요청 크기 초과 시 413을 던진다."""
+    if len(title) > settings.upload_max_title_chars:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"제목은 {settings.upload_max_title_chars}자 이하여야 합니다.",
+        )
+    if len(body) > settings.upload_max_body_chars:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"본문은 {settings.upload_max_body_chars:,}자 이하여야 합니다.",
+        )
 
 
 class ContentItem(BaseModel):
@@ -39,6 +73,10 @@ class ContentItem(BaseModel):
     engagement_comments: Optional[int] = None
     published_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
+    # 요약본 = 캐시된 synthesis.one_liner(있을 때만). 카드 기본 노출용. 미생성이면 null.
+    summary: Optional[str] = None
+    # 제목 한글 번역 = 캐시된 synthesis.title_ko (HIVE-66). 영문 제목 '번역 보기' 토글용. 미생성이면 null.
+    title_ko: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -54,6 +92,7 @@ def list_content(
     source: Optional[str] = None,
     node_id: Optional[int] = None,
     difficulty: Optional[str] = None,
+    q: Optional[str] = Query(None, max_length=100),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -76,9 +115,35 @@ def list_content(
     if difficulty is not None:
         query = query.filter(Content.difficulty == difficulty)
 
+    # 검색(HIVE-94): 제목 + 가공 요약(synthesis.one_liner) ILIKE. 영문 제목 콘텐츠도
+    # 한글 요약으로 잡히게 둘 다 본다. LIKE 와일드카드(%, _)는 리터럴로 이스케이프.
+    if q is not None:
+        term = q.strip()
+        if term:
+            like = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            query = query.filter(
+                or_(
+                    Content.title.ilike(like, escape="\\"),
+                    Content.synthesis["one_liner"].astext.ilike(like, escape="\\"),
+                )
+            )
+
     total = query.count()
+    # 첫인상 정렬(HIVE-94): 순수 최신순이면 영어 arXiv 크롤이 첫 화면을 도배하고
+    # '읽기' 모달도 대부분 빈 카드가 된다. 경험·가공(synthesis)·한글·직접 올린 글을
+    # 우선순위 점수로 끌어올린 뒤, 같은 티어 안에서는 최신순을 유지한다.
+    feed_priority = (
+        case((Content.content_type == "experience", 2), else_=0)
+        + case((Content.synthesis.isnot(None), 2), else_=0)   # 가공됨 → 모달이 안 빔
+        + case((Content.source == "user", 1), else_=0)        # 직접 올린 경험
+        + case((Content.language == "ko", 1), else_=0)        # 영어 도배 완화
+    )
     rows = (
-        query.order_by(Content.created_at.desc().nullslast(), Content.id.desc())
+        query.order_by(
+            feed_priority.desc(),
+            func.coalesce(Content.published_at, Content.created_at).desc().nullslast(),
+            Content.id.desc(),
+        )
         .offset(offset)
         .limit(limit)
         .all()
@@ -93,7 +158,6 @@ class ContentUpload(BaseModel):
     title: str
     body: str
     url: Optional[str] = None
-    user_id: Optional[int] = None
 
 
 class UploadResult(BaseModel):
@@ -107,15 +171,56 @@ class UploadResult(BaseModel):
     content_type: Optional[str] = None
 
 
+def _generate_synthesis_bg(content_id: int) -> None:
+    """업로드 응답 후 백그라운드로 synthesis 생성 — 업로드 지연을 줄이되 synthesis는 유지.
+
+    별도 세션을 연다(요청 세션은 응답과 함께 닫힘). 실패는 graceful(읽기 시 lazy 폴백).
+    """
+    if not llm_available():
+        return
+    db = SessionLocal()
+    try:
+        client = get_llm_client(settings.anthropic_api_key)
+        ensure_synthesis(content_id, db, client)  # 내부에서 commit
+    except Exception:
+        logger.exception("백그라운드 synthesis 생성 실패 content_id=%s", content_id)
+    finally:
+        db.close()
+
+
 @router.post("", response_model=UploadResult, status_code=status.HTTP_201_CREATED)
-def upload_content(payload: ContentUpload, db: Session = Depends(get_db)) -> UploadResult:
+def upload_content(
+    payload: ContentUpload,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UploadResult:
     """HIVE-33: 사용자 글 업로드 → 태깅·임베딩·적재·Auto-HKG 편입.
 
     올린 글이 기존 노드에 편입되거나 Auto-HKG가 새 하위/최상위 노드를 생성한다.
+    synthesis(가공)는 업로드 응답을 막지 않도록 백그라운드로 생성한다.
     """
+    # 요청 크기 검증 (HTTP 컨텍스트 밖에서도 안전하게 호출 가능한 독립 함수)
+    _validate_upload_size(payload.title, payload.body)
+
+    # 유저별 레이트리밋 — 실패 시도도 카운트한다(엔드포인트 DoS 방어 목적)
+    uid = current_user.id
+    check_rate_limit(
+        f"upload:min:{uid}",
+        settings.upload_rate_per_minute,
+        60,
+        f"업로드는 분당 {settings.upload_rate_per_minute}회까지 가능합니다. 잠시 후 다시 시도해주세요.",
+    )
+    check_rate_limit(
+        f"upload:day:{uid}",
+        settings.upload_rate_per_day,
+        86_400,
+        f"오늘 업로드 한도({settings.upload_rate_per_day}회)에 도달했습니다. 내일 다시 시도해주세요.",
+    )
+
     try:
         result = upload_user_content(
-            payload.title, payload.body, payload.url, payload.user_id, db
+            payload.title, payload.body, payload.url, current_user.id, db, defer_synthesis=True
         )
     except UploadError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
@@ -126,4 +231,58 @@ def upload_content(payload: ContentUpload, db: Session = Depends(get_db)) -> Upl
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="업로드 처리 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
         )
+
+    # 실제 LLM 호출이 완료된 뒤 로깅 (실패 시 허위 비용 기록 방지)
+    approx_tokens = (len(payload.title) + len(payload.body)) // 4
+    log_llm_call("upload/tag", uid, "claude-haiku", approx_tokens)
+    log_llm_call("upload/embed", uid, "text-embedding-3-small", approx_tokens)
+
+    # synthesis는 응답을 막지 않도록 백그라운드 생성(읽기 시 lazy 폴백도 존재)
+    background_tasks.add_task(_generate_synthesis_bg, result["content_id"])
     return UploadResult(**result)
+
+
+class SynthesisResponse(BaseModel):
+    content_id: int
+    content_type: Optional[str] = None
+    url: Optional[str] = None            # 원문 링크 — '읽기' 모달의 '원문 보기'용(그래프 진입 포함)
+    source: Optional[str] = None         # 출처. source='user'는 외부 url 없이 합성 url(user://) — 프론트 '원문' 분기용
+    body: Optional[str] = None           # 사용자 업로드 원문(source='user'만). 외부 출처 본문은 노출하지 않음.
+    synthesis: Optional[dict] = None     # {one_liner, key_takeaways[], ...타입별 바디}
+
+
+@router.get("/{content_id}/synthesis", response_model=SynthesisResponse)
+def get_synthesis(
+    content_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> SynthesisResponse:
+    """재가공본(synthesis) 조회 — '읽기' 시 노출. 캐시 우선(ensure_synthesis):
+    DB에 있으면 그대로 반환(Haiku 호출 없음), 없으면 1회 생성·저장. 키 없으면 null(graceful).
+    """
+    # IP 기반 레이트리밋. X-Forwarded-For 우선 확인(리버스 프록시 환경 대응)
+    client_ip = _get_client_ip(request)
+    check_rate_limit(
+        f"synthesis:min:{client_ip}",
+        settings.synthesis_rate_per_minute,
+        60,
+        f"synthesis 조회는 분당 {settings.synthesis_rate_per_minute}회까지 가능합니다.",
+    )
+
+    row = (
+        db.query(Content.id, Content.content_type, Content.url, Content.source, Content.body)
+        .filter(Content.id == content_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="콘텐츠를 찾을 수 없습니다.")
+
+    client = get_llm_client(settings.anthropic_api_key) if llm_available() else None
+    card = ensure_synthesis(content_id, db, client)
+    # 사용자 업로드는 외부 원문 링크가 없으므로(합성 user:// url) 원문 = 업로드한 본문.
+    # 외부 출처 본문(크롤 전문)은 노출하지 않는다 — user 업로드만 body를 내려준다.
+    body = row.body if row.source == "user" else None
+    return SynthesisResponse(
+        content_id=content_id, content_type=row.content_type, url=row.url,
+        source=row.source, body=body, synthesis=card,
+    )

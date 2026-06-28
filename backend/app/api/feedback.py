@@ -12,6 +12,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.content import Content
 from app.models.user import User
@@ -21,7 +22,6 @@ router = APIRouter(prefix="/feedback", tags=["feedback"])
 
 
 class FeedbackCreate(BaseModel):
-    user_id: int
     content_id: int
     feedback: str
 
@@ -36,7 +36,6 @@ class FeedbackCreate(BaseModel):
 
 
 class FeedbackDelete(BaseModel):
-    user_id: int
     content_id: int
 
 
@@ -53,9 +52,13 @@ def _ensure_exists(user_id: int, content_id: int, db: Session) -> None:
 
 
 @router.put("", response_model=FeedbackResponse)
-def set_feedback(payload: FeedbackCreate, db: Session = Depends(get_db)) -> FeedbackResponse:
+def set_feedback(
+    payload: FeedbackCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FeedbackResponse:
     """피드백을 저장하거나 갱신한다 (upsert)."""
-    _ensure_exists(payload.user_id, payload.content_id, db)
+    _ensure_exists(current_user.id, payload.content_id, db)
     db.execute(
         text(
             """
@@ -65,33 +68,40 @@ def set_feedback(payload: FeedbackCreate, db: Session = Depends(get_db)) -> Feed
             DO UPDATE SET feedback = EXCLUDED.feedback, updated_at = NOW()
             """
         ),
-        {"uid": payload.user_id, "cid": payload.content_id, "fb": payload.feedback},
+        {"uid": current_user.id, "cid": payload.content_id, "fb": payload.feedback},
     )
     db.commit()
     return FeedbackResponse(status="ok", feedback=payload.feedback)
 
 
 @router.delete("", response_model=FeedbackResponse)
-def clear_feedback(payload: FeedbackDelete, db: Session = Depends(get_db)) -> FeedbackResponse:
+def clear_feedback(
+    payload: FeedbackDelete,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FeedbackResponse:
     """피드백을 제거한다 (토글 해제 → 추천 반영 복구)."""
     db.execute(
         text(
             "DELETE FROM user_content_feedback "
             "WHERE user_id = :uid AND content_id = :cid"
         ),
-        {"uid": payload.user_id, "cid": payload.content_id},
+        {"uid": current_user.id, "cid": payload.content_id},
     )
     db.commit()
     return FeedbackResponse(status="ok", feedback=None)
 
 
 @router.get("")
-def list_feedback(user_id: int, db: Session = Depends(get_db)) -> dict[int, str]:
+def list_feedback(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[int, str]:
     """유저의 모든 피드백을 {content_id: feedback}로 반환한다 (프론트 현재 상태 표시용)."""
     rows = db.execute(
         text(
             "SELECT content_id, feedback FROM user_content_feedback WHERE user_id = :uid"
         ),
-        {"uid": user_id},
+        {"uid": current_user.id},
     ).fetchall()
     return {r.content_id: r.feedback for r in rows}

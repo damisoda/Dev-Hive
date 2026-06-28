@@ -83,6 +83,7 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
                          + {wm_bonus} - {too_hard_penalty} AS score
                 FROM content c
                 WHERE c.text_embedding IS NOT NULL
+                  AND c.content_type NOT IN ('paper', 'news')
                   AND (c.difficulty IS NULL OR c.difficulty IN ({allowed_sql}))
                   AND {excl_clause}
                 ORDER BY score DESC
@@ -101,15 +102,35 @@ def recommend_next(user_id: int, top_n: int, db: Session) -> list[dict]:
             for row in rows
         ]
     else:
-        # profile_vector 없으면 quality_score 폴백 (피드백 제외만 반영)
+        # profile_vector 없으면 콜드스타트 폴백 (HIVE-95: 주제 다양성 추가).
+        # quality 단일정렬은 신규 유저 모두에게 같은 상위글만 줘 다양성이 0이었다.
+        # 대주제별 ROW_NUMBER로 토픽당 순위를 매기고 rn 우선 정렬 → 상위 N이 여러 주제로 분산.
+        # 레벨별 난이도 필터(allowed_sql)는 그대로 유지(관련성).
         rows = db.execute(
             text(
                 f"""
-                SELECT c.id, c.title, c.quality_score
-                FROM content c
-                WHERE (c.difficulty IS NULL OR c.difficulty IN ({allowed_sql}))
-                  AND {excl_clause}
-                ORDER BY c.quality_score DESC NULLS LAST, c.id DESC
+                WITH ranked AS (
+                    SELECT c.id, c.title, c.quality_score,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY COALESCE(t.node_id, 0)
+                               ORDER BY c.quality_score DESC NULLS LAST, c.id DESC
+                           ) AS rn
+                    FROM content c
+                    LEFT JOIN LATERAL (
+                        SELECT n.id AS node_id
+                        FROM content_node_mapping m
+                        JOIN curriculum_nodes n ON n.id = m.node_id
+                        WHERE m.content_id = c.id AND n.parent_id IS NULL
+                        ORDER BY m.relevance_score DESC
+                        LIMIT 1
+                    ) t ON TRUE
+                    WHERE c.content_type NOT IN ('paper', 'news')
+                      AND (c.difficulty IS NULL OR c.difficulty IN ({allowed_sql}))
+                      AND {excl_clause}
+                )
+                SELECT id, title, quality_score
+                FROM ranked
+                ORDER BY rn ASC, quality_score DESC NULLS LAST, id DESC
                 LIMIT :n
                 """
             ),

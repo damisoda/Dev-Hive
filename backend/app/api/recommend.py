@@ -12,12 +12,18 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.api.auth import get_current_user
 from app.config import settings
 from app.database import SessionLocal, get_db
+from app.models.user import User
 from app.recommend.graphrag import recommend_next as _graphrag_recommend
 from app.recommend.rule_based import recommend_next as _rule_based_recommend
+from app.services.content_topic import top_topic_for_contents
 from app.services.knowledge_tracing import build_user_state, estimate_mastery
+from app.services.instrumentation import log_click, log_impressions
+from app.services.llm import get_llm_client, llm_available
 from app.services.lazy_synthesis import ensure_synthesis
+from app.services.rate_limit import check_rate_limit
 
 
 def _synthesize_in_background(content_ids: list[int], api_key: str) -> None:
@@ -26,7 +32,7 @@ def _synthesize_in_background(content_ids: list[int], api_key: str) -> None:
     동기로 하면 top-N LLM 호출이 추천 응답을 수초 블로킹해 프론트 타임아웃을 넘긴다.
     그래서 추천은 캐시된 요약만 즉시 반환하고, 미캐시분은 여기서 만들어 다음 로드에 노출한다.
     """
-    client = anthropic.Anthropic(api_key=api_key)
+    client = get_llm_client(api_key)
     db = SessionLocal()
     try:
         for cid in content_ids:
@@ -58,6 +64,7 @@ class Recommendation(BaseModel):
     difficulty: Optional[str] = None
     content_type: Optional[str] = None
     summary: Optional[str] = None
+    topic: Optional[str] = None       # 소속 대주제 (학습경로 단계 메타, HIVE-65)
 
 
 class RecommendResponse(BaseModel):
@@ -66,56 +73,51 @@ class RecommendResponse(BaseModel):
 
 @router.get("/user-state", response_model=UserStateResponse)
 def get_user_state(
-    user_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> UserStateResponse:
-    """유저 상태를 자연어 텍스트로 반환한다.
-
-    HIVE-22(GraphRAG) 추천 시 LLM 프롬프트 컨텍스트로 주입하기 위해 사용한다.
-    """
-    state = build_user_state(user_id, db)
-    if state == "":
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="user not found"
-        )
-    return UserStateResponse(user_id=user_id, user_state=state)
+    """유저 상태를 자연어 텍스트로 반환한다."""
+    state = build_user_state(current_user.id, db)
+    return UserStateResponse(user_id=current_user.id, user_state=state)
 
 
 @router.get("/mastery", response_model=MasteryResponse)
 def get_mastery(
-    user_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> MasteryResponse:
-    """노드별 mastery(0~1)를 반환한다.
-
-    HIVE-22(GraphRAG) 난이도 성분 정렬에 사용하기 위한 알고리즘용 숫자 출력.
-    """
-    mastery = estimate_mastery(user_id, db)
-    if not mastery:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="user not found"
-        )
-    return MasteryResponse(user_id=user_id, mastery=mastery)
+    """노드별 mastery(0~1)를 반환한다."""
+    mastery = estimate_mastery(current_user.id, db)
+    return MasteryResponse(user_id=current_user.id, mastery=mastery)
 
 
 @router.get("", response_model=RecommendResponse)
 def recommend(
-    user_id: int,
     background_tasks: BackgroundTasks,
     top_n: int = Query(5, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> RecommendResponse:
+    # HIVE-92: 유저별 레이트리밋 (GraphRAG는 LLM 호출 포함)
+    check_rate_limit(
+        f"recommend:min:{current_user.id}",
+        settings.recommend_rate_per_minute,
+        60,
+        f"추천 조회는 분당 {settings.recommend_rate_per_minute}회까지 가능합니다.",
+    )
+
     # HIVE-22: GraphRAG 우선, 실패 시 rule_based(v0)로 폴백 — 데모 중 500 방지
     try:
-        result = _graphrag_recommend(user_id, top_n, db)
+        result = _graphrag_recommend(current_user.id, top_n, db)
     except Exception:
         logger.exception("graphrag 추천 실패 → rule_based 폴백")
-        result = _rule_based_recommend(user_id, top_n, db)
+        result = _rule_based_recommend(current_user.id, top_n, db)
 
     # HIVE-49: 표시 메타(url/난이도/타입) + 가공 요약. 응답은 **캐시된 가공만** 즉시 반환하고
     # (client=None으로 ensure_synthesis 호출 = 생성 안 함), 미캐시분은 백그라운드에서 생성·캐시한다.
     # 동기 생성은 top-N LLM 호출로 프론트 타임아웃을 넘기므로 다음 로드에 요약이 채워지는 방식.
     ids = [r["content_id"] for r in result]
+    background_tasks.add_task(log_impressions, current_user.id, ids)  # HIVE-96 노출 로깅
     meta = {}
     if ids:
         meta = {
@@ -125,6 +127,7 @@ def recommend(
                 {"ids": ids},
             )
         }
+    topics = top_topic_for_contents(ids, db)
     recs: list[Recommendation] = []
     uncached: list[int] = []
     for r in result:
@@ -141,10 +144,26 @@ def recommend(
             difficulty=(m.difficulty if m else None),
             content_type=(m.content_type if m else None),
             summary=(card.get("one_liner") if isinstance(card, dict) else None),
+            topic=topics.get(r["content_id"]),
         ))
 
     # 미캐시 가공은 응답 후 백그라운드로(다음 추천/새로고침 시 요약 노출). 키 있을 때만.
-    if uncached and settings.anthropic_api_key:
+    if uncached and llm_available():
         background_tasks.add_task(_synthesize_in_background, uncached, settings.anthropic_api_key)
 
     return RecommendResponse(recommendations=recs)
+
+
+class RecommendClickRequest(BaseModel):
+    content_id: int
+
+
+@router.post("/click")
+def recommend_click(
+    payload: RecommendClickRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """추천 클릭 로깅 (HIVE-96 funnel). 프론트가 추천 카드 클릭 시 호출 → CTR 분자."""
+    log_click(current_user.id, payload.content_id, db)
+    return {"ok": True}

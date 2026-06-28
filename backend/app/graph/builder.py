@@ -67,15 +67,29 @@ def _add_content(g: nx.MultiDiGraph, db: Session) -> int:
 
 
 def _add_belongs_to(g: nx.MultiDiGraph, db: Session) -> int:
+    # 콘텐츠는 '가장 구체적인' 노드에 belongs_to로 건다: 하위노드(parent_id NOT NULL) 매핑이 있으면
+    # 대주제 매핑은 그리지 않는다 → 그래프가 7대주제 평면이 아니라 하위노드 아래로 정리된다.
+    # (content_node_mapping 자체는 그대로 두므로 mastery·추천 랭킹은 불변 — viz 레이어만 정리.)
     rows = db.execute(
-        text("SELECT content_id, node_id, relevance_score FROM content_node_mapping")
+        text(
+            """
+            SELECT m.content_id, m.node_id, m.relevance_score, n.parent_id
+            FROM content_node_mapping m JOIN curriculum_nodes n ON n.id = m.node_id
+            """
+        )
     ).fetchall()
-    added = 0
+    by_content: dict[int, list] = {}
     for r in rows:
-        src, dst = f"content:{r.content_id}", f"topic:{r.node_id}"
-        if g.has_node(src) and g.has_node(dst):
-            g.add_edge(src, dst, rel="belongs_to", weight=float(r.relevance_score or 0.0))
-            added += 1
+        by_content.setdefault(r.content_id, []).append(r)
+    added = 0
+    for cid, ms in by_content.items():
+        subs = [m for m in ms if m.parent_id is not None]
+        chosen = subs if subs else ms          # 하위노드 매핑 있으면 그쪽만
+        for m in chosen:
+            src, dst = f"content:{cid}", f"topic:{m.node_id}"
+            if g.has_node(src) and g.has_node(dst):
+                g.add_edge(src, dst, rel="belongs_to", weight=float(m.relevance_score or 0.0))
+                added += 1
     return added
 
 
@@ -125,17 +139,22 @@ def _add_similar_to(g: nx.MultiDiGraph, db: Session, k: int) -> int:
     return added
 
 
-def build_graph(db: Session, similar_k: int = SIMILAR_K) -> nx.MultiDiGraph:
+def build_graph(
+    db: Session, similar_k: int = SIMILAR_K, include_similar: bool = True
+) -> nx.MultiDiGraph:
     """DB를 networkx 이종 그래프(MultiDiGraph)로 빌드한다.
 
     반환 그래프의 g.graph["stats"]에 종류별 노드/엣지 수가 담긴다.
+
+    include_similar=False면 similar_to(콘텐츠 kNN, 가장 비싼 단계)를 건너뛴다.
+    주제 노드/숙련도만 필요한 화면(학습경로 '주제별 숙련도')에서 응답을 빠르게 받기 위함.
     """
     g = nx.MultiDiGraph()
     n_topic = _add_topics(g, db)
     n_content = _add_content(g, db)
     n_belongs = _add_belongs_to(g, db)
     n_precedes = _add_precedes(g, db)
-    n_similar = _add_similar_to(g, db, similar_k)
+    n_similar = _add_similar_to(g, db, similar_k) if include_similar else 0
     g.graph["stats"] = {
         "topics": n_topic,
         "content": n_content,

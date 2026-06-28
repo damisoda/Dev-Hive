@@ -60,6 +60,14 @@ PERSONA_ONBOARDING: dict[str, dict] = {
 # 보수적으로(현재 레벨 주제를 확실히 익혔을 때만) 둔다. mastery는 HIVE-23 산출물 재사용.
 LEVEL_UP_THRESHOLD: dict[str, float] = {"입문": 0.6, "중급": 0.75}
 LEVEL_ORDER: list[str] = ["입문", "중급", "고급"]
+# HIVE-95: 레벨업은 "읽음으로 학습한"(mastery > 온보딩 상한) 대주제만 평균낸다.
+# 전체 7대주제 평균은 일부만 깊게 판 유저(집중 학습자)를 영원히 고착시킨다.
+LEVEL_UP_ENGAGED_FLOOR: float = 0.2   # 온보딩 상한(0.2) 초과 = 읽음 신호 있는 토픽
+
+# HIVE-95: 콜드스타트 난이도 정렬 — 미학습(온보딩만) 토픽은 선언 레벨 기준 난이도로 매칭.
+# difficulty norm(입문0.0/중급0.5/고급1.0)과 같은 스케일로 onboarding mastery(≤0.2) 입문편향 해소.
+LEVEL_MASTERY_FLOOR: dict[str, float] = {"입문": 0.1, "중급": 0.5, "고급": 0.85}
+ONBOARDING_MASTERY_CEILING: float = 0.2
 
 
 # ── 피드백 / influence_score (HIVE-37) ────────────────────────────────
@@ -73,6 +81,10 @@ FEEDBACK_EXCLUDE = frozenset({"understood", "not_interested"})
 INFLUENCE_DIFFICULTY_WEIGHT: dict[str, int] = {"입문": 1, "중급": 2, "고급": 3}
 INFLUENCE_DEFAULT_DIFFICULTY_WEIGHT: int = 1  # difficulty NULL/미지정
 INFLUENCE_STREAK_WEIGHT: float = 0.5
+# HIVE-96: 기여(contribution) 가중치 — influence가 소비뿐 아니라 기여를 반영(thesis 심장).
+#   업로드 자체 + 그 글이 남에게 소비된 횟수(자가복제 인센티브).
+INFLUENCE_UPLOAD_WEIGHT: int = 3            # 글 1편 업로드
+INFLUENCE_CONSUMED_UPLOAD_WEIGHT: int = 2   # 내 업로드를 남이 1회 읽음(영향력)
 INFLUENCE_LEVEL_MULTIPLIER: dict[str, float] = {"입문": 1.0, "중급": 1.15, "고급": 1.3}
 
 # rule_based 피드백 점수 가중 (휴리스틱, 데이터 fit 아님 — 추후 튜닝 대상)
@@ -82,11 +94,18 @@ FEEDBACK_TOO_HARD_PENALTY: float = 0.2
 
 # ── GraphRAG 피드백 반영 가중 (HIVE-48) ───────────────────────────────
 # 휴리스틱(데이터 fit 아님 — 추후 튜닝 대상). graphrag 4성분(W_REL/W_DIFF/W_PATH/W_DIV)은
-# 건드리지 않고, want_more는 별도 보너스 항으로만 더한다.
-#   - WANT_MORE_GRAPHRAG_WEIGHT: centered 코사인(0~1) 보너스 스케일. 4성분 합(1.0) 대비
-#     순위를 흔들되 뒤집지는 않을 정도로 W_REL(0.3)의 절반인 0.15로 둠.
+# 건드리지 않고, want_more와 recency는 별도 보너스 항으로만 더한다.
+#   - WANT_MORE_GRAPHRAG_WEIGHT: centered 코사인(0~1) 보너스 스케일.
+#   - RECENCY_GRAPHRAG_WEIGHT: 시간 감쇠(0~1) 보너스 스케일. 중급·고급 전용(HIVE-106).
+#     두 보너스 합산 최대값(0.15+0.15=0.30)이 W_REL(0.30)과 같으므로 두 신호가
+#     동시에 최대일 때 관련성 역전 가능. 각 값을 낮추면 역전 위험 감소.
+#   - RECENCY_HALF_LIFE_DAYS: 신선도 반감기(일). 90일마다 점수 절반으로 감쇠. 튜닝 대상.
 #   - MASTERY_TOO_HARD_DELTA / MASTERY_UNDERSTOOD_ALPHA: 대표 토픽 mastery를 직접 가감해
 #     난이도 성분(W_DIFF)이 쉬운/어려운 쪽으로 정렬되게 한다(전역 감점 대신 토픽별 정교).
 FEEDBACK_WANT_MORE_GRAPHRAG_WEIGHT: float = 0.15
+RECENCY_GRAPHRAG_WEIGHT: float = 0.15
+# HIVE: 품질 보너스 — 프로필 유저 랭킹에 quality_score 반영(저가치 repo 상위노출 방지).
+QUALITY_GRAPHRAG_WEIGHT: float = 0.10
+RECENCY_HALF_LIFE_DAYS: int = 90
 MASTERY_TOO_HARD_DELTA: float = 0.2
 MASTERY_UNDERSTOOD_ALPHA: float = 0.15

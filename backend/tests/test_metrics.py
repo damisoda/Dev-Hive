@@ -151,3 +151,73 @@ def test_compute_metrics_no_edges_does_not_crash():
     m = compute_metrics(g)        # Louvain ZeroDivision 없이 반환되어야
     assert m["nodes"] == 2 and m["edges"] == 0
     assert "orphan_ratio" in m    # 구조 지표는 포함
+
+
+# ── HIVE-58: precedes 링크 평가 + 목적함수 J ─────────────────────────────────
+from app.graph.metrics import (  # noqa: E402
+    precedes_link_metrics,
+    compute_objective,
+    OBJECTIVE_WEIGHTS,
+)
+
+
+def test_precedes_link_metrics_perfect():
+    m = precedes_link_metrics([(1, 2), (2, 3)], [(1, 2), (2, 3)])
+    assert m["precision"] == 1.0 and m["recall"] == 1.0 and m["f1"] == 1.0
+    assert m["reversed_rate"] == 0.0 and m["tp"] == 2
+
+
+def test_precedes_link_metrics_partial_and_reversed():
+    # (1,2)=정답, (3,2)=역방향((2,3)∈gold), (5,6)=오답
+    m = precedes_link_metrics([(1, 2), (3, 2), (5, 6)], [(1, 2), (2, 3)])
+    assert m["tp"] == 1
+    assert m["precision"] == round(1 / 3, 4)
+    assert m["recall"] == 0.5
+    assert m["reversed_rate"] == round(1 / 3, 4)
+
+
+def test_precedes_link_metrics_empty_safe():
+    # 0쌍에도 NaN/0div 없이 0.0.
+    assert precedes_link_metrics([], [])["f1"] == 0.0
+    assert precedes_link_metrics([(1, 2)], [])["precision"] == 0.0
+    assert precedes_link_metrics([], [(1, 2)])["recall"] == 0.0
+    m = precedes_link_metrics([], [])
+    assert all(isinstance(m[k], (int, float)) for k in ("precision", "recall", "f1", "reversed_rate"))
+
+
+def _snap(cov, pur, vm, orphan, depth):
+    return {
+        "metrics": {"orphan_ratio": orphan, "max_topic_depth": depth},
+        "semantic": {
+            "coverage_ratio": cov,
+            "tag_purity_topic": {"purity_weighted": pur},
+            "v_measure_topic": {"v_measure": vm},
+        },
+    }
+
+
+def test_compute_objective_keys_and_value():
+    obj = compute_objective(_snap(0.8, 0.9, 0.7, 0.1, 2))
+    c = obj["components"]
+    assert c["coverage_ratio"] == 0.8 and c["purity_weighted"] == 0.9
+    assert c["v_measure"] == 0.7 and c["orphan_ratio"] == 0.1
+    assert c["depth_score"] == 1.0
+    # .25*.8 + .25*.9 + .25*.7 + .15*.9 + .10*1 = .835
+    assert obj["J"] == 0.835
+    assert 0.0 <= obj["J"] <= 1.0
+
+
+def test_compute_objective_missing_keys_safe():
+    assert compute_objective({})["J"] == 0.25  # orphan 0→(1-0)*.15 + depth0→1*.10
+    obj = compute_objective({"metrics": {"orphan_ratio": None}, "semantic": {"coverage_ratio": None}})
+    assert isinstance(obj["J"], float)
+
+
+def test_compute_objective_monotonic():
+    worse = compute_objective(_snap(0.3, 0.4, 0.3, 0.5, 5))["J"]
+    better = compute_objective(_snap(0.9, 0.9, 0.8, 0.05, 1))["J"]
+    assert better > worse
+
+
+def test_objective_weights_sum_to_one():
+    assert round(sum(OBJECTIVE_WEIGHTS.values()), 6) == 1.0

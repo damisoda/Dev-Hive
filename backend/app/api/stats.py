@@ -1,12 +1,14 @@
 """유저 학습 통계 (HIVE-37) — influence_score / streak / 잔디 히트맵 조회."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
 from app.services.influence import compute_streak, read_heatmap
+from app.services.instrumentation import funnel_metrics
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
@@ -20,16 +22,23 @@ class StatsResponse(BaseModel):
 
 @router.get("", response_model=StatsResponse)
 def get_stats(
-    user_id: int,
     days: int = Query(365, ge=1, le=730),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StatsResponse:
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
     return StatsResponse(
-        user_id=user_id,
-        influence_score=user.influence_score or 0,
-        streak=compute_streak(user_id, db),
-        heatmap=read_heatmap(user_id, db, days),
+        user_id=current_user.id,
+        influence_score=current_user.influence_score or 0,
+        streak=compute_streak(current_user.id, db),
+        heatmap=read_heatmap(current_user.id, db, days),
     )
+
+
+@router.get("/funnel")
+def get_funnel(
+    days: int = Query(30, ge=1, le=365),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """추천 funnel + retention + 북극성 지표 (HIVE-96). CTR/read-through/retention 측정."""
+    return funnel_metrics(db, days)

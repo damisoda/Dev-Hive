@@ -78,3 +78,15 @@ backend/data/*.npz
 
 # 맥미니 배포 시크릿
 deploy/macmini/.env
+
+# 로컬 전용 메모/기획 노트 (GitHub push 금지)
+DEV-HIVE/
+
+# 크롤 결과 덤프 (아티팩트 — 커밋 금지, DB/드라이브에 적재)
+backend/*_only.json
+backend/x_crawl_result*.json
+
+# Next.js 빌드 산출물 (HIVE-93 정리)
+.next/
+frontend/
+backend/data/

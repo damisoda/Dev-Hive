@@ -43,3 +43,24 @@ class Content(Base):
     published_at = Column(DateTime(timezone=True))
     crawled_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    # 가공(synthesis) 카드 캐시(JSONB) — 표시 전용. lazy 생성 후 저장(HIVE-49/41).
+    synthesis = Column(JSONB)
+
+    @property
+    def summary(self) -> str | None:
+        """요약본 = 캐시된 synthesis의 one_liner. 미생성이면 None(Haiku 재호출 없음)."""
+        if isinstance(self.synthesis, dict):
+            one = self.synthesis.get("one_liner")
+            return one if isinstance(one, str) and one.strip() else None
+        return None
+
+    @property
+    def title_ko(self) -> str | None:
+        """제목 한글 번역 = 캐시된 synthesis의 title_ko (HIVE-66). 미생성이면 None.
+
+        피드 카드의 '번역 보기' 토글에 쓴다(영문 제목일 때만 프론트가 노출).
+        """
+        if isinstance(self.synthesis, dict):
+            t = self.synthesis.get("title_ko")
+            return t if isinstance(t, str) and t.strip() else None
+        return None

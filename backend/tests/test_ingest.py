@@ -172,3 +172,35 @@ def test_wait_for_batch_times_out(monkeypatch):
 
     with pytest.raises(TimeoutError):
         ingest.wait_for_batch(client, "msgbatch_stuck")
+
+
+def test_ingest_items_skips_off_topic(monkeypatch):
+    # 스코프 게이트: 태거가 off_topic=true(AI 7주제 무관)로 판정하면 품질이 좋아도 적재 제외.
+    items = [_item("https://a.com"), _item("https://b.com")]
+    off = _good_tags(0.9)
+    off["off_topic"] = True  # 둘째: 품질 0.9지만 off_topic
+    tags_by_idx = {0: _good_tags(0.9), 1: off}
+    monkeypatch.setattr(ingest, "embed_content", lambda item, client: [0.0] * 1536)
+    loaded = []
+    monkeypatch.setattr(ingest, "load_content",
+                        lambda item, *a, **k: (loaded.append(item["url"]), 101)[1])
+    stats = ingest_items(items, _FakeAnthropic(tags_by_idx), _FakeOpenAI(), _FakeEngine())
+    assert stats["skipped_off_topic"] == 1
+    assert stats["inserted"] == 1
+    assert loaded == ["https://a.com"]
+
+
+def test_validate_schema_off_topic():
+    from app.tagging.tagger import _validate_schema
+    base = {
+        "relevance": {"프롬프트 엔지니어링": 0.1, "Agentic AI": 0.1, "멀티모달 AI": 0.1,
+                      "RAG & 지식 관리": 0.1, "오픈소스 AI": 0.1,
+                      "AI 워크플로우 & 자동화": 0.1, "AI 엔지니어링": 0.1},
+        "difficulty": "입문", "quality_score": 0.5, "content_type": "concept", "language": "ko",
+    }
+    _validate_schema({**base})                       # off_topic 누락 → 통과(기본 false)
+    _validate_schema({**base, "off_topic": True})    # bool → 통과
+    _validate_schema({**base, "off_topic": False})
+    import pytest
+    with pytest.raises(ValueError):
+        _validate_schema({**base, "off_topic": "yes"})  # 비-bool → 오류

@@ -25,8 +25,9 @@ import re
 # 허용 소스. hn 미포함 = 자동거부.
 #   - hn: HackerNews 폐기 결정(데이터 품질 미달).
 #   - x: HIVE-28 시드유저(14인 전문가) 재작업 완료 → 포함. source 값은 "x"(소문자).
+#   - github_discussions: GitHub Discussions(Q&A·토론형). 본문 정결, 경험/토론 결에 부합 → 포함.
 ALLOWED_SOURCES = frozenset(
-    {"velog", "tistory", "reddit", "github_trending", "huggingface", "x"}
+    {"velog", "tistory", "reddit", "github_trending", "github_discussions", "huggingface", "x"}
 )
 
 # github_trending 최소 star 수. stars = engagement.likes(github_crawler가 매핑).
@@ -497,6 +498,7 @@ def qc_gate(
                 body_len < X_ZERO_ENGAGEMENT_MAX_CHARS
                 and _engagement_int(record, "likes") == 0
                 and _engagement_int(record, "comments") == 0
+                and _engagement_int(record, "retweets") == 0
             ):
                 _reject(source, "zero_engagement_short")
                 continue

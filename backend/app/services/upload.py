@@ -21,6 +21,7 @@ from app.tagging.embedder import embed_content
 from app.tagging.loader import load_content
 from app.tagging.synthesizer import synthesize
 from app.tagging.tagger import tag_content
+from app.services.llm import get_llm_client, llm_available
 
 
 # 사용자 업로드 품질 하한 — 크롤(loader 기본 0.5)보다 완화. 짧은 경험글은 받되 명백한 junk는 거름. (튜닝 가능)
@@ -37,9 +38,14 @@ def upload_user_content(
     url: str | None,
     user_id: int | None,
     db: Session,
+    defer_synthesis: bool = False,
 ) -> dict:
-    """업로드 콘텐츠를 파이프라인에 태워 그래프에 편입하고 결과를 반환한다."""
-    if not settings.anthropic_api_key:
+    """업로드 콘텐츠를 파이프라인에 태워 그래프에 편입하고 결과를 반환한다.
+
+    defer_synthesis=True면 가공(synthesis)을 여기서 만들지 않는다(업로드 응답 ≈5s 단축).
+    호출부가 백그라운드로 생성하며, 읽기 시 lazy 생성 폴백도 있어 synthesis는 결국 제공된다.
+    """
+    if not llm_available():
         raise UploadError("ANTHROPIC_API_KEY 미설정 — 태깅/Auto-HKG 불가")
     if not settings.openai_api_key:
         raise UploadError("OPENAI_API_KEY 미설정 — 임베딩 불가")
@@ -52,7 +58,9 @@ def upload_user_content(
         "source": "user",
         "author_name": None,
         "engagement": {"likes": 0, "comments": 0},
-        "published_at": datetime.now(timezone.utc),
+        # 크롤 경로와 동일하게 ISO 문자열로 — item은 tagger에서 json.dumps되므로
+        # datetime 객체면 직렬화 실패한다. loader는 문자열을 그대로 TIMESTAMP에 적재.
+        "published_at": datetime.now(timezone.utc).isoformat(),
     }
 
     # QC 게이트(태깅·임베딩 비용 전). 유저 경로는 NSFW·빈본문만 적용(소스/별/서브레딧 우회).
@@ -61,15 +69,19 @@ def upload_user_content(
         reason = next(iter(_report["by_reason"]), "거부됨")
         raise UploadError(f"업로드가 품질 게이트에서 거부됐어요 (사유: {reason}).")
 
-    anthropic_client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    anthropic_client = get_llm_client(settings.anthropic_api_key)
     openai_client = OpenAI(api_key=settings.openai_api_key)
 
     tags = tag_content(item, anthropic_client)
     # 가공(태깅 후·적재 전): content_type별 카드 생성. 실패(None)는 비차단 — 가공 없이 적재.
-    try:
-        synthesis = synthesize(item, tags, anthropic_client)
-    except Exception:
+    # defer_synthesis면 여기서 만들지 않고(업로드 응답 단축) 백그라운드/lazy로 미룬다.
+    if defer_synthesis:
         synthesis = None
+    else:
+        try:
+            synthesis = synthesize(item, tags, anthropic_client)
+        except Exception:
+            synthesis = None
     # 임베딩은 원문 고정(가공본 임베딩 X). 가공본은 synthesis 컬럼에만 저장.
     embedding = embed_content(item, openai_client)
 

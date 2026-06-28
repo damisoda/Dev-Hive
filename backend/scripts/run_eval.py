@@ -34,7 +34,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.database import SessionLocal
 from app.graph.builder import build_graph
-from app.graph.metrics import compute_metrics
+from app.graph.metrics import compute_metrics, compute_objective, precedes_link_metrics
+
+# HIVE-58: J 회귀 게이트 임계 — ΔJ가 이보다 더 떨어지면 회귀로 보고 exit 1.
+J_REGRESSION_TOLERANCE = -0.02
 
 
 def _recommendation_samples(db, n_users: int = 3, top_n: int = 5) -> list[dict]:
@@ -167,7 +170,33 @@ def _semantic_metrics(db) -> dict:
     }
 
 
-def _snapshot(out_path: str) -> None:
+def _predicted_precedes(db) -> set:
+    """node_links 전 행 = precedes(source->target) 예측 집합 (HIVE-58)."""
+    rows = db.execute(text("SELECT source_node_id, target_node_id FROM node_links")).fetchall()
+    return {(int(r.source_node_id), int(r.target_node_id)) for r in rows}
+
+
+def load_golden_precedes(path: str) -> set:
+    """골든셋 (source_node_id,target_node_id,label) JSON -> label==1 엣지 집합 (HIVE-58 계약).
+
+    포맷: [{"source_node_id":int,"target_node_id":int,"label":0|1}, ...]
+    label 누락 시 1로 간주. 0쌍 파일에도 빈 집합 반환(NaN/0div 없이 안전).
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    return {(int(r["source_node_id"]), int(r["target_node_id"]))
+            for r in data if int(r.get("label", 1)) == 1}
+
+
+def export_precedes(db, path: str) -> int:
+    """현재 node_links를 골든셋과 동일 (source_node_id,target_node_id,label) 포맷으로 내보낸다.
+    사람이 label(1=참 / 0=오답·역방향)을 검수해 골든셋으로 쓴다 (HIVE-58 export 계약)."""
+    rows = [{"source_node_id": s, "target_node_id": t, "label": 1}
+            for (s, t) in sorted(_predicted_precedes(db))]
+    Path(path).write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    return len(rows)
+
+
+def _snapshot(out_path: str, golden_path: str | None = None) -> None:
     db = SessionLocal()
     try:
         g = build_graph(db)
@@ -180,12 +209,16 @@ def _snapshot(out_path: str) -> None:
             "edges": metrics["edges"],
         }
         semantic = _semantic_metrics(db)
+        golden = load_golden_precedes(golden_path) if golden_path else set()
+        precedes_eval = precedes_link_metrics(_predicted_precedes(db), golden)
         samples = _recommendation_samples(db)
     finally:
         db.close()
 
     snapshot = {"metrics": metrics, "growth": node_growth,
-                "semantic": semantic, "rec_samples": samples}
+                "semantic": semantic, "precedes_eval": precedes_eval,
+                "rec_samples": samples}
+    snapshot["objective"] = compute_objective(snapshot)
     # default=str: 혹시 남은 비직렬화 타입(numpy/Decimal 등)도 죽지 않게 방어
     Path(out_path).write_text(
         json.dumps(snapshot, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
@@ -228,6 +261,20 @@ def _print_report(s: dict) -> None:
         geo = sem.get("embedding_geometry", {})
         print(f"  (튜닝용) 임베딩기하: silhouette {geo.get('silhouette')} / cohesion {geo.get('cohesion')} / separation {geo.get('separation')}")
         print(f"coverage        : {sem.get('coverage_ratio')} ({sem.get('content_in_auto_topics')}/{sem.get('content_total')})")
+    pe = s.get("precedes_eval")
+    if pe:
+        print("\n" + "-" * 60)
+        print("precedes 링크 평가 (HIVE-58)")
+        print("-" * 60)
+        print(f"예측 {pe['n_pred']} · 골든 {pe['n_golden']} · TP {pe['tp']}")
+        print(f"precision {pe['precision']} / recall {pe['recall']} / f1 {pe['f1']} / reversed_rate {pe['reversed_rate']}")
+    obj = s.get("objective")
+    if obj:
+        c = obj["components"]
+        print("\n" + "-" * 60)
+        print(f"목적함수 J = {obj['J']}  (회귀게이트 기준)")
+        print("-" * 60)
+        print(f"coverage {c['coverage_ratio']} · purity_w {c['purity_weighted']} · v_measure {c['v_measure']} · orphan {c['orphan_ratio']} · depth {c['max_topic_depth']}(score {c['depth_score']})")
     print("\n매개중심성 상위(브릿지 역할):")
     for b in m["top_betweenness"]:
         print(f"  - {b['node']}  ({b['score']})")
@@ -291,19 +338,50 @@ def _compare(before_path: str, after_path: str) -> None:
     print("\n해석: 과파편화는 modularity가 아니라 orphan_ratio↓·articulation↓·max_depth↓로 본다.")
     print("      의미는 tag_purity(순도)가 baseline을 넘는지로 '의미있게 묶였나'를 본다(silhouette은 튜닝용).")
 
+    # precedes 링크 평가 비교 (HIVE-58) — 스냅샷에 있으면.
+    bp = json.loads(Path(before_path).read_text(encoding="utf-8")).get("precedes_eval")
+    ap = json.loads(Path(after_path).read_text(encoding="utf-8")).get("precedes_eval")
+    if bp or ap:
+        print("\n[precedes 링크 (f1 / reversed_rate / golden)]")
+        print(f"  f1            {str((bp or {}).get('f1')):>10} → {str((ap or {}).get('f1')):>10}")
+        print(f"  reversed_rate {str((bp or {}).get('reversed_rate')):>10} → {str((ap or {}).get('reversed_rate')):>10}")
+        print(f"  golden 쌍수   {str((bp or {}).get('n_golden')):>10} → {str((ap or {}).get('n_golden')):>10}")
+
+    # HIVE-58: 목적함수 J 회귀 게이트 — ΔJ < J_REGRESSION_TOLERANCE 면 exit 1.
+    bs = json.loads(Path(before_path).read_text(encoding="utf-8"))
+    as_ = json.loads(Path(after_path).read_text(encoding="utf-8"))
+    jb, ja = compute_objective(bs)["J"], compute_objective(as_)["J"]
+    dJ = round(ja - jb, 4)
+    print("\n" + "=" * 60)
+    print(f"목적함수 J: {jb} → {ja}   (ΔJ {dJ:+.4f}, 게이트 {J_REGRESSION_TOLERANCE})")
+    print("=" * 60)
+    if dJ < J_REGRESSION_TOLERANCE:
+        print(f"❌ 회귀 감지: ΔJ {dJ:+.4f} < {J_REGRESSION_TOLERANCE} → 실패")
+        sys.exit(1)
+    print(f"✅ 통과: ΔJ {dJ:+.4f} ≥ {J_REGRESSION_TOLERANCE}")
+
 
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--out", help="스냅샷 JSON 저장 경로")
-    p.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"), help="두 스냅샷 비교")
+    p.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"), help="두 스냅샷 비교 + J 회귀게이트")
+    p.add_argument("--golden", help="precedes 골든셋 JSON 경로(source_node_id,target_node_id,label)")
+    p.add_argument("--export-precedes", metavar="PATH", help="현재 node_links를 골든셋 포맷으로 내보내기")
     args = p.parse_args()
 
-    if args.compare:
+    if args.export_precedes:
+        db = SessionLocal()
+        try:
+            n = export_precedes(db, args.export_precedes)
+        finally:
+            db.close()
+        print(f"precedes {n}건 내보냄: {args.export_precedes}")
+    elif args.compare:
         _compare(*args.compare)
     elif args.out:
-        _snapshot(args.out)
+        _snapshot(args.out, args.golden)
     else:
-        p.error("--out 또는 --compare 중 하나가 필요합니다.")
+        p.error("--out / --compare / --export-precedes 중 하나가 필요합니다.")
 
 
 if __name__ == "__main__":

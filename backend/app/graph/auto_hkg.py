@@ -26,20 +26,39 @@ v1은 콘텐츠를 1건씩 보며 "안 맞으면 새 노드"를 만들었다. �
 from __future__ import annotations
 
 import json
+import logging
 import re
+import threading
 
 import anthropic
 import networkx as nx
 import numpy as np
 from sqlalchemy import text
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, Engine
 
 from app.tagging.tagger import MODEL
+
+logger = logging.getLogger(__name__)
 
 # 진단 문서 §5 권장 파라미터
 DEDUP_THRESHOLD = 0.70   # 1패스: 스켈레톤 흡수 임계 (top 코사인 이 이상이면 기존 노드로)
 GROUP_THRESHOLD = 0.65   # 2패스: 잔여 콘텐츠 간 클러스터링 유사도 임계
 MIN_CLUSTER_SIZE = 3     # 2패스: 노드로 승격할 최소 클러스터 크기 (미만은 고아 → 흡수)
+
+# HIVE-57: 동적 흡수임계(opt-in, AUTOHKG_DYNAMIC_DEDUP=1). 고정 0.70은 코퍼스 분포에 종속이라
+# 새 글 유입으로 분포가 드리프트하면 흡수 실패→고아 폭증(백테스트 실증: 고정 잔차율 79~89% vs
+# 동적 55~76%, orphan_ratio 0.439→0.398). tau_j = max((1-β)분위(음성분포), floor)로 분포를 추종.
+DEDUP_BETA = 0.05        # tau_j 분위: 노드 j 음성분포의 (1-β) 분위수
+DEDUP_FLOOR = 0.62       # 흡수정밀도 하한 보장(0.62 미만은 정밀도<80%, 진단 실측) — tau 하한
+
+# HIVE-89: degree 이 이상인 skeleton 노드를 catch-all로 판정하고 자동 분할한다.
+CATCHALL_MIN_DEGREE = 50
+CATCHALL_TARGET_SIZE = 45   # catch-all k-means 분할 시 하위노드당 목표 콘텐츠 수(k=round(잔여/이값))
+CATCHALL_OUTLIER_SIM = 0.45 # 자기 군집 centroid 코사인 이 미만이면 강제편입 안 함(고아=신규주제 후보 보존)
+
+# expand_graph는 동일 DB에 대해 동시에 두 경로(_maybe_ingest + 48h 스케줄)로 호출될 수 있다.
+# 락 없이 동시 실행되면 _create_node(UNIQUE 제약 없음)가 중복 노드를 생성한다.
+_expand_graph_lock = threading.Lock()
 
 # 단건 업로드 경로(expand_one, HIVE-33)용. 배치 크롤(2패스)과 달리 1건씩 편입하며
 # 노드 생성을 허용한다 — 저볼륨 유저 기여라 과파편화 위험이 낮고, "내 글이 그래프에
@@ -226,6 +245,84 @@ def _cluster_residuals(
     return clusters, orphans
 
 
+def _partition_residuals(
+    residuals: list[tuple[int, np.ndarray]],
+    target_size: int = CATCHALL_TARGET_SIZE,
+    min_size: int = MIN_CLUSTER_SIZE,
+    outlier_threshold: float = CATCHALL_OUTLIER_SIM,
+) -> tuple[list[list[int]], list[int]]:
+    """잔여 콘텐츠를 spherical k-means로 **분할(partition)**한다 — catch-all 전용.
+
+    연결요소(_cluster_residuals)는 빽빽한 대주제 잔여를 거대 단일 클러스터(낮은 임계)나
+    전부 고아(높은 임계)로 만들어 catch-all을 못 쪼갠다(실측). k-means는 콘텐츠를 k개 균형
+    클러스터로 배정한다. k=round(n/target_size). 임베딩은 단위벡터라 코사인=내적 → centroid를
+    정규화한 spherical k-means. sklearn 의존 없이 numpy Lloyd로 구현.
+
+    **이상치 가드**: 자기 군집 centroid 코사인 < outlier_threshold인 콘텐츠는 강제편입하지 않고
+    고아로 둔다 — '어디에도 잘 안 맞는' 글이 새 하위노드/대주제 후보(자가성장 신호)로 남게 해
+    self-organizing 능력을 보존한다. 크기 < min_size 클러스터도 고아로 돌려 마이크로노드 폭발 방지.
+    """
+    n = len(residuals)
+    if n < max(min_size, 2):
+        return [], [cid for cid, _ in residuals]
+    k = max(2, round(n / target_size))
+    X = np.array([emb for _, emb in residuals])          # (n, d), 각 행 단위벡터
+    rng = np.random.default_rng(0)
+    cent = X[rng.choice(n, size=k, replace=False)].copy()
+    labels = np.zeros(n, dtype=int)
+    for _ in range(30):
+        labels = (X @ cent.T).argmax(axis=1)             # 코사인 최대 군집 배정
+        moved = False
+        for c in range(k):
+            members = X[labels == c]
+            new_c = _unit(members.mean(axis=0)) if len(members) else X[rng.integers(n)]
+            if not np.allclose(new_c, cent[c]):
+                cent[c] = new_c
+                moved = True
+        if not moved:
+            break
+    buckets: dict[int, list[int]] = {}
+    orphans: list[int] = []
+    for i, ((cid, _), lab) in enumerate(zip(residuals, labels)):
+        if float(X[i] @ cent[lab]) < outlier_threshold:
+            orphans.append(cid)          # 자기 군집에서도 먼 이상치 → 강제편입 안 함(신규주제 후보)
+        else:
+            buckets.setdefault(int(lab), []).append(cid)
+    clusters: list[list[int]] = []
+    for members in buckets.values():
+        if len(members) >= min_size:
+            clusters.append(members)
+        else:
+            orphans.extend(members)
+    clusters.sort(key=len, reverse=True)
+    return clusters, orphans
+
+
+def _adaptive_dedup_thresholds(
+    conn: Connection, skeleton: dict[int, np.ndarray], beta: float, floor: float
+) -> dict[int, float]:
+    """노드별 동적 흡수임계 tau_j = max((1-β)분위(음성분포), floor) (HIVE-57).
+
+    음성분포 = 노드 j 에 속하지 않은(다른 대주제로 매핑된) 콘텐츠와 j centroid의 코사인.
+    분포가 드리프트해도 흡수율을 일정하게 유지(고정 절대임계의 고아 폭증 방지). floor로 흡수정밀도 하한.
+    """
+    rows = conn.execute(text("""
+        SELECT (SELECT m.node_id FROM content_node_mapping m
+                JOIN curriculum_nodes n ON n.id = m.node_id
+                WHERE m.content_id = c.id AND n.is_auto_generated = FALSE
+                ORDER BY m.relevance_score DESC LIMIT 1) AS node_id,
+               c.text_embedding
+        FROM content c WHERE c.text_embedding IS NOT NULL
+    """)).fetchall()
+    labeled = [(r.node_id, _parse_emb(r.text_embedding)) for r in rows if r.node_id is not None]
+    tau: dict[int, float] = {}
+    for nid, cen in skeleton.items():
+        neg = [_cosine(emb, cen) for lab, emb in labeled if lab != nid]
+        if neg:
+            tau[nid] = max(float(np.quantile(neg, 1.0 - beta)), floor)
+    return tau
+
+
 def expand_graph(
     conn: Connection,
     client: anthropic.Anthropic,
@@ -234,13 +331,47 @@ def expand_graph(
     dedup_threshold: float = DEDUP_THRESHOLD,
     group_threshold: float = GROUP_THRESHOLD,
     min_cluster_size: int = MIN_CLUSTER_SIZE,
+    dynamic_dedup: bool = False,
+    dedup_beta: float = DEDUP_BETA,
+    dedup_floor: float = DEDUP_FLOOR,
 ) -> dict:
     """2-패스로 그래프를 확장한다. 종류별 카운트를 반환.
 
     1패스: 스켈레톤 흡수(top 코사인 >= dedup). 2패스: 잔여 클러스터링 후 노드 승격.
+    dynamic_dedup=True(또는 env AUTOHKG_DYNAMIC_DEDUP=1)면 고정 dedup_threshold 대신
+    노드별 동적 tau_j 사용(HIVE-57, 드리프트 robust). 기본은 고정(기존 동작 보존).
     """
+    import os
+    dynamic_dedup = dynamic_dedup or os.getenv("AUTOHKG_DYNAMIC_DEDUP") == "1"
+    with _expand_graph_lock:
+        return _expand_graph_inner(conn, client, limit,
+                                   dedup_threshold=dedup_threshold,
+                                   group_threshold=group_threshold,
+                                   min_cluster_size=min_cluster_size,
+                                   dynamic_dedup=dynamic_dedup,
+                                   dedup_beta=dedup_beta,
+                                   dedup_floor=dedup_floor)
+
+
+def _expand_graph_inner(
+    conn: Connection,
+    client: anthropic.Anthropic,
+    limit: int | None = None,
+    *,
+    dedup_threshold: float = DEDUP_THRESHOLD,
+    group_threshold: float = GROUP_THRESHOLD,
+    min_cluster_size: int = MIN_CLUSTER_SIZE,
+    dynamic_dedup: bool = False,
+    dedup_beta: float = DEDUP_BETA,
+    dedup_floor: float = DEDUP_FLOOR,
+) -> dict:
     skeleton = _skeleton_centroids(conn)
     roots = _root_centroids(conn)
+    # HIVE-57: 동적 흡수임계(노드별). off면 None → 고정 dedup_threshold 사용(기존 동작).
+    tau_map = (
+        _adaptive_dedup_thresholds(conn, skeleton, dedup_beta, dedup_floor)
+        if dynamic_dedup and skeleton else None
+    )
 
     # 멱등성: 이미 Auto-HKG 노드에 매핑된 콘텐츠는 재처리하지 않는다.
     sql = """
@@ -280,7 +411,8 @@ def expand_graph(
             stats["skipped"] += 1
             continue
         top_id, top_sim = _nearest(emb, skeleton)
-        if top_id is not None and top_sim >= dedup_threshold:
+        thr = tau_map.get(top_id, dedup_threshold) if tau_map else dedup_threshold
+        if top_id is not None and top_sim >= thr:
             _map(conn, cid, top_id, top_sim)
             stats["absorbed"] += 1
         else:
@@ -292,8 +424,9 @@ def expand_graph(
 
         for members in clusters:
             # 클러스터 centroid로 부모(대주제) 결정
+            members_set = set(members)
             cent = np.mean(
-                [r[1] for r in residuals if r[0] in set(members)], axis=0
+                [r[1] for r in residuals if r[0] in members_set], axis=0
             )
             parent_id, _ = _nearest(cent, roots) if roots else (None, 0.0)
 
@@ -458,3 +591,144 @@ def expand_one(content: dict, centroids: dict[int, np.ndarray], info: dict[int, 
         _map(conn, content["id"], node_id, max(top_sim, 0.5))
         return {"action": "existing", "node_id": node_id, "sim": round(top_sim, 3), "llm": True}
     return {"action": "skipped", "node_id": None, "llm": True}  # 빈 그래프 등 — 매핑 대상 없음
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HIVE-89: catch-all 분할 — 과흡수 skeleton 노드를 자동 탐지하고 하위 노드로 분할
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def get_node_contents(
+    conn: Connection, node_id: int, exclude_auto_children: bool = False
+) -> list[dict]:
+    """해당 노드에 매핑된 콘텐츠(임베딩 보유분)를 반환한다.
+
+    exclude_auto_children=True면 '이 노드의 auto 자식에 이미 매핑된' 콘텐츠는 제외(=잔여만).
+    catch-all 재분할이 멱등하도록(이미 분할된 콘텐츠 재클러스터 방지) split 경로에서 사용한다.
+    """
+    extra = ""
+    if exclude_auto_children:
+        extra = """
+          AND NOT EXISTS (
+              SELECT 1 FROM content_node_mapping mc
+              JOIN curriculum_nodes ch ON ch.id = mc.node_id
+              WHERE mc.content_id = c.id
+                AND ch.parent_id = :nid AND ch.is_auto_generated = TRUE
+          )"""
+    rows = conn.execute(text(f"""
+        SELECT c.id, c.title, c.text_embedding
+        FROM content c
+        JOIN content_node_mapping m ON m.content_id = c.id
+        WHERE m.node_id = :nid
+          AND c.text_embedding IS NOT NULL{extra}
+    """), {"nid": node_id}).fetchall()
+    return [{"id": r.id, "title": r.title or "", "emb": r.text_embedding} for r in rows]
+
+
+def find_catchall_nodes(conn: Connection, min_degree: int = CATCHALL_MIN_DEGREE) -> list[dict]:
+    """**잔여**(이 노드 직접매핑 중 auto 자식에 아직 안 들어간) 콘텐츠가 min_degree 이상인
+    비-자동 skeleton 노드를 반환한다.
+
+    멱등성: 기존엔 'auto 자식이 하나라도 있으면 영구 제외'였으나, 그 탓에 한 번 소수 분할된
+    대주제가 거대 잔여(수백 건)를 안고 다시는 분할되지 않는 catch-all 고착이 생겼다(감사 실측).
+    → 잔여 기준으로 바꿔, 분할 후 잔여가 임계 미만이 되면 자연히 멈추고(멱등), 잔여가 여전히
+    크면 추가 분할한다. degree = '아직 auto 자식에 안 들어간' 직접매핑 수.
+    """
+    rows = conn.execute(text("""
+        SELECT n.id, n.name, COUNT(m.content_id) AS degree
+        FROM curriculum_nodes n
+        JOIN content_node_mapping m ON m.node_id = n.id
+        WHERE n.is_auto_generated = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM content_node_mapping mc
+              JOIN curriculum_nodes ch ON ch.id = mc.node_id
+              WHERE mc.content_id = m.content_id
+                AND ch.parent_id = n.id AND ch.is_auto_generated = TRUE
+          )
+        GROUP BY n.id, n.name
+        HAVING COUNT(m.content_id) >= :min_degree
+        ORDER BY degree DESC
+    """), {"min_degree": min_degree}).fetchall()
+    return [{"id": r.id, "name": r.name, "degree": r.degree} for r in rows]
+
+
+def split_catchall_nodes(
+    engine: Engine,
+    client: anthropic.Anthropic,
+    min_degree: int = CATCHALL_MIN_DEGREE,
+    group_threshold: float = GROUP_THRESHOLD,
+    min_cluster_size: int = MIN_CLUSTER_SIZE,
+) -> dict:
+    """degree >= min_degree인 skeleton 노드를 탐지해 하위 노드로 분할한다(HIVE-89).
+
+    3단계로 실행한다:
+    1) 읽기: 과흡수 노드 탐지 + 콘텐츠 프리페치 (단일 read 커넥션)
+    2) LLM: 클러스터 네이밍 (트랜잭션 외부 — LLM 레이턴시 중 락·커넥션 비점유)
+    3) 쓰기: 노드별 독립 트랜잭션 (단일 LLM 오류가 다른 노드 롤백을 방지)
+
+    반환: {catchall_nodes, contents_processed, new_nodes, remapped, llm_calls}
+    """
+    with _expand_graph_lock:  # expand_graph와 동일 락으로 _create_node 동시 실행 차단
+        # ── 1) 읽기 단계 ────────────────────────────────────────────────────
+        with engine.connect() as read_conn:
+            nodes = find_catchall_nodes(read_conn, min_degree)
+            stats: dict = {
+                "catchall_nodes": len(nodes),
+                "contents_processed": 0,
+                "new_nodes": 0,
+                "remapped": 0,
+                "llm_calls": 0,
+            }
+            if not nodes:
+                return stats
+
+            contents_by_node = {
+                node["id"]: get_node_contents(read_conn, node["id"], exclude_auto_children=True)
+                for node in nodes
+            }
+
+        # ── 2) LLM 단계 (트랜잭션 외부) ─────────────────────────────────────
+        # (node, n_contents, n_orphans, [(members, sub_name, sub_desc)])
+        cluster_plans: list[tuple] = []
+        for node in nodes:
+            nid = node["id"]
+            contents = contents_by_node.get(nid, [])
+            if not contents:
+                continue
+
+            residuals = [(c["id"], _unit(_parse_emb(c["emb"]))) for c in contents]
+            title_by_id = {c["id"]: c["title"] for c in contents}
+            clusters, orphans = _partition_residuals(residuals, min_size=min_cluster_size)
+
+            named_clusters: list[tuple] = []
+            for members in clusters:
+                titles = [title_by_id[cid] for cid in members]
+                sub_name, sub_desc = _name_cluster(titles, client)
+                stats["llm_calls"] += 1
+                named_clusters.append((members, sub_name, sub_desc))
+
+            cluster_plans.append((node, len(contents), len(orphans), named_clusters))
+
+        # ── 3) 쓰기 단계 (노드별 독립 트랜잭션) ──────────────────────────────
+        for node, n_contents, n_orphans, named_clusters in cluster_plans:
+            nid, name = node["id"], node["name"]
+            stats["contents_processed"] += n_contents
+            try:
+                with engine.begin() as conn:
+                    for members, sub_name, sub_desc in named_clusters:
+                        new_id = _create_node(conn, sub_name, sub_desc, nid)
+                        stats["new_nodes"] += 1
+                        for cid in members:
+                            _map(conn, cid, new_id, 1.0)
+                            stats["remapped"] += 1
+            except Exception:
+                logger.exception("catch-all 분할 실패 — '%s'(id=%d), 스킵", name, nid)
+                continue
+
+            n_remapped = sum(len(m) for m, _, _ in named_clusters)
+            logger.info(
+                "catch-all 분할: '%s'(id=%d) → 하위노드 %d개 / 재매핑 %d건 / 고아 %d건",
+                name, nid, len(named_clusters), n_remapped, n_orphans,
+            )
+
+    return stats

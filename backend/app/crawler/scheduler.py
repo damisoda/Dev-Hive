@@ -3,7 +3,17 @@ from __future__ import annotations
 import logging
 from threading import Lock
 
-from app.crawler.run_crawler import crawl_github, crawl_reddit, crawl_velog, run_pipeline
+from app.crawler.run_crawler import (
+    crawl_github,
+    crawl_github_discussions,
+    crawl_huggingface,
+    crawl_reddit,
+    crawl_reddit_public,
+    crawl_velog,
+    crawl_velog_beginner,
+    crawl_x,
+    run_pipeline,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +33,56 @@ def _run_named_pipeline(name: str, crawl_func) -> None:
         logger.exception("Scheduled crawler job failed: %s", name)
 
 
+def run_auto_hkg_job() -> None:
+    """주기적 Auto-HKG 확장 + catch-all 분할(HIVE-89).
+
+    1) expand_graph: 미매핑 콘텐츠를 2패스로 그래프에 편입 (dynamic_dedup 활성화).
+    2) split_catchall_nodes: degree≥50 과흡수 노드를 하위 노드로 자동 분할.
+
+    크롤→적재 직후 _maybe_ingest에서도 expand_graph가 호출되지만, 크롤 실패·일시 오류로
+    누락된 콘텐츠를 48h마다 별도로 처리해 그래프 갱신 누락을 방지한다.
+    """
+    logger.info("Scheduled Auto-HKG job started")
+    engine = None
+    try:
+        import os
+        import anthropic
+        from sqlalchemy import create_engine
+        from app.graph.auto_hkg import expand_graph, split_catchall_nodes
+
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        db_url = os.getenv("DATABASE_URL")
+        if not (anthropic_key and db_url):
+            logger.info("Auto-HKG 스킵 — ANTHROPIC_API_KEY 또는 DATABASE_URL 없음")
+            return
+
+        client = anthropic.Anthropic(api_key=anthropic_key)
+        engine = create_engine(db_url)
+
+        # 1) 미매핑 콘텐츠 편입 (dynamic_dedup=True — AUTOHKG_DYNAMIC_DEDUP 또는 env 무관하게 항상 활성)
+        with engine.begin() as conn:
+            stats = expand_graph(conn, client, dynamic_dedup=True)
+        logger.info(
+            "Scheduled Auto-HKG 완료 — 처리:%s / 흡수:%s / 클러스터:%s / 고아:%s / 신규노드:%s / LLM:%s",
+            stats["total"], stats["absorbed"], stats["clustered"],
+            stats["orphan_mapped"], stats["new_nodes"], stats["llm_calls"],
+        )
+
+        # 2) catch-all 분할 — degree≥50 과흡수 노드를 하위 노드로 쪼갠다
+        split_stats = split_catchall_nodes(engine, client)
+        if split_stats["catchall_nodes"] > 0:
+            logger.info(
+                "catch-all 분할 완료 — 대상노드:%s / 처리콘텐츠:%s / 신규하위노드:%s / 재매핑:%s / LLM:%s",
+                split_stats["catchall_nodes"], split_stats["contents_processed"],
+                split_stats["new_nodes"], split_stats["remapped"], split_stats["llm_calls"],
+            )
+    except Exception:
+        logger.exception("Scheduled Auto-HKG job failed")
+    finally:
+        if engine is not None:
+            engine.dispose()
+
+
 def run_github_job() -> None:
     _run_named_pipeline("github_12h", crawl_github)
 
@@ -33,6 +93,26 @@ def run_reddit_job() -> None:
 
 def run_velog_job() -> None:
     _run_named_pipeline("velog_24h", crawl_velog)
+
+
+def run_reddit_public_job() -> None:
+    _run_named_pipeline("reddit_public_24h", crawl_reddit_public)
+
+
+def run_github_discussions_job() -> None:
+    _run_named_pipeline("github_discussions_12h", crawl_github_discussions)
+
+
+def run_x_job() -> None:
+    _run_named_pipeline("x_24h", crawl_x)
+
+
+def run_velog_beginner_job() -> None:
+    _run_named_pipeline("velog_beginner_24h", crawl_velog_beginner)
+
+
+def run_huggingface_job() -> None:
+    _run_named_pipeline("huggingface_24h", crawl_huggingface)
 
 
 def start_scheduler():
@@ -69,6 +149,66 @@ def start_scheduler():
                 trigger="interval",
                 hours=24,
                 id="velog_24h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("reddit_public_24h"):
+            _scheduler.add_job(
+                run_reddit_public_job,
+                trigger="interval",
+                hours=24,
+                id="reddit_public_24h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("github_discussions_12h"):
+            _scheduler.add_job(
+                run_github_discussions_job,
+                trigger="interval",
+                hours=12,
+                id="github_discussions_12h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("x_24h"):
+            _scheduler.add_job(
+                run_x_job,
+                trigger="interval",
+                hours=24,
+                id="x_24h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("velog_beginner_24h"):
+            _scheduler.add_job(
+                run_velog_beginner_job,
+                trigger="interval",
+                hours=24,
+                id="velog_beginner_24h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("huggingface_24h"):
+            _scheduler.add_job(
+                run_huggingface_job,
+                trigger="interval",
+                hours=24,
+                id="huggingface_24h",
+                max_instances=1,
+                coalesce=True,
+                replace_existing=True,
+            )
+        if not _scheduler.get_job("auto_hkg_48h"):
+            _scheduler.add_job(
+                run_auto_hkg_job,
+                trigger="interval",
+                hours=48,
+                id="auto_hkg_48h",
                 max_instances=1,
                 coalesce=True,
                 replace_existing=True,

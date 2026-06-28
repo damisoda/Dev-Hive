@@ -7,6 +7,8 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- 1. 유저
 CREATE TABLE IF NOT EXISTS users (
     id                 SERIAL PRIMARY KEY,
+    username           VARCHAR(50),                   -- HIVE-100: 로그인 아이디(신규 가입 필수, 레거시 계정은 NULL)
+    password_hash      VARCHAR(255),                  -- HIVE-100: bcrypt 해시(레거시는 NULL → 로그인 불가)
     display_name       VARCHAR(100) NOT NULL,
     persona            VARCHAR(20) NOT NULL DEFAULT '개발자',
     onboarding_answers JSONB,
@@ -15,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
     influence_score    INT DEFAULT 0,
     created_at         TIMESTAMPTZ DEFAULT NOW()
 );
+-- HIVE-100: username 유일성(비-NULL만). 마이그레이션(migrate_HIVE100_auth.sql)과 동일한 명명 인덱스로 수렴.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_users_username ON users (username);
 
 -- 2. 콘텐츠 (source/author/tags를 필드로 내장)
 CREATE TABLE IF NOT EXISTS content (
@@ -35,6 +39,8 @@ CREATE TABLE IF NOT EXISTS content (
     graph_embedding     vector(256),                 -- GraphSAGE 산출물 (Layer 2, NULL 가능)
     engagement_likes    INT DEFAULT 0,
     engagement_comments INT DEFAULT 0,
+    engagement_retweets INT DEFAULT 0,
+    engagement_views    INT DEFAULT 0,
     published_at        TIMESTAMPTZ,
     crawled_at          TIMESTAMPTZ DEFAULT NOW(),
     created_at          TIMESTAMPTZ DEFAULT NOW()
@@ -91,4 +97,13 @@ CREATE INDEX IF NOT EXISTS idx_content_tags ON content USING GIN(tags);
 CREATE INDEX IF NOT EXISTS idx_content_quality ON content(quality_score);
 CREATE INDEX IF NOT EXISTS idx_content_embedding ON content USING ivfflat (text_embedding vector_cosine_ops) WITH (lists = 100);
 CREATE INDEX IF NOT EXISTS idx_cnm_node ON content_node_mapping(node_id);
+-- 8. 추천 funnel 계측 (HIVE-96) — 노출/클릭 로깅 (읽음은 user_read_events)
+CREATE TABLE IF NOT EXISTS recommend_events (
+    id         SERIAL PRIMARY KEY,
+    user_id    INT REFERENCES users(id)   ON DELETE CASCADE,
+    content_id INT REFERENCES content(id) ON DELETE CASCADE,
+    event_type VARCHAR(20) NOT NULL,       -- 'impression' | 'click'
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_ure_user ON user_read_events(user_id);

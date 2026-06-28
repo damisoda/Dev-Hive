@@ -12,7 +12,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.tagging.synthesizer import _BODY_KEYS, _HEADER_KEYS, synthesize
+from app.tagging.synthesizer import (
+    _BODY_KEYS, _HEADER_KEYS, _apply_grounding, _is_grounded, _is_phantom, synthesize,
+)
 
 
 class _FakeMessage:
@@ -58,6 +60,69 @@ def _client_returning(card: dict, **kw) -> _FakeAnthropic:
     return _FakeAnthropic(reply_text=json.dumps(card, ensure_ascii=False), **kw)
 
 
+# --- HIVE-62: 시스템 프롬프트 한국어 출력 단언 --------------------------------
+
+def test_system_prompt_instructs_korean_output():
+    client = _client_returning({"one_liner": "x", "key_takeaways": []})
+    synthesize(_ITEM, {"content_type": "experience"}, client)
+    assert "한국어" in client.captured_system
+
+
+def test_phantom_text_coerced_to_null():
+    """HIVE-104: LLM이 null 대신 '원문에서 명시되지 않음' 텍스트를 쓰면 null/[]로 보정된다."""
+    card_with_phantom = {
+        "one_liner": "x",
+        # 첫 항목은 _ITEM body에 실제로 있는 내용(grounding 통과), 두 번째는 위장 텍스트
+        "key_takeaways": ["vLLM throughput 3배 향상", "원문에서 명시되지 않음"],
+        "context": "원문에서 명시적으로 설명되지 않음",
+        "findings": ["vLLM PagedAttention으로 VRAM 효율 향상"],
+        "pitfalls": [],
+        "numbers": [],
+        "verdict": "not mentioned in the source",
+    }
+    out = synthesize(
+        _ITEM,
+        {"content_type": "experience"},
+        _client_returning(card_with_phantom),
+    )
+    assert out is not None
+    assert len(out["key_takeaways"]) == 1   # 위장 텍스트 1개 제거됨
+    assert out["context"] is None           # 위장 텍스트 → null
+    assert out["verdict"] is None           # 영문 패턴도 감지
+
+
+def test_is_phantom_detects_korean_patterns():
+    assert _is_phantom("원문에서 명시되지 않음") is True
+    assert _is_phantom("원문에서 언급되지 않음") is True
+    assert _is_phantom("원문에서 설명되지 않음") is True
+    assert _is_phantom("실제 내용이 있는 문장") is False
+
+
+def test_is_phantom_no_false_positive_on_positive_form():
+    # "원문에서 언급된 X" 양성형은 정상 내용 — phantom 아님
+    assert _is_phantom("원문에서 언급된 세 가지 핵심 원칙이 있다") is False
+    assert _is_phantom("원문에서 설명한 작동 원리") is False
+
+
+def test_is_phantom_no_false_positive_on_technical_negation():
+    # "명시되지 않은 기본값" 등 기술적 관형절은 phantom 아님 (원문에서 prefix 없음)
+    assert _is_phantom("명시되지 않은 기본값이 보안 취약점을 유발한다") is False
+    assert _is_phantom("설명되지 않는 예외 케이스가 있음") is False
+
+
+def test_is_phantom_detects_english_patterns():
+    assert _is_phantom("not mentioned in source") is True
+    assert _is_phantom("not specified in the original") is True
+    assert _is_phantom("normal gotcha text") is False
+
+
+def test_system_prompt_forbids_external_reference_expansion():
+    """HIVE-104: 인용 트윗·URL 등 외부 콘텐츠 추론 금지 지시가 프롬프트에 포함된다."""
+    client = _client_returning({"one_liner": "x", "key_takeaways": []})
+    synthesize(_ITEM, {"content_type": "discussion"}, client)
+    assert "인용 트윗" in client.captured_system
+
+
 # --- HIVE-45: 출력 토큰 상한 + 잘림 로깅 -----------------------------------
 
 def test_synthesize_uses_3072_max_tokens():
@@ -76,7 +141,22 @@ def test_truncation_logs_warning(caplog):
     assert any("max_tokens" in r.getMessage() for r in caplog.records)
 
 
-_ITEM = {"title": "제목", "body": "본문 내용이 충분히 있다."}
+_ITEM = {
+    "title": "개발 테스트 항목",
+    "body": (
+        "vLLM은 PagedAttention 기법으로 VRAM 효율을 높이고 throughput을 3x 개선했다. "
+        "초기 OOM 문제를 배치 크기 튜닝으로 해결했으며 서빙에는 vLLM을 추천한다. "
+        "p99 지연은 120ms까지 낮아졌다. VRAM 사용이 안정됐다. "
+        "Ollama는 로컬에서 LLM 모델을 CLI 한 줄로 실행할 수 있는 추론 런타임 모음이다. "
+        "GPU 권장 환경이며 VRAM 한계가 있다. 설치 후 모델 pull과 run이 필요하다. "
+        "오프라인 비용 절감 목적에 적합하다. 로컬 LLM 도구 3종을 비교했다. "
+        "RAG는 외부 지식을 임베딩으로 벡터 검색해 컨텍스트로 주입하는 검색 기반 생성 기법이다. "
+        "파인튜닝과 비교하면 갱신이 용이하고 비용이 저렴하나 지연이 증가하는 트레이드오프가 있다. "
+        "대부분의 경우 RAG가 낫다는 주장이 있으나 상황에 따라 다르며 혼용이 현실적이다. "
+        "최신 지식이 필요할 때 특히 유용하다. 프롬프트 응답을 확인할 수 있다. "
+        "디스크 공간 확인이 필요하다. good practice를 따르는 것이 중요하다."
+    ),
+}
 
 
 # --- content_type별 분기 + 카드 구조 파싱 ---------------------------------
@@ -201,15 +281,16 @@ def test_missing_body_keys_filled_as_empty():
 def test_unknown_keys_dropped():
     # 명세 밖 키(hallucinated_extra)는 카드에서 제거된다
     card = {
-        "one_liner": "x",
-        "key_takeaways": [],
-        "definition": "d",
-        "mechanism": [],
+        "one_liner": "RAG 개념",
+        "key_takeaways": ["외부 지식을 벡터 검색해 생성에 활용"],
+        "definition": "외부 지식 임베딩 벡터 검색 기반 생성",
+        "mechanism": ["임베딩 벡터 검색", "컨텍스트 주입"],
         "comparisons": [],
-        "when_matters": "w",
+        "when_matters": "최신 지식 필요할 때",
         "hallucinated_extra": "버려져야 함",
     }
     out = synthesize(_ITEM, {"content_type": "concept"}, _client_returning(card))
+    assert out is not None
     assert "hallucinated_extra" not in out
     allowed = {"content_type", *_HEADER_KEYS, *_BODY_KEYS["concept"]}
     assert set(out.keys()) == allowed
@@ -253,14 +334,181 @@ def test_empty_item_returns_none():
     assert client.call_count == 0
 
 
+# --- HIVE-90: grounding 필터 -----------------------------------------------
+
+def test_grounding_removes_hallucinated_steps():
+    # tutorial.steps에 원문에 없는 절차가 포함되면 제거된다
+    body = "vLLM을 pip install vllm 으로 설치한 뒤 서버를 실행한다."
+    card = {
+        "one_liner": "vLLM 설치",
+        "key_takeaways": ["pip install vllm 으로 설치"],
+        "goal": "로컬 추론 서버 실행",
+        "steps": [
+            "pip install vllm 으로 설치한다",          # ← 원문에 있음 → 통과
+            "conda create -n llm python=3.11 실행",    # ← 원문에 없음 → 제거
+            "Docker 컨테이너 빌드 후 push 한다",        # ← 원문에 없음 → 제거
+        ],
+        "result": "추론 서버 실행 완료",
+        "notes": [],
+        "content_type": "tutorial",
+    }
+    result = _apply_grounding(card, body)
+    assert len(result["steps"]) == 1
+    assert "pip install" in result["steps"][0]
+
+
+def test_grounding_passes_grounded_items():
+    # 원문에 있는 내용은 제거되지 않는다
+    body = "PagedAttention 기법으로 VRAM 효율을 3배 높였다. throughput도 크게 향상됐다."
+    card = {
+        "one_liner": "vLLM 성능",
+        "key_takeaways": ["PagedAttention으로 VRAM 효율 3배 향상", "throughput 향상"],
+        "context": "VRAM 최적화",
+        "findings": ["PagedAttention 기법 적용", "throughput 대폭 개선"],
+        "pitfalls": [],
+        "numbers": ["3배"],
+        "verdict": "효율적",
+        "content_type": "experience",
+    }
+    result = _apply_grounding(card, body)
+    assert len(result["key_takeaways"]) == 2
+    assert len(result["findings"]) == 2
+
+
+def test_grounding_skips_filter_when_body_empty():
+    # body가 없으면 필터를 적용하지 않는다(제거 없음)
+    card = {
+        "one_liner": "x",
+        "key_takeaways": ["완전히 발명된 내용"],
+        "steps": ["존재하지 않는 절차 A", "존재하지 않는 절차 B"],
+        "goal": "g", "result": "r", "notes": [],
+        "content_type": "tutorial",
+    }
+    result = _apply_grounding(card, "")
+    assert result["steps"] == card["steps"]
+    assert result["key_takeaways"] == card["key_takeaways"]
+
+
+def test_grounding_integrated_with_synthesize():
+    # synthesize()가 grounding 필터를 거쳐 환각 항목을 제거한다
+    body = "Redis를 캐시로 사용하면 응답 속도가 빨라진다."
+    item = {"title": "Redis 캐시 활용", "body": body}
+    card = {
+        "one_liner": "Redis 캐시 활용",
+        "key_takeaways": [
+            "Redis 캐시로 응답 속도 향상",    # ← 원문 근거 있음 → 통과
+            "Kubernetes 클러스터 구성 필수",  # ← 원문에 없음 → 제거
+        ],
+        "goal": "캐시 설정",
+        "steps": ["Redis 설치", "캐시 적용"],
+        "result": "속도 개선",
+        "notes": [],
+    }
+    out = synthesize(item, {"content_type": "tutorial"}, _client_returning(card))
+    assert out is not None
+    assert len(out["key_takeaways"]) == 1
+    assert "Redis" in out["key_takeaways"][0]
+
+
+def test_is_grounded_returns_true_for_matching_tokens():
+    body = "vllm 설치 후 서버를 실행하면 throughput이 향상됩니다"
+    assert _is_grounded("vllm 설치 방법", body) is True
+
+
+def test_is_grounded_returns_false_for_no_match():
+    body = "Redis를 캐시로 사용한다"
+    assert _is_grounded("Kubernetes 클러스터 구성 및 Docker 빌드", body) is False
+
+
+def test_is_grounded_empty_statement_passes():
+    assert _is_grounded("", "아무 본문") is True
+
+
+def test_grounding_catches_quoted_tweet_hallucination():
+    """HIVE-104: 인용 트윗 없이 외부 문구만 있는 짧은 트윗에서 환각 항목을 제거한다."""
+    body = "Karpathy의 새 영상 정말 인상적이에요."
+    card = {
+        "one_liner": "Karpathy LLM 지식 베이스 시리즈",
+        "key_takeaways": [
+            "Karpathy 영상 인상적",            # 원문 근거 있음 → 통과
+            "LLM Knowledge Bases 3단계 구성",  # 원문에 없음 → 제거
+            "Vector DB와 RAG 결합 방법론",     # 원문에 없음 → 제거
+        ],
+        "claim": "LLM Knowledge Bases 구축이 핵심 기술",  # 원문에 없음 → None
+        "arguments": ["Vector DB 활용", "RAG 파이프라인"], # 원문에 없음 → 제거
+        "counterpoints": [],
+        "conclusion": "Karpathy 영상 참고 권장",  # 원문 근거 있음 → 통과
+        "content_type": "discussion",
+    }
+    result = _apply_grounding(card, body)
+    assert len(result["key_takeaways"]) == 1
+    assert "Karpathy" in result["key_takeaways"][0]
+    assert result["arguments"] == []
+    assert result["claim"] is None
+    assert result["conclusion"] is not None
+
+
 def test_code_fence_stripped():
     # Haiku가 ```json 코드블록으로 감싸도 파싱된다(tagger와 동일 처리)
     card = {
-        "one_liner": "x", "key_takeaways": [],
-        "claim": "c", "arguments": [], "counterpoints": [], "conclusion": "z",
+        "one_liner": "x", "key_takeaways": ["RAG 활용"],
+        "claim": "c", "arguments": ["갱신 용이"], "counterpoints": [], "conclusion": "z",
     }
     fenced = "```json\n" + json.dumps(card, ensure_ascii=False) + "\n```"
     client = _FakeAnthropic(reply_text=fenced)
     out = synthesize(_ITEM, {"content_type": "discussion"}, client)
     assert out is not None
     assert out["claim"] == "c"
+
+
+def test_bare_code_fence_stripped():
+    # ```json 태그 없는 bare ``` 펜스도 파싱된다 (DOTALL 버그 회귀 방지)
+    card = {
+        "one_liner": "x", "key_takeaways": ["RAG 활용"],
+        "claim": "c", "arguments": ["갱신 용이"], "counterpoints": [], "conclusion": "z",
+    }
+    fenced = "```\n" + json.dumps(card, ensure_ascii=False) + "\n```"
+    client = _FakeAnthropic(reply_text=fenced)
+    out = synthesize(_ITEM, {"content_type": "discussion"}, client)
+    assert out is not None
+    assert out["claim"] == "c"
+
+
+def test_backtick_in_json_value_not_eaten():
+    # JSON 값 내부에 백틱이 있어도 파싱이 깨지지 않는다 (DOTALL 버그 회귀 방지)
+    card = {
+        "one_liner": "x",
+        "key_takeaways": ["RAG 활용"],
+        "goal": "로컬에서 모델 실행",
+        "steps": ["pip install vllm 으로 설치한다", "use ```bash``` shell for execution"],
+        "result": "추론 서버 실행 완료",
+        "notes": [],
+    }
+    client = _FakeAnthropic(reply_text=json.dumps(card, ensure_ascii=False))
+    out = synthesize(_ITEM, {"content_type": "tutorial"}, client)
+    assert out is not None
+
+
+def test_trailing_comment_after_json_parsed():
+    # JSON 닫는 중괄호 뒤에 설명 텍스트가 있어도 첫 번째 객체만 추출해 파싱한다
+    card = {
+        "one_liner": "x", "key_takeaways": ["RAG 활용"],
+        "claim": "c", "arguments": ["갱신 용이"], "counterpoints": [], "conclusion": "z",
+    }
+    with_trailing = json.dumps(card, ensure_ascii=False) + "\n\n여기는 설명 텍스트입니다."
+    client = _FakeAnthropic(reply_text=with_trailing)
+    out = synthesize(_ITEM, {"content_type": "discussion"}, client)
+    assert out is not None
+    assert out["claim"] == "c"
+
+
+def test_is_phantom_catches_korean_variants_hive104():
+    # HIVE-104 회귀: 기존에 놓치던 phantom-dodge 변형들도 잡는다.
+    from app.tagging.synthesizer import _is_phantom
+    for p in ["원문에 나타나지 않음", "원문에서 찾을 수 없음", "명시되지 않음",
+              "이 정보는 원문에 없음", "원문에 언급되지 않음", "not specified in the source"]:
+        assert _is_phantom(p), p
+    # 긍정형/정상 텍스트는 phantom 아님(과매칭 방지)
+    for ok in ["원문에서 언급된 RAG 기법", "벡터 검색으로 관련 문서를 찾을 수 있다",
+               "명시적 캐싱을 사용한다", "원문은 설치 방법을 설명한다"]:
+        assert not _is_phantom(ok), ok

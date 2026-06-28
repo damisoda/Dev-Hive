@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 REDDIT_LOOKBACK_DAYS = int(os.getenv("REDDIT_LOOKBACK_DAYS", "7"))
 REDDIT_LIMIT_PER_LISTING = int(os.getenv("REDDIT_LIMIT_PER_LISTING", "300"))
 REDDIT_REQUEST_SLEEP_SECONDS = float(os.getenv("REDDIT_REQUEST_SLEEP_SECONDS", "1.0"))
+REDDIT_PRAW_MIN_BODY = int(os.getenv("REDDIT_PRAW_MIN_BODY", "300"))
 
 DEFAULT_SUBREDDITS = [
     "MachineLearning",
@@ -148,6 +149,10 @@ def _normalize_post(post: Any) -> ContentSchema | None:
     body = post.selftext or ""
 
     if not _matches_ai_keyword(title, body):
+        return None
+
+    if len(body) < REDDIT_PRAW_MIN_BODY:
+        logger.debug("body 짧아 제외 (%d자): %s", len(body), getattr(post, "permalink", ""))
         return None
 
     return normalize(

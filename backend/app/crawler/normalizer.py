@@ -45,7 +45,7 @@ class ContentSchema(BaseModel):
     body: Optional[str] = None
     author_name: Optional[str] = None
     language: str = "en"
-    engagement: dict = Field(default_factory=lambda: {"likes": 0, "comments": 0})
+    engagement: dict = Field(default_factory=lambda: {"likes": 0, "comments": 0, "retweets": 0, "views": 0})
 
     def to_dict(self) -> dict:
         return {
