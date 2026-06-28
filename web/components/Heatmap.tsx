@@ -4,7 +4,7 @@
 // 셀에 마우스를 올리면 날짜 + 읽은 글 수 툴팁을 띄운다. 5단계 꿀색 스케일.
 import { useState } from "react";
 
-const WEEKS = 14;
+const WEEKS = 36;
 
 function level(count: number): number {
   if (count <= 0) return 0;
@@ -39,7 +39,7 @@ export function Heatmap({ data }: { data: Record<string, number> }) {
   };
 
   return (
-    <div className="hivemap" role="img" aria-label="최근 14주 학습 기록">
+    <div className="hivemap" role="img" aria-label="최근 8개월 학습 기록">
       {rows.map((row, r) => (
         <div className={`hive-row${r % 2 === 1 ? " odd" : ""}`} key={r}>
           {row.map((d) => (

@@ -403,11 +403,11 @@ a.rec-title:hover { color: var(--accent-ink); }
 .pf-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .pf-sec-head h3 { font-size: 16.5px; font-weight: 800; letter-spacing: -.02em; margin: 0; color: var(--text); display: inline-flex; align-items: center; gap: 5px; }
 .pf-sec-note { font-size: 12.5px; color: var(--text-subtle); }
-.pf-heat { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
-.pf-heat .hivemap-wrap { justify-content: flex-start; padding: 0; flex: 0 0 auto; }
-.pf-heat-summary { flex: 0 1 50%; min-width: 200px; display: flex; flex-direction: column; border-left: 1px solid var(--border); padding-left: 22px; }
-.pf-sumrow { display: flex; align-items: baseline; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); }
-.pf-sumrow:last-child { border-bottom: 0; }
+.pf-heat { display: flex; flex-direction: column; gap: 14px; }
+.pf-heat .hivemap-wrap { width: 100%; overflow-x: auto; justify-content: flex-start; padding: 2px 0 6px; }
+.pf-heat-summary { width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 14px; }
+.pf-sumrow { flex: 1 1 120px; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 2px 16px; }
+.pf-sumrow + .pf-sumrow { border-left: 1px solid var(--border); }
 .pf-sumrow span { font-size: 13px; color: var(--text-muted); }
 .pf-sumrow strong { font-size: 15px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
 .pf-sumrow strong.honey { color: #9A6B16; }
