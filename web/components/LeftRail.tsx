@@ -27,6 +27,7 @@ const NAV = [
   { href: "/discover", label: "디스커버", Icon: Compass },
   { href: "/curriculum", label: "커리큘럼", Icon: Curriculum },
   { href: "/graph", label: "지식그래프", Icon: Graph },
+  { href: "/profile", label: "프로필", Icon: Profile },
   { href: "/upload", label: "업로드", Icon: Upload },
 ];
 
@@ -36,7 +37,6 @@ export function LeftRail() {
   const pathname = usePathname() || "/";
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
-  const profileActive = isActive("/profile");
 
   return (
     <nav className="rail" aria-label="주요 메뉴">
@@ -58,17 +58,6 @@ export function LeftRail() {
           </a>
         );
       })}
-      <div className="rail-spacer" />
-      <div className="rail-div" />
-      <a
-        className={`rail-item${profileActive ? " active" : ""}`}
-        href="/profile"
-        aria-label="프로필"
-        title="프로필"
-        aria-current={profileActive ? "page" : undefined}
-      >
-        <Profile />
-      </a>
     </nav>
   );
 }
