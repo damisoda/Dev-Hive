@@ -187,18 +187,6 @@ export function GraphCanvas({
   }, [highlightIds]);
 
   useEffect(() => {
-    const fg = fgRef.current;
-    if (!fg || !FG || !highlight?.focusId) return;
-    const timer = window.setTimeout(() => {
-      const node = graph.nodes.find((n) => n.id === highlight.focusId) as any;
-      if (!node || typeof node.x !== "number" || typeof node.y !== "number") return;
-      fg.centerAt?.(node.x, node.y, 1200);
-      fg.zoom?.(node.kind === "topic" ? 3.0 : 4.2, 1200);
-    }, 900);
-    return () => window.clearTimeout(timer);
-  }, [FG, graph, highlight?.focusId]);
-
-  useEffect(() => {
     if (!selectedNode) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setSelectedNode(null); };
     document.addEventListener("keydown", onKey);
