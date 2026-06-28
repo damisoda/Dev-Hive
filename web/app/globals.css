@@ -405,7 +405,7 @@ a.rec-title:hover { color: var(--accent-ink); }
 .pf-sec-note { font-size: 12.5px; color: var(--text-subtle); }
 .pf-heat { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
 .pf-heat .hivemap-wrap { justify-content: flex-start; padding: 0; flex: 0 0 auto; }
-.pf-heat-summary { flex: 1 1 180px; min-width: 170px; display: flex; flex-direction: column; border-left: 1px solid var(--border); padding-left: 22px; }
+.pf-heat-summary { flex: 0 1 50%; min-width: 200px; display: flex; flex-direction: column; border-left: 1px solid var(--border); padding-left: 22px; }
 .pf-sumrow { display: flex; align-items: baseline; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .pf-sumrow:last-child { border-bottom: 0; }
 .pf-sumrow span { font-size: 13px; color: var(--text-muted); }
