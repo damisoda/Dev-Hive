@@ -346,16 +346,18 @@ a.rec-title:hover { color: var(--accent-ink); }
 
 /* ③ 학습 활동 — 벌집(육각) 히트맵 */
 .hivemap-wrap { display: flex; justify-content: center; padding: 4px 0 8px; }
-.hivemap { display: flex; flex-direction: column; align-items: flex-start; }
-.hive-row { display: flex; gap: 2px; }
-.hive-row + .hive-row { margin-top: -3px; }
-.hive-row.odd { margin-left: 8.5px; }
-.hive-cell { width: 15px; height: 17px; clip-path: var(--hex); background: #EDEEF0; }
-.hive-cell.lv0 { background: #EDEEF0; }
-.hive-cell.lv1 { background: #F7E9C8; }
+.hivemap { display: flex; flex-direction: column; align-items: flex-start; position: relative; }
+.hive-row { display: flex; gap: 3px; }
+.hive-row + .hive-row { margin-top: -4px; }
+.hive-row.odd { margin-left: 12.5px; }
+.hive-cell { width: 22px; height: 25px; clip-path: var(--hex); background: #E7E8EC; cursor: default; transition: filter .12s ease; }
+.hive-cell:hover { filter: brightness(0.9); }
+.hive-cell.lv0 { background: #E7E8EC; }
+.hive-cell.lv1 { background: #F7E4B4; }
 .hive-cell.lv2 { background: #EFD08A; }
 .hive-cell.lv3 { background: #E4B45E; }
 .hive-cell.lv4 { background: #D49C3A; }
+.hive-tip { position: absolute; transform: translate(-50%, -118%); background: #14161C; color: #fff; font-size: 11.5px; font-weight: 600; padding: 5px 9px; border-radius: 7px; white-space: nowrap; pointer-events: none; z-index: 6; box-shadow: 0 6px 16px rgba(0,0,0,.2); }
 
 /* ④ 주제별 진행 현황 */
 .topic-prog { display: flex; flex-direction: column; }

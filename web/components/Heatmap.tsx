@@ -1,10 +1,11 @@
-// 학습 활동 — 최근 14주 읽기 히트맵을 벌집(육각) 셀로 렌더. {YYYY-MM-DD: 읽은 수}.
-// 시간축(언제 얼마나 읽었는지). 5단계 꿀색 스케일 · 짝수행 offset으로 벌집 인터록.
-// 서버 컴포넌트(일반 Node 런타임이라 new Date 사용 OK).
+"use client";
+
+// 학습 활동 — 최근 14주 읽기 히트맵을 벌집(육각) 셀로. {YYYY-MM-DD: 읽은 수}.
+// 셀에 마우스를 올리면 날짜 + 읽은 글 수 툴팁을 띄운다. 5단계 꿀색 스케일.
+import { useState } from "react";
 
 const WEEKS = 14;
 
-// 0~4단계(꿀색 스케일). 0=없음.
 function level(count: number): number {
   if (count <= 0) return 0;
   if (count === 1) return 1;
@@ -14,6 +15,8 @@ function level(count: number): number {
 }
 
 export function Heatmap({ data }: { data: Record<string, number> }) {
+  const [tip, setTip] = useState<{ label: string; left: number; top: number } | null>(null);
+
   const today = new Date();
   const totalDays = WEEKS * 7;
   const days: { date: string; count: number }[] = [];
@@ -23,7 +26,6 @@ export function Heatmap({ data }: { data: Record<string, number> }) {
     const key = d.toISOString().slice(0, 10);
     days.push({ date: key, count: data[key] ?? 0 });
   }
-  // 7행(요일축) × WEEKS열(주). row r = 각 주의 같은 위치 셀.
   const rows: { date: string; count: number }[][] = [];
   for (let r = 0; r < 7; r++) {
     const row: { date: string; count: number }[] = [];
@@ -31,15 +33,33 @@ export function Heatmap({ data }: { data: Record<string, number> }) {
     rows.push(row);
   }
 
+  const label = (d: { date: string; count: number }) => {
+    const dt = new Date(d.date);
+    return `${dt.getMonth() + 1}월 ${dt.getDate()}일 · ${d.count > 0 ? `${d.count}건 읽음` : "학습 없음"}`;
+  };
+
   return (
     <div className="hivemap" role="img" aria-label="최근 14주 학습 기록">
       {rows.map((row, r) => (
         <div className={`hive-row${r % 2 === 1 ? " odd" : ""}`} key={r}>
           {row.map((d) => (
-            <span key={d.date} className={`hive-cell lv${level(d.count)}`} title={`${d.date} · ${d.count}개`} />
+            <span
+              key={d.date}
+              className={`hive-cell lv${level(d.count)}`}
+              onMouseEnter={(e) => {
+                const t = e.currentTarget;
+                setTip({ label: label(d), left: t.offsetLeft + t.offsetWidth / 2, top: t.offsetTop });
+              }}
+              onMouseLeave={() => setTip(null)}
+            />
           ))}
         </div>
       ))}
+      {tip && (
+        <div className="hive-tip" style={{ left: tip.left, top: tip.top }}>
+          {tip.label}
+        </div>
+      )}
     </div>
   );
 }
