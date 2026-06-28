@@ -135,9 +135,9 @@ export default async function ProfilePage() {
             <Medal level={level} />
           </div>
         </div>
-        <button type="button" className="ident-edit">
+        <a href="/profile/edit" className="ident-edit">
           <EditIcon /> 정보 수정
-        </button>
+        </a>
       </section>
 
       {/* ② 스탯 3개 — 박스 없이 파란 세로 구분선 + 가운데 정렬 */}

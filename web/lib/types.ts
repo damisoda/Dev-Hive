@@ -90,6 +90,11 @@ export interface Profile {
   current_level: string;
 }
 
+// /auth/me
+export interface EditableProfile extends Profile {
+  onboarding_answers: Record<string, number>;
+}
+
 // /stats
 export interface Stats {
   user_id: number;

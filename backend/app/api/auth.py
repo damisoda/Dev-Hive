@@ -16,7 +16,7 @@ from app.services.constants import (
     DEFAULT_PERSONA,
     PERSONA_ONBOARDING,
 )
-from app.services.profile_vector import build_initial_vector
+from app.services.profile_vector import build_initial_vector, update_from_read_history
 from app.services.rate_limit import (
     check_and_record_login_attempt,
     check_rate_limit,
@@ -135,6 +135,16 @@ class ProfileResponse(BaseModel):
         from_attributes = True
 
 
+
+
+class EditableProfileResponse(ProfileResponse):
+    onboarding_answers: dict[str, int] = Field(default_factory=dict)
+
+
+class ProfileUpdate(ProfileCreate):
+    """로그인 후 정보 수정 = 회원가입 온보딩 프로필의 재저장."""
+
+
 class AuthResponse(BaseModel):
     """가입/로그인 성공 시 JWT + 프로필 요약. 클라이언트(BFF)는 토큰을 httpOnly 쿠키로 저장."""
 
@@ -248,3 +258,40 @@ def get_current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid user")
     return user
+
+
+def _editable_profile_response(user: User) -> EditableProfileResponse:
+    return EditableProfileResponse(
+        user_id=user.id,
+        display_name=user.display_name,
+        persona=user.persona,
+        current_level=user.current_level,
+        onboarding_answers=user.onboarding_answers or {},
+    )
+
+
+@router.get("/me", response_model=EditableProfileResponse)
+def get_me(current_user: User = Depends(get_current_user)) -> EditableProfileResponse:
+    """현재 로그인 사용자의 수정 가능한 프로필을 조회한다."""
+    return _editable_profile_response(current_user)
+
+
+@router.patch("/me", response_model=EditableProfileResponse)
+def update_me(
+    payload: ProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EditableProfileResponse:
+    """온보딩 프로필을 수정하고 개인화 레벨·추천 벡터를 재계산한다."""
+    answers = payload.onboarding_answers or {}
+    current_user.display_name = payload.display_name
+    current_user.persona = payload.persona
+    current_user.onboarding_answers = answers or None
+    current_user.current_level = compute_initial_level(answers, payload.persona)
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+
+    update_from_read_history(current_user.id, db)
+    db.refresh(current_user)
+    return _editable_profile_response(current_user)

@@ -1,26 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import { ONBOARDING_QUESTIONS, defaultOnboardingAnswers } from "@/lib/onboardingQuestions";
 
 // HIVE-100: 가입/로그인 통합 폼. 회원가입 탭 = 아이디·비번 + 온보딩 설문(닉네임/5문항),
 // 로그인 탭 = 아이디·비번만. 답변 키/점수는 백엔드 PERSONA_ONBOARDING["개발자"]와 일치.
-const QUESTIONS: { key: string; label: string; options: string[] }[] = [
-  { key: "dev_career", label: "개발 경력", options: ["학생·입문 (1년 미만)", "주니어 (1~2년)", "미들 (3~5년)", "시니어 (6년+)"] },
-  { key: "prod_experience", label: "프로덕션 운영 경험", options: ["거의 없음", "일부 참여", "직접 설계·운영"] },
-  { key: "ai_tool_usage", label: "AI 툴(코파일럿·ChatGPT 등) 사용", options: ["거의 안 씀", "가끔", "매일 활용"] },
-  { key: "llm_understanding", label: "LLM 이해도", options: ["개념 정도", "API로 앱 만들어봄", "내부 원리·튜닝까지"] },
-  { key: "advanced_topics", label: "RAG·에이전트 등 고급 주제", options: ["잘 모름", "들어봤다", "직접 구현해봤다"] },
-];
 
 type Mode = "signup" | "login";
 
 export function AuthForm() {
-  const [mode, setMode] = useState<Mode>("signup");
+  const [mode, setMode] = useState<Mode>("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [answers, setAnswers] = useState<Record<string, number>>(
-    Object.fromEntries(QUESTIONS.map((q) => [q.key, 0]))
+    defaultOnboardingAnswers()
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +64,8 @@ export function AuthForm() {
         setBusy(false);
         return;
       }
-      window.location.href = "/"; // 쿠키 반영된 채로 홈 재진입
+      // 가입은 환영 페이지, 로그인은 홈으로 (둘 다 쿠키 반영된 채 재진입)
+      window.location.href = mode === "signup" ? "/welcome" : "/";
     } catch {
       setError("네트워크 오류가 발생했습니다.");
       setBusy(false);
@@ -142,7 +137,7 @@ export function AuthForm() {
             />
           </div>
 
-          {QUESTIONS.map((q) => (
+          {ONBOARDING_QUESTIONS.map((q) => (
             <div key={q.key} className="ob-field">
               <label>{q.label}</label>
               <div className="ob-options">

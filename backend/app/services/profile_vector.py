@@ -112,6 +112,15 @@ def _save_vector(user_id: int, vec: list[float], db: Session) -> None:
     db.commit()
 
 
+def _clear_vector(user_id: int, db: Session) -> None:
+    """온보딩·읽음 신호가 모두 없으면 이전 profile_vector를 제거한다."""
+    db.execute(
+        text("UPDATE users SET profile_vector = NULL WHERE id = :uid"),
+        {"uid": user_id},
+    )
+    db.commit()
+
+
 def build_initial_vector(user_id: int, onboarding_answers: dict, db: Session) -> None:
     """온보딩 답변 기반으로 profile_vector 초기값을 설정한다.
 
@@ -178,6 +187,7 @@ def update_from_read_history(user_id: int, db: Session) -> None:
     onboarding_vec = _compute_onboarding_vector(onboarding_answers, db)
 
     if onboarding_vec is None and read_vec is None:
+        _clear_vector(user_id, db)
         return
 
     if onboarding_vec is None:

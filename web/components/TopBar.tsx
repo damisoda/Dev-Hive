@@ -10,6 +10,7 @@ const TITLES: Record<string, string> = {
   "/curriculum": "커리큘럼",
   "/graph": "지식그래프",
   "/profile": "프로필",
+  "/profile/edit": "정보 수정",
   "/upload": "업로드",
   "/onboarding": "시작하기",
 };
