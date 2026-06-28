@@ -33,11 +33,9 @@ export default async function WelcomePage() {
     <main className="feed welcome-page">
       <section className="welcome">
         <div className="welcome-badge" aria-hidden>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round">
-            <path d="M7 3.5h10l5 8.5-5 8.5H7l-5-8.5z" />
-          </svg>
-          <svg className="welcome-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m6 12.5 4 4 8-9" />
+          <svg viewBox="0 0 44 38" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13 3H31L42 19 31 35H13L2 19z" strokeWidth="2.7" />
+            <path d="M16 19.5l4.5 4.5 8.5-10" strokeWidth="2.8" />
           </svg>
         </div>
 
