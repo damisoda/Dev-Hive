@@ -186,6 +186,7 @@ a.post-title-tr:hover { color: var(--accent-ink); }
 /* 피드백 토글 4종 (로그인 시) */
 .fb-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .fb-btn {
+  position: relative;
   font-size: 12.5px; font-weight: 500; font-family: inherit;
   padding: 5px 11px; border-radius: 999px; cursor: pointer;
   border: 1px solid var(--border); background: var(--surface); color: var(--text-muted);
@@ -194,6 +195,17 @@ a.post-title-tr:hover { color: var(--accent-ink); }
 .fb-btn:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
 .fb-btn.active { border-color: var(--accent); background: var(--accent-wash); color: var(--accent-ink); font-weight: 700; }
 .fb-btn:disabled { opacity: 0.6; cursor: default; }
+/* 피드백 버튼 설명 툴팁(HIVE-110) — 호버/포커스 시 위쪽 말풍선 */
+.fb-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  width: max-content; max-width: 230px; white-space: normal; text-align: left;
+  background: #14161C; color: #fff; font-size: 12px; font-weight: 500; line-height: 1.45;
+  padding: 8px 10px; border-radius: 8px; box-shadow: 0 6px 18px rgba(17, 24, 39, 0.22);
+  opacity: 0; visibility: hidden; transition: opacity 0.12s ease; pointer-events: none; z-index: 60;
+}
+.fb-btn[data-tip]:hover::after,
+.fb-btn[data-tip]:focus-visible::after { opacity: 1; visibility: visible; }
 
 /* 요약본(카드 기본) + 읽기(재가공본 펼침) */
 .post-summary {
