@@ -21,7 +21,7 @@ export function Heatmap({ data }: { data: Record<string, number> }) {
   // 올해 날짜들만: 1월 1일 ~ 오늘.
   const today = new Date();
   const start = new Date(today.getFullYear(), 0, 1);
-  const totalDays = Math.round((today.getTime() - start.getTime()) / 86400000) + 1;
+  const totalDays = Math.floor((today.getTime() - start.getTime()) / 86400000) + 1;
 
   const days: Day[] = [];
   for (let i = totalDays - 1; i >= 0; i--) {
@@ -43,8 +43,9 @@ export function Heatmap({ data }: { data: Record<string, number> }) {
   }
 
   const label = (d: Day) => {
-    const dt = new Date(d.date);
-    return `${dt.getMonth() + 1}월 ${dt.getDate()}일 · ${d.count > 0 ? `${d.count}건 읽음` : "학습 없음"}`;
+    // 키(YYYY-MM-DD) 문자열에서 직접 파싱 — new Date 재파싱의 타임존 시프트 회피.
+    const [, m, day] = d.date.split("-");
+    return `${+m}월 ${+day}일 · ${d.count > 0 ? `${d.count}건 읽음` : "학습 없음"}`;
   };
 
   return (
