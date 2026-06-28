@@ -206,7 +206,7 @@ topic–content 이종 그래프에서 링크 예측 자기지도학습을 수�
 | 임베딩 (그래프) | GraphSAGE (PyTorch Geometric, 256차원 — 학습 파이프라인만, 현재 미적재·미반영) |
 | 벡터 저장소 | pgvector (Postgres 확장) |
 | 태깅·가공·추천 근거 LLM | Anthropic Claude Haiku (`claude-haiku-4-5-20251001`) |
-| precedes 후보 생성 LLM | Anthropic Haiku(대주제) + 로컬 ollama gemma/EXAONE(하위노드) |
+| precedes 후보 생성 LLM | Anthropic Haiku(대주제) + 로컬 ollama gemma4:e4b(하위노드, 맥미니 GPU) |
 | LLM 백엔드 토글 | `LLM_BACKEND=anthropic\|ollama` — 클라우드 Haiku ↔ 로컬 EXAONE(맥미니 GPU) 전환, 키 없으면 graceful |
 | 백엔드 | FastAPI (Python) — JWT(PyJWT, HS256) Bearer 인증, bcrypt, rate limit |
 | 프론트엔드 | Next.js ^15.1.6 (App Router) / React 19 / TypeScript 5.7 — `web/` (BFF route로 백엔드 호출, JWT httpOnly 세션) |
