@@ -176,7 +176,7 @@ def signup(request: Request, payload: SignupRequest, db: Session = Depends(get_d
     except IntegrityError:
         # username UNIQUE 위반(동시 가입 레이스 포함) → 409
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username already taken")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 사용 중인 아이디입니다.")
     db.refresh(user)
 
     # 온보딩 답변 기반 profile_vector 초기값 설정 (HIVE-30)
