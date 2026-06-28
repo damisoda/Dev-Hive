@@ -230,12 +230,12 @@ a.post-title-tr:hover { color: var(--accent-ink); }
 .synth-col { min-width: 0; padding-top: 4px; }
 .synth-h { font-size: 12.5px; font-weight: 800; letter-spacing: 0.01em; color: #8A5E0A; margin-bottom: 9px; }
 .synth-h.is-warn { color: #A8530A; }
-.synth-para { margin: 0; font-size: 15px; line-height: 1.7; color: var(--text-muted); }
+.synth-para { margin: 0; font-size: 15px; line-height: 1.7; color: var(--text); }
 .synth-hl { background: #FCF7EE; border-radius: 13px; padding: 15px 17px; display: flex; flex-direction: column; gap: 10px; }
 .synth-hl-item { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; line-height: 1.5; color: var(--text); }
 .synth-check { flex: 0 0 auto; color: #D49C3A; margin-top: 1px; display: inline-flex; }
 .synth-warn { background: #FBF4E6; border-radius: 12px; padding: 13px 16px; display: flex; flex-direction: column; gap: 8px; }
-.synth-warn-item { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.55; color: var(--text-muted); }
+.synth-warn-item { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.55; color: var(--text); }
 .synth-wdot { flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%; background: #D6A24A; margin-top: 8px; }
 .synth-bullets { display: flex; flex-direction: column; gap: 9px; }
 .synth-bullet { display: flex; gap: 11px; align-items: flex-start; font-size: 14.5px; line-height: 1.6; color: var(--text); }
