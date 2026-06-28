@@ -72,6 +72,11 @@ function parseContentId(nodeId: string): number | undefined {
   return m ? Number(m[1]) : undefined;
 }
 
+function GraphNodeAutoOpen({ openFn }: { openFn: () => void }) {
+  useEffect(() => { openFn(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
 export function GraphCanvas({
   data,
   highlight,
@@ -89,6 +94,7 @@ export function GraphCanvas({
   const [size, setSize] = useState({ w: 900, h: 620 });
   const [FG, setFG] = useState<any>(null);
   const [selectedNode, setSelectedNode] = useState<SelectedNode | null>(null);
+  const [selectKey, setSelectKey] = useState(0);
 
   // 호버는 고빈도 갱신이므로 ref + fg.refresh() 패턴 (state re-render 우회).
   const hoveredNodeRef = useRef<GraphNode | null>(null);
@@ -221,6 +227,7 @@ export function GraphCanvas({
 
     if (n.kind === "content") {
       setSelectedNode({ id: n.id, label: n.label, kind: n.kind, contentId: parseContentId(n.id) });
+      setSelectKey((k) => k + 1);
       return;
     }
     // 대주제·auto 노드 클릭 = 그에 속한 콘텐츠 접기/펴기 토글
@@ -428,40 +435,15 @@ export function GraphCanvas({
         />
       )}
 
-      {selectedNode && (
-        <div className="modal-overlay" onClick={() => setSelectedNode(null)}>
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            aria-label={selectedNode.label}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="modal-close"
-              type="button"
-              onClick={() => setSelectedNode(null)}
-              aria-label="닫기"
-            >
-              ✕
-            </button>
-            <h3 className="modal-title">{selectedNode.label}</h3>
-            {selectedNode.contentId !== undefined ? (
-              <div className="modal-body">
-                <ReadModal
-                  contentId={selectedNode.contentId}
-                  title={selectedNode.label}
-                  url={null}
-                  loggedIn={loggedIn}
-                />
-              </div>
-            ) : (
-              <p className="modal-body" style={{ color: "#6B7280", fontSize: "0.9rem" }}>
-                자동 생성된 하위 노드입니다.
-              </p>
-            )}
-          </div>
-        </div>
+      {selectedNode?.contentId !== undefined && (
+        <ReadModal
+          key={selectKey}
+          contentId={selectedNode.contentId}
+          title={selectedNode.label}
+          url={null}
+          loggedIn={loggedIn}
+          renderTrigger={(openFn) => <GraphNodeAutoOpen openFn={openFn} />}
+        />
       )}
     </div>
   );
