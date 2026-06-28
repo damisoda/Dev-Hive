@@ -7,7 +7,7 @@ import {
   contentTags,
   externalUrl,
 } from "@/lib/viewmodel";
-import { FeedbackButtons } from "./FeedbackButtons";
+import FeedbackButtons from "./FeedbackButtons";
 import { ReadableTitle } from "./ReadableTitle";
 
 const Upvote = () => (
@@ -106,7 +106,7 @@ export function ContentCard({
         )}
       </div>
 
-      {loggedIn && <FeedbackButtons contentId={item.id} current={feedback} />}
+      {loggedIn && <FeedbackButtons content_id={String(item.id)} value={feedback} />}
     </article>
   );
 }
