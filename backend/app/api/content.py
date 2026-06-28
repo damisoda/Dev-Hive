@@ -9,14 +9,14 @@ from datetime import datetime
 from typing import Optional
 
 import anthropic
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, defer
 
 from app.api.auth import get_current_user
 from app.config import settings
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models.content import Content
 from app.models.mapping import ContentNodeMapping
 from app.models.user import User
@@ -171,15 +171,34 @@ class UploadResult(BaseModel):
     content_type: Optional[str] = None
 
 
+def _generate_synthesis_bg(content_id: int) -> None:
+    """업로드 응답 후 백그라운드로 synthesis 생성 — 업로드 지연을 줄이되 synthesis는 유지.
+
+    별도 세션을 연다(요청 세션은 응답과 함께 닫힘). 실패는 graceful(읽기 시 lazy 폴백).
+    """
+    if not llm_available():
+        return
+    db = SessionLocal()
+    try:
+        client = get_llm_client(settings.anthropic_api_key)
+        ensure_synthesis(content_id, db, client)  # 내부에서 commit
+    except Exception:
+        logger.exception("백그라운드 synthesis 생성 실패 content_id=%s", content_id)
+    finally:
+        db.close()
+
+
 @router.post("", response_model=UploadResult, status_code=status.HTTP_201_CREATED)
 def upload_content(
     payload: ContentUpload,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> UploadResult:
     """HIVE-33: 사용자 글 업로드 → 태깅·임베딩·적재·Auto-HKG 편입.
 
     올린 글이 기존 노드에 편입되거나 Auto-HKG가 새 하위/최상위 노드를 생성한다.
+    synthesis(가공)는 업로드 응답을 막지 않도록 백그라운드로 생성한다.
     """
     # 요청 크기 검증 (HTTP 컨텍스트 밖에서도 안전하게 호출 가능한 독립 함수)
     _validate_upload_size(payload.title, payload.body)
@@ -201,7 +220,7 @@ def upload_content(
 
     try:
         result = upload_user_content(
-            payload.title, payload.body, payload.url, current_user.id, db
+            payload.title, payload.body, payload.url, current_user.id, db, defer_synthesis=True
         )
     except UploadError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
@@ -218,6 +237,8 @@ def upload_content(
     log_llm_call("upload/tag", uid, "claude-haiku", approx_tokens)
     log_llm_call("upload/embed", uid, "text-embedding-3-small", approx_tokens)
 
+    # synthesis는 응답을 막지 않도록 백그라운드 생성(읽기 시 lazy 폴백도 존재)
+    background_tasks.add_task(_generate_synthesis_bg, result["content_id"])
     return UploadResult(**result)
 
 
